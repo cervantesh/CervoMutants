@@ -50,8 +50,8 @@ The default policy is baseline-first adoption:
   runs that avoid copying the full module.
 - coverage mode records a Go coverage profile during baseline and uses it to
   pick package-scoped test commands when the mutated file is covered.
-- mutator profiles are tiered: `conservative-fast`, `conservative`, `default`,
-  and `aggressive`.
+- mutator profiles are tiered: `gremlins-compatible`, `conservative-fast`,
+  `conservative`, `default`, and `aggressive`.
 - JSON reports include mutation descriptions, nearby package tests, selected
   test commands, status reasons, diffs, hints, and per-mutator statistics.
 - worker mode applies jobs in isolated temp workdirs and returns the same JSON

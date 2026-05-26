@@ -267,22 +267,24 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 			generated[i].Package = file.Package
 			id, fingerprint := e.stableMutantIdentity(generated[i])
 			mutants = append(mutants, Mutant{
-				ID:          id,
-				Module:      generated[i].Module,
-				Package:     generated[i].Package,
-				File:        generated[i].File,
-				Line:        generated[i].Line,
-				Function:    generated[i].Function,
-				Operator:    generated[i].Operator,
-				Original:    generated[i].Original,
-				Mutated:     generated[i].Mutated,
-				StartOffset: generated[i].StartOffset,
-				EndOffset:   generated[i].EndOffset,
-				Diff:        generated[i].Diff,
-				Fingerprint: fingerprint,
-				Hint:        generated[i].Hint,
-				Description: generated[i].Description,
-				NearbyTests: nearbyTests(file.ModuleDir, file.Path),
+				ID:             id,
+				Module:         generated[i].Module,
+				Package:        generated[i].Package,
+				File:           generated[i].File,
+				Line:           generated[i].Line,
+				Function:       generated[i].Function,
+				Operator:       generated[i].Operator,
+				Original:       generated[i].Original,
+				Mutated:        generated[i].Mutated,
+				StartOffset:    generated[i].StartOffset,
+				EndOffset:      generated[i].EndOffset,
+				Diff:           generated[i].Diff,
+				Fingerprint:    fingerprint,
+				Hint:           generated[i].Hint,
+				Description:    generated[i].Description,
+				NearbyTests:    nearbyTests(file.ModuleDir, file.Path),
+				EquivalentRisk: generated[i].EquivalentRisk,
+				Recommendation: generated[i].Recommendation,
 			})
 		}
 	}
@@ -559,6 +561,7 @@ func moduleForTargets(targets []string) (string, error) {
 func summarize(results []MutantResult) Summary {
 	s := Summary{MutatorStats: map[string]MutatorStat{}}
 	s.Total = len(results)
+	s.GeneratedMutants = len(results)
 	for _, result := range results {
 		operator := result.Mutant.Operator
 		if operator == "" {
@@ -566,22 +569,36 @@ func summarize(results []MutantResult) Summary {
 		}
 		stat := s.MutatorStats[operator]
 		stat.Total++
+		if stat.Recommendation == "" {
+			stat.Recommendation = result.Mutant.Recommendation
+		}
+		if stat.EquivalentRisk == "" {
+			stat.EquivalentRisk = result.Mutant.EquivalentRisk
+		}
 		switch result.Status {
 		case StatusKilled:
 			s.Killed++
 			stat.Killed++
+			s.ExecutedMutants++
+			s.CoveredMutants++
 		case StatusSurvived:
 			s.Survived++
 			stat.Survived++
+			s.ExecutedMutants++
+			s.CoveredMutants++
 		case StatusNotCovered:
 			s.NotCovered++
 			stat.NotCovered++
 		case StatusTimedOut:
 			s.TimedOut++
 			stat.TimedOut++
+			s.ExecutedMutants++
+			s.CoveredMutants++
 		case StatusCompileError:
 			s.CompileError++
 			stat.CompileError++
+			s.ExecutedMutants++
+			s.CoveredMutants++
 		case StatusSkipped:
 			s.Skipped++
 			stat.Skipped++

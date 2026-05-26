@@ -105,4 +105,9 @@ func TestValidateAllowsConservativeFastProfile(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate rejected conservative-fast profile: %v", err)
 	}
+
+	cfg.Mutators.Profile = "gremlins-compatible"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected gremlins-compatible profile: %v", err)
+	}
 }

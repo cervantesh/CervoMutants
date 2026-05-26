@@ -26,18 +26,20 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			StatusReason: "tests passed with mutant applied",
 			Output:       "ok",
 			Mutant: engine.Mutant{
-				ID:          "pkg/foo.go:10:conditionals-negation:eq-to-ne",
-				Package:     "pkg",
-				File:        "pkg/foo.go",
-				Line:        10,
-				Function:    "Check",
-				Operator:    "conditionals-negation",
-				Original:    "==",
-				Mutated:     "!=",
-				Diff:        "--- pkg/foo.go\n+++ pkg/foo.go\n",
-				Hint:        "Add an assertion for the opposite branch.",
-				Description: "Changed == to != in Check.",
-				NearbyTests: []string{"pkg/foo_test.go"},
+				ID:             "pkg/foo.go:10:conditionals-negation:eq-to-ne",
+				Package:        "pkg",
+				File:           "pkg/foo.go",
+				Line:           10,
+				Function:       "Check",
+				Operator:       "conditionals-negation",
+				Original:       "==",
+				Mutated:        "!=",
+				Diff:           "--- pkg/foo.go\n+++ pkg/foo.go\n",
+				Hint:           "Add an assertion for the opposite branch.",
+				Description:    "Changed == to != in Check.",
+				NearbyTests:    []string{"pkg/foo_test.go"},
+				EquivalentRisk: "medium",
+				Recommendation: "fast-ci",
 			},
 		}},
 	}
@@ -54,7 +56,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"baseline", "cache", "quarantine", "unified_diff", "status_reason", "selected_tests", "description", "nearby_tests"} {
+	for _, want := range []string{"baseline", "cache", "quarantine", "unified_diff", "status_reason", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -72,8 +74,8 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 			TestEfficacy:     50,
 			MutationCoverage: 66.66666666666666,
 			MutatorStats: map[string]engine.MutatorStat{
-				"conditionals-negation": {Total: 2, Killed: 1, Survived: 1},
-				"logical":               {Total: 1, NotCovered: 1},
+				"conditionals-negation": {Total: 2, Killed: 1, Survived: 1, Recommendation: "fast-ci"},
+				"logical":               {Total: 1, NotCovered: 1, Recommendation: "conservative"},
 			},
 		},
 	}
@@ -84,7 +86,9 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"Test efficacy: 50.00%",
 		"Mutation coverage: 66.67%",
 		"conditionals-negation: total=2 killed=1 survived=1 not_covered=0",
+		"recommendation=fast-ci",
 		"logical: total=1 killed=0 survived=0 not_covered=1",
+		"recommendation=conservative",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

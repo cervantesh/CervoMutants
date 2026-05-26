@@ -25,8 +25,11 @@ func JSON(result engine.RunResult) ([]byte, error) {
 
 func Summary(result engine.RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Mutation score: %.2f%%\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\n",
+	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\n",
 		result.Summary.Score,
+		result.Summary.GeneratedMutants,
+		result.Summary.CoveredMutants,
+		result.Summary.ExecutedMutants,
 		result.Summary.Killed,
 		result.Summary.Survived,
 		result.Summary.NotCovered,
@@ -45,7 +48,7 @@ func Summary(result engine.RunResult) string {
 		sort.Strings(keys)
 		for _, key := range keys {
 			stat := result.Summary.MutatorStats[key]
-			fmt.Fprintf(&b, "- %s: total=%d killed=%d survived=%d not_covered=%d timed_out=%d compile_error=%d\n",
+			fmt.Fprintf(&b, "- %s: total=%d killed=%d survived=%d not_covered=%d timed_out=%d compile_error=%d recommendation=%s equivalent_risk=%s\n",
 				key,
 				stat.Total,
 				stat.Killed,
@@ -53,6 +56,8 @@ func Summary(result engine.RunResult) string {
 				stat.NotCovered,
 				stat.TimedOut,
 				stat.CompileError,
+				stat.Recommendation,
+				stat.EquivalentRisk,
 			)
 		}
 	}

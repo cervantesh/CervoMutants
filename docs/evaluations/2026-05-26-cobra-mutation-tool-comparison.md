@@ -439,6 +439,7 @@ The same Cobra `./doc` dry run now shows the operator-tiering effect:
 
 | CervoMutant profile | Total mutants | Operator breakdown |
 | --- | ---: | --- |
+| `gremlins-compatible` | 69 | `arithmetic-basic=32`, `conditionals-boundary=12`, `conditionals-negation=25` |
 | `conservative-fast` | 69 | `arithmetic-basic=32`, `conditionals-boundary=12`, `conditionals-negation=25` |
 | `conservative` | 88 | `conservative-fast` plus `boolean-literals=4`, `logical=15` |
 | `default` | 111 | `conservative` plus `nil-checks=23` |

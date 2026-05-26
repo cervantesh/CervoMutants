@@ -287,6 +287,9 @@ func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
 	if result.NotCovered != 1 {
 		t.Fatalf("not covered = %d, want 1", result.NotCovered)
 	}
+	if result.GeneratedMutants != 4 || result.CoveredMutants != 2 || result.ExecutedMutants != 2 {
+		t.Fatalf("decomposed counts not populated: %+v", result)
+	}
 	if result.Score != 50 {
 		t.Fatalf("score = %.2f, want 50", result.Score)
 	}

@@ -33,6 +33,29 @@ func Check(n int, ready bool, p *int) bool {
 	}
 }
 
+func TestGremlinsCompatibleProfileMatchesConservativeFastOperators(t *testing.T) {
+	src := `package sample
+
+func Check(n int) bool {
+	return n + 1 >= 2
+}
+`
+	fast, err := Generate("sample", "sample.go", []byte(src), ProfileConservativeFast)
+	if err != nil {
+		t.Fatalf("Generate conservative-fast returned error: %v", err)
+	}
+	compatible, err := Generate("sample", "sample.go", []byte(src), ProfileGremlinsCompatible)
+	if err != nil {
+		t.Fatalf("Generate gremlins-compatible returned error: %v", err)
+	}
+	if len(fast) != len(compatible) {
+		t.Fatalf("gremlins-compatible generated %d mutants, want %d", len(compatible), len(fast))
+	}
+	if operatorSet(fast)["logical"] || operatorSet(compatible)["logical"] {
+		t.Fatal("fast profiles should not include logical mutants")
+	}
+}
+
 func TestConservativeMutatorsGenerateStableActionableMutants(t *testing.T) {
 	src := `package sample
 
@@ -59,6 +82,9 @@ func Check(n int, ready bool, p *int) bool {
 		}
 		if mutant.Description == "" {
 			t.Fatalf("mutant missing description: %+v", mutant)
+		}
+		if mutant.EquivalentRisk == "" || mutant.Recommendation == "" {
+			t.Fatalf("mutant missing governance fields: %+v", mutant)
 		}
 		if seen[mutant.ID] {
 			t.Fatalf("duplicate mutant ID: %s", mutant.ID)

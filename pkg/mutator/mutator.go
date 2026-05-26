@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	ProfileConservativeFast = "conservative-fast"
-	ProfileConservative     = "conservative"
-	ProfileDefault          = "default"
-	ProfileAggressive       = "aggressive"
+	ProfileGremlinsCompatible = "gremlins-compatible"
+	ProfileConservativeFast   = "conservative-fast"
+	ProfileConservative       = "conservative"
+	ProfileDefault            = "default"
+	ProfileAggressive         = "aggressive"
 )
 
 type Definition struct {
@@ -30,25 +31,30 @@ type Definition struct {
 }
 
 type Mutant struct {
-	ID          string `json:"id"`
-	Module      string `json:"module"`
-	Package     string `json:"package"`
-	File        string `json:"file"`
-	Line        int    `json:"line"`
-	Function    string `json:"function"`
-	Operator    string `json:"operator"`
-	Original    string `json:"original"`
-	Mutated     string `json:"mutated"`
-	StartOffset int    `json:"start_offset"`
-	EndOffset   int    `json:"end_offset"`
-	Diff        string `json:"unified_diff"`
-	Fingerprint string `json:"fingerprint"`
-	Hint        string `json:"hint"`
-	Description string `json:"description"`
+	ID             string `json:"id"`
+	Module         string `json:"module"`
+	Package        string `json:"package"`
+	File           string `json:"file"`
+	Line           int    `json:"line"`
+	Function       string `json:"function"`
+	Operator       string `json:"operator"`
+	Original       string `json:"original"`
+	Mutated        string `json:"mutated"`
+	StartOffset    int    `json:"start_offset"`
+	EndOffset      int    `json:"end_offset"`
+	Diff           string `json:"unified_diff"`
+	Fingerprint    string `json:"fingerprint"`
+	Hint           string `json:"hint"`
+	Description    string `json:"description"`
+	EquivalentRisk string `json:"equivalent_risk"`
+	Recommendation string `json:"recommendation"`
 }
 
 func Definitions() []Definition {
 	return []Definition{
+		{Name: "conditionals-negation", Profile: ProfileGremlinsCompatible, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a == b -> a != b"},
+		{Name: "conditionals-boundary", Profile: ProfileGremlinsCompatible, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a < b -> a <= b"},
+		{Name: "arithmetic-basic", Profile: ProfileGremlinsCompatible, Risk: "medium", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a + b -> a - b"},
 		{Name: "conditionals-negation", Profile: ProfileConservativeFast, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a == b -> a != b"},
 		{Name: "conditionals-boundary", Profile: ProfileConservativeFast, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a < b -> a <= b"},
 		{Name: "arithmetic-basic", Profile: ProfileConservativeFast, Risk: "medium", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a + b -> a - b"},
@@ -261,20 +267,22 @@ func addMutation(mutants *[]Mutant, fset *token.FileSet, pkg, filename string, s
 	fp := fingerprint(filename, strconv.Itoa(pos.Line), strconv.Itoa(start), strconv.Itoa(end), operator, original, mutated, diff)
 	id := fmt.Sprintf("%s:%d:%s:%s", filename, pos.Line, operator, fp[:12])
 	*mutants = append(*mutants, Mutant{
-		ID:          id,
-		Package:     pkg,
-		File:        filename,
-		Line:        pos.Line,
-		Function:    fn,
-		Operator:    operator,
-		Original:    original,
-		Mutated:     mutated,
-		StartOffset: start,
-		EndOffset:   end,
-		Diff:        diff,
-		Fingerprint: fp,
-		Hint:        hint(operator),
-		Description: description(fn, operator, original, mutated),
+		ID:             id,
+		Package:        pkg,
+		File:           filename,
+		Line:           pos.Line,
+		Function:       fn,
+		Operator:       operator,
+		Original:       original,
+		Mutated:        mutated,
+		StartOffset:    start,
+		EndOffset:      end,
+		Diff:           diff,
+		Fingerprint:    fp,
+		Hint:           hint(operator),
+		Description:    description(fn, operator, original, mutated),
+		EquivalentRisk: equivalentRisk(operator),
+		Recommendation: recommendation(operator),
 	})
 }
 
@@ -290,6 +298,34 @@ func operatorEnabled(operator, profile string) bool {
 		return profile == ProfileAggressive
 	default:
 		return false
+	}
+}
+
+func equivalentRisk(operator string) string {
+	switch operator {
+	case "arithmetic-basic", "boolean-literals":
+		return "low"
+	case "conditionals-negation", "conditionals-boundary", "logical":
+		return "medium"
+	case "nil-checks", "error-returns", "literals", "returns", "loop-control":
+		return "high"
+	default:
+		return "unknown"
+	}
+}
+
+func recommendation(operator string) string {
+	switch operator {
+	case "arithmetic-basic", "conditionals-negation", "conditionals-boundary":
+		return "fast-ci"
+	case "logical", "boolean-literals":
+		return "conservative"
+	case "nil-checks", "error-returns":
+		return "default"
+	case "literals", "returns", "loop-control":
+		return "aggressive"
+	default:
+		return "review"
 	}
 }
 

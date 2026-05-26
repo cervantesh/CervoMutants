@@ -242,6 +242,7 @@ Promotion policy:
 
 | Tier | Requirements |
 | --- | --- |
+| `gremlins-compatible` | Benchmark profile for Go-tool comparisons. Current operators: `arithmetic-basic`, `conditionals-negation`, `conditionals-boundary`. |
 | `conservative-fast` | High signal, low runtime, low equivalent risk, low compile error rate. Current operators: `arithmetic-basic`, `conditionals-negation`, `conditionals-boundary`. |
 | `conservative` | Good signal and acceptable noise for regular CI. Current operators: `conservative-fast` plus `logical` and `boolean-literals`. |
 | `default` | Valuable but broader; may require baseline adoption. Current operators: `conservative` plus `nil-checks` and controlled `error-returns`. |
@@ -319,6 +320,7 @@ mutators:
 Candidate policy:
 
 - `conservative-fast` for PR CI.
+- `gremlins-compatible` for apples-to-apples Go-tool benchmarking.
 - `conservative` for local developer runs.
 - `default` for nightly.
 - `aggressive` for explicit campaigns and test-generation agents.

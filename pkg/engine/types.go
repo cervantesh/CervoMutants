@@ -20,22 +20,24 @@ const (
 )
 
 type Mutant struct {
-	ID          string   `json:"id"`
-	Module      string   `json:"module"`
-	Package     string   `json:"package"`
-	File        string   `json:"file"`
-	Line        int      `json:"line"`
-	Function    string   `json:"function"`
-	Operator    string   `json:"operator"`
-	Original    string   `json:"original"`
-	Mutated     string   `json:"mutated"`
-	StartOffset int      `json:"start_offset"`
-	EndOffset   int      `json:"end_offset"`
-	Diff        string   `json:"unified_diff"`
-	Fingerprint string   `json:"fingerprint"`
-	Hint        string   `json:"hint"`
-	Description string   `json:"description"`
-	NearbyTests []string `json:"nearby_tests,omitempty"`
+	ID             string   `json:"id"`
+	Module         string   `json:"module"`
+	Package        string   `json:"package"`
+	File           string   `json:"file"`
+	Line           int      `json:"line"`
+	Function       string   `json:"function"`
+	Operator       string   `json:"operator"`
+	Original       string   `json:"original"`
+	Mutated        string   `json:"mutated"`
+	StartOffset    int      `json:"start_offset"`
+	EndOffset      int      `json:"end_offset"`
+	Diff           string   `json:"unified_diff"`
+	Fingerprint    string   `json:"fingerprint"`
+	Hint           string   `json:"hint"`
+	Description    string   `json:"description"`
+	NearbyTests    []string `json:"nearby_tests,omitempty"`
+	EquivalentRisk string   `json:"equivalent_risk"`
+	Recommendation string   `json:"recommendation"`
 }
 
 type MutantJob struct {
@@ -68,6 +70,9 @@ type Summary struct {
 	Quarantined       int                    `json:"quarantined"`
 	Cached            int                    `json:"cached"`
 	ExpiredQuarantine int                    `json:"expired_quarantine"`
+	GeneratedMutants  int                    `json:"generated_mutants"`
+	CoveredMutants    int                    `json:"covered_mutants"`
+	ExecutedMutants   int                    `json:"executed_mutants"`
 	Score             float64                `json:"score"`
 	EffectiveScore    float64                `json:"effective_score"`
 	TestEfficacy      float64                `json:"test_efficacy"`
@@ -76,16 +81,18 @@ type Summary struct {
 }
 
 type MutatorStat struct {
-	Total        int `json:"total"`
-	Killed       int `json:"killed"`
-	Survived     int `json:"survived"`
-	NotCovered   int `json:"not_covered"`
-	TimedOut     int `json:"timed_out"`
-	CompileError int `json:"compile_error"`
-	Skipped      int `json:"skipped"`
-	Ignored      int `json:"ignored"`
-	Quarantined  int `json:"quarantined"`
-	Cached       int `json:"cached"`
+	Total          int    `json:"total"`
+	Killed         int    `json:"killed"`
+	Survived       int    `json:"survived"`
+	NotCovered     int    `json:"not_covered"`
+	TimedOut       int    `json:"timed_out"`
+	CompileError   int    `json:"compile_error"`
+	Skipped        int    `json:"skipped"`
+	Ignored        int    `json:"ignored"`
+	Quarantined    int    `json:"quarantined"`
+	Cached         int    `json:"cached"`
+	Recommendation string `json:"recommendation,omitempty"`
+	EquivalentRisk string `json:"equivalent_risk,omitempty"`
 }
 
 type BaselineComparison struct {
