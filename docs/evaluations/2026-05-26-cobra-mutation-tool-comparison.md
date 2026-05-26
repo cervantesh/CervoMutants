@@ -443,6 +443,26 @@ The same Cobra `./doc` dry run now shows the operator-tiering effect:
 | `conservative` | 88 | `conservative-fast` plus `boolean-literals=4`, `logical=15` |
 | `default` | 111 | `conservative` plus `nil-checks=23` |
 
+Post-tiering execution against Gremlins:
+
+| Tool | Profile | Workers | Mutants | Killed | Survived/Lived | Not covered | Timed out | Score | Time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| CervoMutant | `conservative-fast` | 4 | 69 | 51 | 18 | 0 | 0 | 73.91% | 11.34s |
+| CervoMutant | `conservative` | 4 | 88 | 59 | 29 | 0 | 0 | 67.05% | 15.27s |
+| CervoMutant | `default` | 4 | 111 | 66 | 45 | 0 | 0 | 59.46% | 19.59s |
+| Gremlins | default | 4 | 87 | 58 | 29 | 5 | 0 | 66.67% | 22.50s |
+| CervoMutant | `conservative-fast` | 16 | 69 | 51 | 18 | 0 | 0 | 73.91% | 6.61s |
+| CervoMutant | `conservative` | 16 | 88 | 59 | 29 | 0 | 0 | 67.05% | 9.45s |
+| CervoMutant | `default` | 16 | 111 | 66 | 45 | 0 | 0 | 59.46% | 10.85s |
+| Gremlins | default | 16 | 87 | 58 | 29 | 5 | 0 | 66.67% | 12.07s |
+
+Interpretation: `conservative` is the closest CervoMutant comparison to the
+Gremlins result shape: almost the same total mutants and survivor count, one
+more killed mutant, higher score, and faster execution. `conservative-fast`
+maximizes signal density and speed, but it also skips useful killed mutants that
+Gremlins and CervoMutant `conservative` still exercise. `default` is broader and
+finds more killed mutants, but brings back the survivor burden from `nil-checks`.
+
 ## Parallel Overlay Performance Follow-Up
 
 The initial Windows run showed CervoMutant was operationally robust but too slow
