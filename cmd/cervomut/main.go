@@ -173,6 +173,7 @@ func cmdRun(args []string) error {
 		cfg.Cache.Path = filepath.Join(*out, "cache")
 		cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
 		cfg.Selection.TimingsPath = filepath.Join(*out, "timings.json")
+		cfg.History.Path = filepath.Join(*out, "history.json")
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -225,6 +226,7 @@ func cmdEval(args []string) error {
 	cfg.Cache.Path = filepath.Join(*out, "cache")
 	cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
 	cfg.Selection.TimingsPath = filepath.Join(*out, "timings.json")
+	cfg.History.Path = filepath.Join(*out, "history.json")
 	if *budget > 0 {
 		cfg.Execution.Budget = *budget
 	}
@@ -499,6 +501,7 @@ suppression:
       equivalent_risk: high
       action: report-only
       reason: High equivalent-mutant risk must be visible before suppression is allowed.
+      evidence: heuristic
     - name: lower-priority-loop-control
       operator: loop-control
       action: lower-priority
@@ -511,6 +514,9 @@ suppression:
       operator: returns
       action: lower-priority
       reason: Broad return mutants can duplicate narrower return-bool-literal signal.
+history:
+  enabled: true
+  path: .cervomut/history.json
 cache:
   enabled: true
   path: .cervomut/cache

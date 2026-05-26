@@ -119,6 +119,8 @@ func TestDefaultProfileAddsNilChecks(t *testing.T) {
 	src := `package sample
 
 func Check(p *int, n int) bool {
+	n += 2
+	n--
 	if n == 2 {
 		return true
 	}
@@ -134,6 +136,9 @@ func Check(p *int, n int) bool {
 	}
 	if !operatorSet(mutants)["numeric-literals"] || !operatorSet(mutants)["return-bool-literals"] {
 		t.Fatalf("default profile missing controlled literal/return operators: %+v", operatorSet(mutants))
+	}
+	if !operatorSet(mutants)["assignment-arithmetic"] || !operatorSet(mutants)["inc-dec"] {
+		t.Fatalf("default profile missing assignment/counter operators: %+v", operatorSet(mutants))
 	}
 }
 

@@ -315,6 +315,16 @@ more operators.
 | Evaluation | Keep apples-to-apples benchmark fixtures for Cobra and at least one CervoSoft module. |
 | Agent UX | Add direct test-generation hints, nearest test files, and assertion suggestions in `explain`. |
 
+Issue #11 implementation status:
+
+- History is now stored in `.cervomut/history.json` and emitted in report JSON
+  as additive v1 fields: `previous_status`, `first_seen`, `last_seen`,
+  `survivor_age_runs`, `history_status`, and `operator_historical_yield`.
+- Explicit equivalent-risk suppression is intentionally strict. `action:
+  suppress` requires confirmed evidence and at least one reviewer, and
+  suppressed mutants remain visible as `ignored` outcomes.
+- CI presets are documented in [policy-presets.md](policy-presets.md).
+
 ## Near-Term Defaults To Evaluate
 
 Do not change the default purely because Gremlins behaves differently. Evaluate

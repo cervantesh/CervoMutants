@@ -18,6 +18,7 @@ type Config struct {
 	Execution   Execution   `yaml:"execution" json:"execution"`
 	Selection   Selection   `yaml:"selection" json:"selection"`
 	Suppression Suppression `yaml:"suppression" json:"suppression"`
+	History     History     `yaml:"history" json:"history"`
 	Cache       Cache       `yaml:"cache" json:"cache"`
 	Baseline    Baseline    `yaml:"baseline" json:"baseline"`
 	Limits      Limits      `yaml:"limits" json:"limits"`
@@ -70,9 +71,19 @@ type Suppression struct {
 type SuppressionRule struct {
 	Name           string `yaml:"name" json:"name"`
 	Operator       string `yaml:"operator" json:"operator"`
+	File           string `yaml:"file" json:"file"`
+	Original       string `yaml:"original" json:"original"`
+	Mutated        string `yaml:"mutated" json:"mutated"`
 	EquivalentRisk string `yaml:"equivalent_risk" json:"equivalent_risk"`
 	Action         string `yaml:"action" json:"action"`
 	Reason         string `yaml:"reason" json:"reason"`
+	Evidence       string `yaml:"evidence" json:"evidence"`
+	Reviewers      int    `yaml:"reviewers" json:"reviewers"`
+}
+
+type History struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Path    string `yaml:"path" json:"path"`
 }
 
 type Cache struct {
@@ -154,11 +165,12 @@ func Defaults() Config {
 		Execution: Execution{Workers: workers, Isolation: "temp-workdir"},
 		Selection: Selection{Mode: "package", UseTimings: true, CoverageProfile: ".cervomut/coverage.out", TimingsPath: ".cervomut/timings.json"},
 		Suppression: Suppression{Enabled: true, Rules: []SuppressionRule{
-			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: "report-only", Reason: "High equivalent-mutant risk must be visible before suppression is allowed."},
+			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: "report-only", Reason: "High equivalent-mutant risk must be visible before suppression is allowed.", Evidence: "heuristic"},
 			{Name: "lower-priority-loop-control", Operator: "loop-control", Action: "lower-priority", Reason: "Loop-control mutants are high-signal but often require manual review."},
 			{Name: "lower-priority-broad-literals", Operator: "literals", Action: "lower-priority", Reason: "Broad literal mutants often need equivalence review before CI gating."},
 			{Name: "lower-priority-broad-returns", Operator: "returns", Action: "lower-priority", Reason: "Broad return mutants can duplicate narrower return-bool-literal signal."},
 		}},
+		History:  History{Enabled: true, Path: ".cervomut/history.json"},
 		Cache:    Cache{Enabled: true, Path: ".cervomut/cache", Mode: "incremental"},
 		Baseline: Baseline{Enabled: true, Path: ".cervomut/baseline.json", FailOnRegression: true, FailOnNewSurvivors: true},
 		Limits:   Limits{Sample: "none"},
@@ -241,6 +253,12 @@ func (cfg Config) Validate() error {
 		}
 		if !oneOf(rule.Action, "report-only", "lower-priority", "suppress", "quarantine-required") {
 			return errors.New("suppression rule action must be report-only, lower-priority, suppress, or quarantine-required")
+		}
+		if rule.Evidence != "" && !oneOf(rule.Evidence, "heuristic", "sampled", "confirmed") {
+			return errors.New("suppression rule evidence must be heuristic, sampled, or confirmed")
+		}
+		if rule.Action == "suppress" && (rule.Evidence != "confirmed" || rule.Reviewers < 1) {
+			return errors.New("suppress rules require confirmed evidence and at least one reviewer")
 		}
 	}
 	return nil

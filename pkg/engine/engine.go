@@ -80,8 +80,11 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{}, err
 	}
 	result.Mutants = mutantResults
+	result.History = e.applyHistory(result.Mutants)
 	rankSurvivors(result.Mutants)
 	result.Summary = summarize(result.Mutants)
+	result.Summary.NewSurvivors = result.History.NewSurvivors
+	result.Summary.LongStandingSurvivors = result.History.LongStandingSurvivors
 	if e.cfg.Baseline.Enabled {
 		if prev, ok, err := e.loadBaseline(); err == nil && ok {
 			result.Baseline = compareBaseline(prev, result)
@@ -339,7 +342,7 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 				EquivalentRisk:   generated[i].EquivalentRisk,
 				Recommendation:   generated[i].Recommendation,
 				CompileErrorRisk: generated[i].CompileErrorRisk,
-				SuppressionAudit: e.suppressionAudit(generated[i].Operator, generated[i].EquivalentRisk),
+				SuppressionAudit: e.suppressionAudit(generated[i]),
 			})
 		}
 	}
@@ -374,25 +377,46 @@ func recommendationPriority(recommendation string) int {
 	}
 }
 
-func (e *Engine) suppressionAudit(operator, equivalentRisk string) []SuppressionAudit {
+func (e *Engine) suppressionAudit(mutant mutator.Mutant) []SuppressionAudit {
 	if !e.cfg.Suppression.Enabled {
 		return nil
 	}
 	var audits []SuppressionAudit
 	for _, rule := range e.cfg.Suppression.Rules {
-		if rule.Operator != "" && rule.Operator != operator {
+		if rule.Operator != "" && rule.Operator != mutant.Operator {
 			continue
 		}
-		if rule.EquivalentRisk != "" && rule.EquivalentRisk != equivalentRisk {
+		if rule.EquivalentRisk != "" && rule.EquivalentRisk != mutant.EquivalentRisk {
+			continue
+		}
+		if rule.File != "" && !suppressionFileMatches(rule.File, mutant.File) {
+			continue
+		}
+		if rule.Original != "" && rule.Original != mutant.Original {
+			continue
+		}
+		if rule.Mutated != "" && rule.Mutated != mutant.Mutated {
 			continue
 		}
 		evidenceLevel := "suspected"
+		if rule.Evidence != "" {
+			evidenceLevel = rule.Evidence
+		}
 		if rule.Action == "suppress" {
 			evidenceLevel = "rule-suppressed"
 		}
-		audits = append(audits, SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason, EvidenceLevel: evidenceLevel})
+		audits = append(audits, SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason, EvidenceLevel: evidenceLevel, ReviewerCount: rule.Reviewers})
 	}
 	return audits
+}
+
+func suppressionFileMatches(pattern, file string) bool {
+	file = filepath.ToSlash(file)
+	pattern = filepath.ToSlash(pattern)
+	if ok, err := filepath.Match(pattern, file); err == nil && ok {
+		return true
+	}
+	return file == pattern || strings.HasSuffix(file, "/"+pattern)
 }
 
 func nearbyTests(moduleDir, sourceFile string) []string {
@@ -766,6 +790,122 @@ func summarize(results []MutantResult) Summary {
 	return s
 }
 
+type historyFile struct {
+	SchemaVersion string                  `json:"schema_version"`
+	UpdatedAt     string                  `json:"updated_at"`
+	Mutants       map[string]historyEntry `json:"mutants"`
+}
+
+type historyEntry struct {
+	MutantID         string `json:"mutant_id"`
+	Operator         string `json:"operator"`
+	Status           Status `json:"status"`
+	FirstSeen        string `json:"first_seen"`
+	LastSeen         string `json:"last_seen"`
+	SeenRuns         int    `json:"seen_runs"`
+	SurvivedRuns     int    `json:"survived_runs"`
+	KilledRuns       int    `json:"killed_runs"`
+	NotCoveredRuns   int    `json:"not_covered_runs"`
+	CompileErrorRuns int    `json:"compile_error_runs"`
+	TimedOutRuns     int    `json:"timed_out_runs"`
+}
+
+func (e *Engine) applyHistory(results []MutantResult) HistoryStats {
+	stats := HistoryStats{Enabled: e.cfg.History.Enabled, Path: e.cfg.History.Path, OperatorUsefulSurvivor: map[string]float64{}}
+	if !e.cfg.History.Enabled {
+		return stats
+	}
+	path := e.cfg.History.Path
+	if path == "" {
+		path = ".cervomut/history.json"
+		stats.Path = path
+	}
+	store := historyFile{SchemaVersion: "1", Mutants: map[string]historyEntry{}}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &store)
+	}
+	if store.Mutants == nil {
+		store.Mutants = map[string]historyEntry{}
+	}
+	stats.LoadedMutants = len(store.Mutants)
+	now := time.Now().UTC().Format(time.RFC3339)
+	operatorSeen := map[string]int{}
+	operatorSurvived := map[string]int{}
+	for i := range results {
+		result := &results[i]
+		operator := result.Mutant.Operator
+		if operator == "" {
+			operator = "unknown"
+		}
+		previous, existed := store.Mutants[result.MutantID]
+		if existed {
+			result.PreviousStatus = previous.Status
+			result.FirstSeen = previous.FirstSeen
+			result.SurvivorAgeRuns = previous.SurvivedRuns
+			if result.Status == StatusSurvived {
+				result.HistoryStatus = "existing_survivor"
+				if previous.SurvivedRuns > 0 {
+					stats.LongStandingSurvivors++
+					result.HistoryStatus = "long_standing_survivor"
+				}
+			}
+		} else {
+			result.FirstSeen = now
+			if result.Status == StatusSurvived {
+				result.HistoryStatus = "new_survivor"
+				stats.NewSurvivors++
+			}
+		}
+		if result.HistoryStatus == "" {
+			result.HistoryStatus = "seen"
+		}
+		result.LastSeen = now
+		entry := previous
+		entry.MutantID = result.MutantID
+		entry.Operator = operator
+		entry.Status = result.Status
+		if entry.FirstSeen == "" {
+			entry.FirstSeen = result.FirstSeen
+		}
+		entry.LastSeen = now
+		entry.SeenRuns++
+		switch result.Status {
+		case StatusSurvived:
+			entry.SurvivedRuns++
+		case StatusKilled:
+			entry.KilledRuns++
+		case StatusNotCovered:
+			entry.NotCoveredRuns++
+		case StatusCompileError:
+			entry.CompileErrorRuns++
+		case StatusTimedOut:
+			entry.TimedOutRuns++
+		}
+		result.SurvivorAgeRuns = entry.SurvivedRuns
+		store.Mutants[result.MutantID] = entry
+		operatorSeen[operator]++
+		if result.Status == StatusSurvived {
+			operatorSurvived[operator]++
+		}
+	}
+	for operator, seen := range operatorSeen {
+		if seen > 0 {
+			stats.OperatorUsefulSurvivor[operator] = float64(operatorSurvived[operator]) / float64(seen)
+		}
+	}
+	for i := range results {
+		results[i].OperatorYield = stats.OperatorUsefulSurvivor[results[i].Mutant.Operator]
+	}
+	stats.UpdatedMutants = len(results)
+	store.UpdatedAt = now
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+		if data, err := json.MarshalIndent(store, "", "  "); err == nil {
+			_ = os.WriteFile(path, data, 0o644)
+		}
+	}
+	return stats
+}
+
 func rankSurvivors(results []MutantResult) {
 	survivors := make([]int, 0)
 	for i := range results {
@@ -835,12 +975,23 @@ func survivorRankScore(result MutantResult) (float64, string) {
 	if result.CoverageSource != "" && result.CoverageSource != "unknown" {
 		score += 6
 	}
+	switch result.HistoryStatus {
+	case "new_survivor":
+		score += 18
+	case "long_standing_survivor":
+		score += 10
+	case "existing_survivor":
+		score += 4
+	}
+	if result.OperatorYield > 0 {
+		score += result.OperatorYield * 10
+	}
 	for _, audit := range result.Mutant.SuppressionAudit {
 		if audit.Action == "lower-priority" || audit.Action == "report-only" {
 			score -= 8
 		}
 	}
-	reason := fmt.Sprintf("score=%.1f risk=%s recommendation=%s coverage_source=%s nearby_tests=%d", score, risk, result.Mutant.Recommendation, result.CoverageSource, len(result.Mutant.NearbyTests))
+	reason := fmt.Sprintf("score=%.1f risk=%s recommendation=%s coverage_source=%s nearby_tests=%d history=%s survivor_age_runs=%d operator_yield=%.2f", score, risk, result.Mutant.Recommendation, result.CoverageSource, len(result.Mutant.NearbyTests), result.HistoryStatus, result.SurvivorAgeRuns, result.OperatorYield)
 	return score, reason
 }
 

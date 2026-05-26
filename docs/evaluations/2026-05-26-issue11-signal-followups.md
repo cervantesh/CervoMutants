@@ -57,15 +57,26 @@ Raw artifacts:
 C:\Users\c___h\AppData\Local\Temp\cervomut-issue11-cobra-comparison
 ```
 
+The current `cervomut compare` parser was also re-run against those artifacts.
+Normalized output:
+
+```text
+C:\Users\c___h\AppData\Local\Temp\cervomut-issue11-cobra-comparison\normalized-by-current-cervomut.json
+```
+
 ## 2. Real CI Pipeline
 
 The Gitea workflow now does more than compile and run unit tests:
 
 ```yaml
+go vet ./...
 go test ./...
+go test -race ./pkg/engine ./pkg/mutator ./pkg/report
 go run ./cmd/cervomut list-mutators
 go run ./cmd/cervomut fast ./pkg/config --max-mutants 3 --workers 2 --out .cervomut/ci-smoke
 test -f .cervomut/ci-smoke/mutation-report.json
+go run ./cmd/cervomut run ./pkg/config --policy ci-balanced --max-mutants 5 --workers 2 --out .cervomut/ci-balanced-smoke
+grep -q '"schema_version": "1"' .cervomut/ci-balanced-smoke/mutation-report.json
 ```
 
 This is intentionally a smoke gate, not a quality gate. It proves the importable
@@ -149,3 +160,63 @@ mutation. This is deliberately conservative:
 This gives us a real mechanism for audited equivalent-risk suppression without
 making suppression an invisible default.
 
+## 6-15. Remaining Follow-Ups Applied
+
+The second issue #11 pass addressed the remaining backlog items with additive
+schema fields and stricter governance. Items that require human review are now
+represented as explicit data capture rather than hidden TODOs.
+
+| Pending item | Applied change | Remaining evidence needed |
+| --- | --- | --- |
+| Survivor ranking human calibration | Survivor ranking now includes `history_status`, `survivor_age_runs`, and `operator_historical_yield`. Reports can distinguish new, existing, and long-standing survivors. | Manual review sample to tune weights. |
+| Deeper coverage semantics | Coverage filtering already moved to Go coverage line ranges; the report now keeps enough line/function context for range review. | Function/range cross-check against larger coverage profiles. |
+| Conservative equivalent-risk suppression | `suppress` rules now require `evidence: confirmed` and `reviewers >= 1`; rules can narrow by operator, file, original token, mutated token, and equivalent risk. | False-suppression audit sample per release. |
+| Advanced history | `.cervomut/history.json` tracks status, first seen, last seen, run counts, survivor age, killed runs, not-covered runs, compile errors, and timeouts by stable mutant ID. | Calibrate history retention and trend dashboards. |
+| Broader operators | Added governed `assignment-arithmetic` and `inc-dec` operators to `default`/`aggressive`, inspired by Go operator breadth in external tools without moving them into fast CI. | Multi-repo operator yield comparison. |
+| External tool revalidation | Re-ran the current `cervomut compare` parser against the Cobra artifacts from CervoMutant, Gremlins, patched gomu, and patched go-mutesting. | Schedule periodic full reruns after operator changes. |
+| Preset UX documentation | Config defaults now expose `history`; docs explain `ci-fast`, `ci-balanced`, `nightly`, and `campaign` as distinct adoption modes. | Expand examples per repo type. |
+| Real CI pipeline | Gitea CI now runs `go vet`, full tests, race tests for core packages, mutator registry smoke, `ci-fast` report smoke, and `ci-balanced` report smoke. | Add protected-branch gating once the repo policy is set. |
+| Final PR/issue hygiene | Issue #11 has progress comments; branch and PR reference `#11`; docs link back to the issue. | Close issue after PR review/merge. |
+| Wiki continuity | Wiki page is updated with the issue #11 signal-followup summary. | Push wiki changes with the implementation branch. |
+
+## New JSON Fields
+
+The schema remains v1 and additive-only. New fields are optional for older
+reports:
+
+```json
+{
+  "history": {
+    "enabled": true,
+    "path": ".cervomut/history.json",
+    "loaded_mutants": 123,
+    "updated_mutants": 100,
+    "new_survivors": 4,
+    "long_standing_survivors": 2,
+    "operator_useful_survivor_yield": {
+      "conditionals-negation": 0.18
+    }
+  },
+  "mutants": [
+    {
+      "previous_status": "survived",
+      "first_seen": "2026-05-26T00:00:00Z",
+      "last_seen": "2026-05-26T01:00:00Z",
+      "survivor_age_runs": 2,
+      "history_status": "long_standing_survivor",
+      "operator_historical_yield": 0.18
+    }
+  ]
+}
+```
+
+## New Governed Operators
+
+| Operator | Profile | Why it is not fast CI |
+| --- | --- | --- |
+| `assignment-arithmetic` | `default`, `aggressive` | Useful for update logic, but can be compile-sensitive and duplicates some arithmetic signal. |
+| `inc-dec` | `default`, `aggressive` | Useful for counters and loops, but can create equivalent or domain-specific survivors. |
+
+Both operators are intentionally excluded from `gremlins-compatible`,
+`conservative-fast`, and `conservative` until calibration proves they preserve
+signal across multiple repositories.

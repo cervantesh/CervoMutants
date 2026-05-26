@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
+	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
 )
 
 func writeFixture(t *testing.T) string {
@@ -408,10 +409,12 @@ func TestPackageSelectionCanPrefilterUncoveredMutants(t *testing.T) {
 func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Suppression.Rules = []config.SuppressionRule{{
-		Name:     "known-equivalent-conditional",
-		Operator: "conditionals-boundary",
-		Action:   "suppress",
-		Reason:   "Audited as equivalent in generated comparison wrappers.",
+		Name:      "known-equivalent-conditional",
+		Operator:  "conditionals-boundary",
+		Action:    "suppress",
+		Reason:    "Audited as equivalent in generated comparison wrappers.",
+		Evidence:  "confirmed",
+		Reviewers: 1,
 	}}
 	mutant := Mutant{
 		ID:               "m-suppressed",
@@ -420,7 +423,7 @@ func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
 		File:             "calc.go",
 		Line:             3,
 		Operator:         "conditionals-boundary",
-		SuppressionAudit: New(cfg).suppressionAudit("conditionals-boundary", "medium"),
+		SuppressionAudit: New(cfg).suppressionAudit(mutator.Mutant{Operator: "conditionals-boundary", EquivalentRisk: "medium"}),
 	}
 
 	results, err := New(cfg).runMutantsSerial(context.Background(), []Mutant{mutant}, map[string]bool{})
@@ -435,6 +438,39 @@ func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
 	}
 	if !strings.Contains(results[0].StatusReason, "known-equivalent-conditional") {
 		t.Fatalf("status reason does not name suppression rule: %q", results[0].StatusReason)
+	}
+}
+
+func TestHistoryTracksNewAndLongStandingSurvivors(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.History.Path = filepath.Join(dir, "history.json")
+	e := New(cfg)
+	first := []MutantResult{{
+		MutantID: "m-history",
+		Status:   StatusSurvived,
+		Mutant:   Mutant{Operator: "conditionals-negation"},
+	}}
+
+	stats := e.applyHistory(first)
+	if stats.NewSurvivors != 1 {
+		t.Fatalf("new survivors = %d, want 1", stats.NewSurvivors)
+	}
+	if first[0].HistoryStatus != "new_survivor" || first[0].SurvivorAgeRuns != 1 {
+		t.Fatalf("first run history not populated: %+v", first[0])
+	}
+
+	second := []MutantResult{{
+		MutantID: "m-history",
+		Status:   StatusSurvived,
+		Mutant:   Mutant{Operator: "conditionals-negation"},
+	}}
+	stats = e.applyHistory(second)
+	if stats.LongStandingSurvivors != 1 {
+		t.Fatalf("long-standing survivors = %d, want 1", stats.LongStandingSurvivors)
+	}
+	if second[0].PreviousStatus != StatusSurvived || second[0].HistoryStatus != "long_standing_survivor" || second[0].SurvivorAgeRuns != 2 {
+		t.Fatalf("second run history not populated: %+v", second[0])
 	}
 }
 
