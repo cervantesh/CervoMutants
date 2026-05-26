@@ -242,11 +242,17 @@ Promotion policy:
 
 | Tier | Requirements |
 | --- | --- |
-| `conservative-fast` | High signal, low runtime, low equivalent risk, low compile error rate. |
-| `conservative` | Good signal and acceptable noise for regular CI. |
-| `default` | Valuable but broader; may require baseline adoption. |
-| `aggressive` | Useful for deep campaigns, too noisy or expensive for default CI. |
+| `conservative-fast` | High signal, low runtime, low equivalent risk, low compile error rate. Current operators: `arithmetic-basic`, `conditionals-negation`, `conditionals-boundary`. |
+| `conservative` | Good signal and acceptable noise for regular CI. Current operators: `conservative-fast` plus `logical` and `boolean-literals`. |
+| `default` | Valuable but broader; may require baseline adoption. Current operators: `conservative` plus `nil-checks` and controlled `error-returns`. |
+| `aggressive` | Useful for deep campaigns, too noisy or expensive for default CI. Current operators: `default` plus `literals`, `returns`, and `loop-control`. |
 | `experimental` | Insufficient evidence; must be opt-in. |
+
+The Cobra study demoted `nil-checks` out of `conservative` because it produced
+a low kill rate and many survivors in the sample package. This does not mean
+`nil-checks` is bad. It means the operator needs stronger coverage semantics,
+equivalence-risk tracking, and baseline governance before it belongs in a fast
+CI profile.
 
 ### 8. Validity Controls
 

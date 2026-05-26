@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	ProfileConservative = "conservative"
-	ProfileDefault      = "default"
-	ProfileAggressive   = "aggressive"
+	ProfileConservativeFast = "conservative-fast"
+	ProfileConservative     = "conservative"
+	ProfileDefault          = "default"
+	ProfileAggressive       = "aggressive"
 )
 
 type Definition struct {
@@ -48,11 +49,12 @@ type Mutant struct {
 
 func Definitions() []Definition {
 	return []Definition{
-		{Name: "conditionals", Profile: ProfileConservative, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a == b -> a != b"},
+		{Name: "conditionals-negation", Profile: ProfileConservativeFast, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a == b -> a != b"},
+		{Name: "conditionals-boundary", Profile: ProfileConservativeFast, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a < b -> a <= b"},
+		{Name: "arithmetic-basic", Profile: ProfileConservativeFast, Risk: "medium", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a + b -> a - b"},
 		{Name: "logical", Profile: ProfileConservative, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a && b -> a || b"},
 		{Name: "boolean-literals", Profile: ProfileConservative, Risk: "low", EquivalentMutantRisk: "low", ASTNodes: []string{"ast.Ident"}, Example: "true -> false"},
-		{Name: "nil-checks", Profile: ProfileConservative, Risk: "low", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "err == nil -> err != nil"},
-		{Name: "arithmetic-basic", Profile: ProfileConservative, Risk: "medium", EquivalentMutantRisk: "medium", ASTNodes: []string{"ast.BinaryExpr"}, Example: "a + b -> a - b"},
+		{Name: "nil-checks", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "high", ASTNodes: []string{"ast.BinaryExpr"}, Example: "err == nil -> err != nil"},
 		{Name: "error-returns", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "high", ASTNodes: []string{"ast.IfStmt"}, Example: "err == nil -> err != nil"},
 		{Name: "literals", Profile: ProfileAggressive, Risk: "high", EquivalentMutantRisk: "high", ASTNodes: []string{"ast.BasicLit"}, Example: "1 -> 0"},
 		{Name: "returns", Profile: ProfileAggressive, Risk: "high", EquivalentMutantRisk: "high", ASTNodes: []string{"ast.ReturnStmt"}, Example: "return true -> return false"},
@@ -99,7 +101,7 @@ func ValidateInlineIgnores(filename string, src []byte, requireReason bool) ([]i
 
 func Generate(pkg, filename string, src []byte, profile string) ([]Mutant, error) {
 	if profile == "" {
-		profile = ProfileConservative
+		profile = ProfileConservativeFast
 	}
 	ignores, err := ValidateInlineIgnores(filename, src, true)
 	if err != nil {
@@ -169,41 +171,58 @@ func collectNode(mutants *[]Mutant, fset *token.FileSet, pkg, filename string, s
 }
 
 func addBinaryMutants(mutants *[]Mutant, fset *token.FileSet, pkg, filename string, src []byte, fn string, expr *ast.BinaryExpr, profile string, ignores []inlineIgnore) {
-	replacement := ""
-	operator := ""
+	type candidate struct {
+		operator    string
+		replacement string
+	}
+	var candidates []candidate
 	switch expr.Op {
 	case token.EQL:
-		operator, replacement = "conditionals", "!="
+		candidates = append(candidates, candidate{operator: "conditionals-negation", replacement: "!="})
 	case token.NEQ:
-		operator, replacement = "conditionals", "=="
+		candidates = append(candidates, candidate{operator: "conditionals-negation", replacement: "=="})
 	case token.LSS:
-		operator, replacement = "conditionals", "<="
+		candidates = append(candidates,
+			candidate{operator: "conditionals-boundary", replacement: "<="},
+			candidate{operator: "conditionals-negation", replacement: ">="},
+		)
 	case token.LEQ:
-		operator, replacement = "conditionals", "<"
+		candidates = append(candidates,
+			candidate{operator: "conditionals-boundary", replacement: "<"},
+			candidate{operator: "conditionals-negation", replacement: ">"},
+		)
 	case token.GTR:
-		operator, replacement = "conditionals", ">="
+		candidates = append(candidates,
+			candidate{operator: "conditionals-boundary", replacement: ">="},
+			candidate{operator: "conditionals-negation", replacement: "<="},
+		)
 	case token.GEQ:
-		operator, replacement = "conditionals", ">"
+		candidates = append(candidates,
+			candidate{operator: "conditionals-boundary", replacement: ">"},
+			candidate{operator: "conditionals-negation", replacement: "<"},
+		)
 	case token.LAND:
-		operator, replacement = "logical", "||"
+		candidates = append(candidates, candidate{operator: "logical", replacement: "||"})
 	case token.LOR:
-		operator, replacement = "logical", "&&"
+		candidates = append(candidates, candidate{operator: "logical", replacement: "&&"})
 	case token.ADD:
-		operator, replacement = "arithmetic-basic", "-"
+		candidates = append(candidates, candidate{operator: "arithmetic-basic", replacement: "-"})
 	case token.SUB:
-		operator, replacement = "arithmetic-basic", "+"
+		candidates = append(candidates, candidate{operator: "arithmetic-basic", replacement: "+"})
 	case token.MUL:
-		operator, replacement = "arithmetic-basic", "/"
+		candidates = append(candidates, candidate{operator: "arithmetic-basic", replacement: "/"})
 	case token.QUO:
-		operator, replacement = "arithmetic-basic", "*"
+		candidates = append(candidates, candidate{operator: "arithmetic-basic", replacement: "*"})
 	}
-	if operator == "" {
+	if len(candidates) == 0 {
 		return
 	}
 	if isNilCheck(expr) {
-		operator = "nil-checks"
+		candidates = []candidate{{operator: "nil-checks", replacement: candidates[0].replacement}}
 	}
-	addMutation(mutants, fset, pkg, filename, src, fn, expr, operator, expr.Op.String(), replacement, profile, ignores)
+	for _, mutation := range candidates {
+		addMutation(mutants, fset, pkg, filename, src, fn, expr, mutation.operator, expr.Op.String(), mutation.replacement, profile, ignores)
+	}
 }
 
 func isNilCheck(expr *ast.BinaryExpr) bool {
@@ -261,9 +280,11 @@ func addMutation(mutants *[]Mutant, fset *token.FileSet, pkg, filename string, s
 
 func operatorEnabled(operator, profile string) bool {
 	switch operator {
-	case "conditionals", "logical", "boolean-literals", "nil-checks", "arithmetic-basic":
+	case "conditionals-negation", "conditionals-boundary", "arithmetic-basic":
 		return true
-	case "error-returns":
+	case "logical", "boolean-literals":
+		return profile == ProfileConservative || profile == ProfileDefault || profile == ProfileAggressive
+	case "nil-checks", "error-returns":
 		return profile == ProfileDefault || profile == ProfileAggressive
 	case "literals", "returns", "loop-control":
 		return profile == ProfileAggressive
@@ -274,9 +295,19 @@ func operatorEnabled(operator, profile string) bool {
 
 func ignored(line int, operator string, ignores []inlineIgnore) bool {
 	for _, ignore := range ignores {
-		if ignore.line == line && (ignore.operator == "*" || ignore.operator == operator) {
+		if ignore.line == line && operatorMatchesIgnore(operator, ignore.operator) {
 			return true
 		}
+	}
+	return false
+}
+
+func operatorMatchesIgnore(operator, ignored string) bool {
+	if ignored == "*" || ignored == operator {
+		return true
+	}
+	if ignored == "conditionals" && strings.HasPrefix(operator, "conditionals-") {
+		return true
 	}
 	return false
 }
@@ -300,7 +331,7 @@ func fingerprint(parts ...string) string {
 
 func hint(operator string) string {
 	switch operator {
-	case "conditionals", "nil-checks":
+	case "conditionals-negation", "conditionals-boundary", "nil-checks":
 		return "Add assertions for the opposite branch or boundary condition."
 	case "logical":
 		return "Add a test where only one side of the boolean expression changes the outcome."

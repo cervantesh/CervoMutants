@@ -278,8 +278,8 @@ func TestCacheKeyChangesWhenGoModOrTestsChange(t *testing.T) {
 
 func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
 	result := summarize([]MutantResult{
-		{Status: StatusKilled, Mutant: Mutant{Operator: "conditionals"}},
-		{Status: StatusSurvived, Mutant: Mutant{Operator: "conditionals"}},
+		{Status: StatusKilled, Mutant: Mutant{Operator: "conditionals-negation"}},
+		{Status: StatusSurvived, Mutant: Mutant{Operator: "conditionals-negation"}},
 		{Status: StatusNotCovered, Mutant: Mutant{Operator: "logical"}},
 		{Status: StatusSkipped, Mutant: Mutant{Operator: "boolean"}},
 	})
@@ -296,8 +296,8 @@ func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
 	if result.MutationCoverage != 66.66666666666666 {
 		t.Fatalf("mutation coverage = %.14f, want 66.66666666666666", result.MutationCoverage)
 	}
-	if result.MutatorStats["conditionals"].Killed != 1 || result.MutatorStats["conditionals"].Survived != 1 {
-		t.Fatalf("conditionals stats not populated: %+v", result.MutatorStats["conditionals"])
+	if result.MutatorStats["conditionals-negation"].Killed != 1 || result.MutatorStats["conditionals-negation"].Survived != 1 {
+		t.Fatalf("conditionals stats not populated: %+v", result.MutatorStats["conditionals-negation"])
 	}
 	if result.MutatorStats["logical"].NotCovered != 1 {
 		t.Fatalf("logical not-covered stats not populated: %+v", result.MutatorStats["logical"])
@@ -325,7 +325,7 @@ func TestCoverageSelectionCanClassifyUncoveredMutantWithoutRunningAllTests(t *te
 		Package:     ".",
 		File:        filepath.Join(dir, "calc.go"),
 		Line:        3,
-		Operator:    "conditionals",
+		Operator:    "conditionals-boundary",
 		Original:    ">=",
 		Mutated:     ">",
 		StartOffset: 0,

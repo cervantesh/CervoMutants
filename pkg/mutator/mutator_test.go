@@ -5,6 +5,34 @@ import (
 	"testing"
 )
 
+func TestConservativeFastMutatorsStayHighSignal(t *testing.T) {
+	src := `package sample
+
+func Check(n int, ready bool, p *int) bool {
+	if n < 1 && ready && p == nil {
+		return n + 1 > 0
+	}
+	return false
+}
+`
+
+	mutants, err := Generate("sample", "sample.go", []byte(src), ProfileConservativeFast)
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	operators := operatorSet(mutants)
+	for _, want := range []string{"conditionals-negation", "conditionals-boundary", "arithmetic-basic"} {
+		if !operators[want] {
+			t.Fatalf("conservative-fast missing %s: %+v", want, mutants)
+		}
+	}
+	for _, noisy := range []string{"logical", "boolean-literals", "nil-checks"} {
+		if operators[noisy] {
+			t.Fatalf("conservative-fast generated noisy operator %s: %+v", noisy, mutants)
+		}
+	}
+}
+
 func TestConservativeMutatorsGenerateStableActionableMutants(t *testing.T) {
 	src := `package sample
 
@@ -40,20 +68,37 @@ func Check(n int, ready bool, p *int) bool {
 
 	foundConditional := false
 	foundLogical := false
-	foundNil := false
 	foundBoolean := false
 	for _, mutant := range mutants {
-		foundConditional = foundConditional || mutant.Operator == "conditionals"
+		foundConditional = foundConditional || mutant.Operator == "conditionals-negation"
 		foundLogical = foundLogical || mutant.Operator == "logical"
-		foundNil = foundNil || mutant.Operator == "nil-checks"
 		foundBoolean = foundBoolean || mutant.Operator == "boolean-literals"
 		if strings.Contains(mutant.Diff, "--- sample.go") && strings.Contains(mutant.Diff, "+++ sample.go") {
 			continue
 		}
 		t.Fatalf("mutant diff is not unified enough: %q", mutant.Diff)
 	}
-	if !foundConditional || !foundLogical || !foundNil || !foundBoolean {
-		t.Fatalf("missing expected operators: conditionals=%v logical=%v nil=%v boolean=%v", foundConditional, foundLogical, foundNil, foundBoolean)
+	if !foundConditional || !foundLogical || !foundBoolean {
+		t.Fatalf("missing expected operators: conditionals=%v logical=%v boolean=%v", foundConditional, foundLogical, foundBoolean)
+	}
+	if operatorSet(mutants)["nil-checks"] {
+		t.Fatalf("conservative should not generate nil-checks after Cobra noise study: %+v", mutants)
+	}
+}
+
+func TestDefaultProfileAddsNilChecks(t *testing.T) {
+	src := `package sample
+
+func Check(p *int) bool {
+	return p == nil
+}
+`
+	mutants, err := Generate("sample", "sample.go", []byte(src), ProfileDefault)
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	if !operatorSet(mutants)["nil-checks"] {
+		t.Fatalf("default profile missing nil-checks: %+v", mutants)
 	}
 }
 
@@ -107,7 +152,7 @@ func Check(n int) bool {
 		t.Fatalf("Generate returned error: %v", err)
 	}
 	for _, mutant := range mutants {
-		if mutant.Operator == "conditionals" {
+		if strings.HasPrefix(mutant.Operator, "conditionals-") {
 			t.Fatalf("conditionals mutant was not ignored: %+v", mutant)
 		}
 	}
@@ -116,4 +161,12 @@ func Check(n int) bool {
 	if _, err := ValidateInlineIgnores("sample.go", bad, true); err == nil {
 		t.Fatal("ValidateInlineIgnores accepted ignore without reason")
 	}
+}
+
+func operatorSet(mutants []Mutant) map[string]bool {
+	operators := map[string]bool{}
+	for _, mutant := range mutants {
+		operators[mutant.Operator] = true
+	}
+	return operators
 }

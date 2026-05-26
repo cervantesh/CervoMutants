@@ -98,3 +98,11 @@ func TestValidateAllowsOverlayIsolation(t *testing.T) {
 		t.Fatal("Validate accepted invalid isolation")
 	}
 }
+
+func TestValidateAllowsConservativeFastProfile(t *testing.T) {
+	cfg := Defaults()
+	cfg.Mutators.Profile = "conservative-fast"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected conservative-fast profile: %v", err)
+	}
+}

@@ -188,8 +188,8 @@ func (cfg Config) Validate() error {
 	if !oneOf(cfg.Selection.Mode, "all", "package", "coverage") {
 		return errors.New("selection.mode must be all, package, or coverage")
 	}
-	if !oneOf(cfg.Mutators.Profile, "conservative", "default", "aggressive") {
-		return errors.New("mutators.profile must be conservative, default, or aggressive")
+	if !oneOf(cfg.Mutators.Profile, "conservative-fast", "conservative", "default", "aggressive") {
+		return errors.New("mutators.profile must be conservative-fast, conservative, default, or aggressive")
 	}
 	if !oneOf(cfg.Execution.Isolation, "temp-workdir", "overlay") {
 		return errors.New("execution.isolation must be temp-workdir or overlay")

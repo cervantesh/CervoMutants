@@ -427,9 +427,21 @@ represented in code:
   package-local `nearby_tests` in JSON reports.
 - Mutator breadth: aggressive profile includes literal and return mutations,
   keeping noisy operators out of conservative mode.
+- Operator governance: `conditionals` was split into `conditionals-negation`
+  and `conditionals-boundary`; `conservative-fast` was added for PR/CI runs;
+  `nil-checks` moved to `default` because the Cobra run showed a low kill rate
+  and higher survivor burden for that operator family.
 - Isolation strategy: `execution.isolation: overlay` uses Go's `-overlay` flag
   for mutation runs that should avoid full module copies while preserving source
   tree cleanliness.
+
+The same Cobra `./doc` dry run now shows the operator-tiering effect:
+
+| CervoMutant profile | Total mutants | Operator breakdown |
+| --- | ---: | --- |
+| `conservative-fast` | 69 | `arithmetic-basic=32`, `conditionals-boundary=12`, `conditionals-negation=25` |
+| `conservative` | 88 | `conservative-fast` plus `boolean-literals=4`, `logical=15` |
+| `default` | 111 | `conservative` plus `nil-checks=23` |
 
 ## Parallel Overlay Performance Follow-Up
 

@@ -19,19 +19,19 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			Quarantined: 0,
 		},
 		Mutants: []engine.MutantResult{{
-			MutantID:     "pkg/foo.go:10:conditionals:eq-to-ne",
+			MutantID:     "pkg/foo.go:10:conditionals-negation:eq-to-ne",
 			Status:       engine.StatusSurvived,
 			Duration:     time.Second,
 			TestCommand:  []string{"go", "test", "./pkg"},
 			StatusReason: "tests passed with mutant applied",
 			Output:       "ok",
 			Mutant: engine.Mutant{
-				ID:          "pkg/foo.go:10:conditionals:eq-to-ne",
+				ID:          "pkg/foo.go:10:conditionals-negation:eq-to-ne",
 				Package:     "pkg",
 				File:        "pkg/foo.go",
 				Line:        10,
 				Function:    "Check",
-				Operator:    "conditionals",
+				Operator:    "conditionals-negation",
 				Original:    "==",
 				Mutated:     "!=",
 				Diff:        "--- pkg/foo.go\n+++ pkg/foo.go\n",
@@ -72,8 +72,8 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 			TestEfficacy:     50,
 			MutationCoverage: 66.66666666666666,
 			MutatorStats: map[string]engine.MutatorStat{
-				"conditionals": {Total: 2, Killed: 1, Survived: 1},
-				"logical":      {Total: 1, NotCovered: 1},
+				"conditionals-negation": {Total: 2, Killed: 1, Survived: 1},
+				"logical":               {Total: 1, NotCovered: 1},
 			},
 		},
 	}
@@ -83,7 +83,7 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"Not covered: 1",
 		"Test efficacy: 50.00%",
 		"Mutation coverage: 66.67%",
-		"conditionals: total=2 killed=1 survived=1 not_covered=0",
+		"conditionals-negation: total=2 killed=1 survived=1 not_covered=0",
 		"logical: total=1 killed=0 survived=0 not_covered=1",
 	} {
 		if !strings.Contains(text, want) {
