@@ -111,6 +111,10 @@ func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarant
 			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant})
 			continue
 		}
+		if result, ok := e.suppressedResult(mutant); ok {
+			results = append(results, result)
+			continue
+		}
 		if e.budgetExhausted(start) {
 			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant})
 			continue
@@ -169,6 +173,10 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
 			continue
 		}
+		if result, ok := e.suppressedResult(mutant); ok {
+			results[i] = result
+			continue
+		}
 		if e.budgetExhausted(start) {
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant}
 			continue
@@ -195,6 +203,49 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 
 func (e *Engine) budgetExhausted(start time.Time) bool {
 	return e.cfg.Execution.Budget > 0 && time.Since(start) >= e.cfg.Execution.Budget
+}
+
+func (e *Engine) suppressedResult(mutant Mutant) (MutantResult, bool) {
+	rule, ok := strongestSuppression(mutant.SuppressionAudit)
+	if !ok || rule.Action != "suppress" {
+		return MutantResult{}, false
+	}
+	return MutantResult{
+		MutantID:           mutant.ID,
+		Status:             StatusIgnored,
+		StatusReason:       fmt.Sprintf("suppressed by audited rule %q: %s", rule.Name, rule.Reason),
+		Mutant:             mutant,
+		SuggestedTestScope: suggestedTestScope(mutant),
+		NearestTests:       mutant.NearbyTests,
+	}, true
+}
+
+func strongestSuppression(audits []SuppressionAudit) (SuppressionAudit, bool) {
+	var best SuppressionAudit
+	bestPriority := -1
+	for _, audit := range audits {
+		priority := suppressionPriority(audit.Action)
+		if priority > bestPriority {
+			best = audit
+			bestPriority = priority
+		}
+	}
+	return best, bestPriority >= 0
+}
+
+func suppressionPriority(action string) int {
+	switch action {
+	case "report-only":
+		return 0
+	case "lower-priority":
+		return 1
+	case "quarantine-required":
+		return 2
+	case "suppress":
+		return 3
+	default:
+		return -1
+	}
 }
 
 func (e *Engine) workerCount(mutants int) int {
@@ -1031,12 +1082,76 @@ func (e *Engine) coverageMentions(mutant Mutant) bool {
 	rel, _ := filepath.Rel(mutant.Module, mutant.File)
 	rel = filepath.ToSlash(rel)
 	base := filepath.Base(mutant.File)
+	parseable := false
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.Contains(line, rel+":") || strings.Contains(line, base+":") {
+		file, startLine, endLine, count, ok := parseCoverageProfileLine(line)
+		if !ok {
+			continue
+		}
+		parseable = true
+		if count <= 0 || !coverageFileMatches(file, rel, base) {
+			continue
+		}
+		if mutant.Line >= startLine && mutant.Line <= endLine {
 			return true
 		}
 	}
+	if !parseable {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(line, rel+":") || strings.Contains(line, base+":") {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+func parseCoverageProfileLine(line string) (string, int, int, int, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "mode:") {
+		return "", 0, 0, 0, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) != 3 {
+		return "", 0, 0, 0, false
+	}
+	colon := strings.LastIndex(fields[0], ":")
+	if colon < 0 {
+		return "", 0, 0, 0, false
+	}
+	file := filepath.ToSlash(fields[0][:colon])
+	span := fields[0][colon+1:]
+	comma := strings.Index(span, ",")
+	if comma < 0 {
+		return "", 0, 0, 0, false
+	}
+	startLine, ok := parseCoverageLineNumber(span[:comma])
+	if !ok {
+		return "", 0, 0, 0, false
+	}
+	endLine, ok := parseCoverageLineNumber(span[comma+1:])
+	if !ok {
+		return "", 0, 0, 0, false
+	}
+	count, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return "", 0, 0, 0, false
+	}
+	return file, startLine, endLine, count, true
+}
+
+func parseCoverageLineNumber(value string) (int, bool) {
+	dot := strings.Index(value, ".")
+	if dot < 0 {
+		return 0, false
+	}
+	line, err := strconv.Atoi(value[:dot])
+	return line, err == nil
+}
+
+func coverageFileMatches(profileFile, rel, base string) bool {
+	profileFile = filepath.ToSlash(profileFile)
+	return profileFile == rel || strings.HasSuffix(profileFile, "/"+rel) || filepath.Base(profileFile) == base
 }
 
 func withCoverProfile(command []string, profile string) []string {

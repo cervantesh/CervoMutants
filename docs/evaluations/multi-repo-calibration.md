@@ -120,3 +120,21 @@ Next calibration step:
 - Compare survivor rankings against manual review to tune the rank formula.
 - Add a deliberate uncovered fixture to verify `not_covered` reporting in
   package mode with `selection.prefilter: true`.
+
+## 2026-05-26 Issue #11 Expansion
+
+The 100-mutant `ci-balanced` expansion requested by issue #11 is recorded in
+[2026-05-26-issue11-signal-followups.md](2026-05-26-issue11-signal-followups.md).
+
+Summary:
+
+| Repository | Generated | Killed | Survived | Not covered | Score | Mutation coverage | Wall time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cobra `./doc` | 100 | 46 | 39 | 15 | 54.12% | 85.00% | 31.75s |
+| CervoCore `./...` | 100 | 12 | 28 | 60 | 30.00% | 40.00% | 50.46s |
+| CervoRetry `./...` | 52 | 18 | 10 | 24 | 64.29% | 53.85% | 16.09s |
+| pflag `./...` | 100 | 60 | 14 | 26 | 81.08% | 74.00% | 66.30s |
+
+This run confirms that `ci-balanced` is operationally stable across the first
+four calibration targets. The main remaining calibration need is qualitative:
+review survivor rankings and suppression candidates against human judgement.

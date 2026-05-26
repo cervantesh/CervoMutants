@@ -16,4 +16,6 @@ jobs:
         with:
           go-version: "1.25.6"
       - run: go test ./...
-
+      - run: go run ./cmd/cervomut list-mutators
+      - run: go run ./cmd/cervomut fast ./pkg/config --max-mutants 3 --workers 2 --out .cervomut/ci-smoke
+      - run: test -f .cervomut/ci-smoke/mutation-report.json
