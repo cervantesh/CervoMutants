@@ -38,13 +38,15 @@ type Mutant struct {
 	NearbyTests      []string           `json:"nearby_tests,omitempty"`
 	EquivalentRisk   string             `json:"equivalent_risk"`
 	Recommendation   string             `json:"recommendation"`
+	CompileErrorRisk string             `json:"compile_error_risk"`
 	SuppressionAudit []SuppressionAudit `json:"suppression_audit,omitempty"`
 }
 
 type SuppressionAudit struct {
-	Name   string `json:"name"`
-	Action string `json:"action"`
-	Reason string `json:"reason"`
+	Name          string `json:"name"`
+	Action        string `json:"action"`
+	Reason        string `json:"reason"`
+	EvidenceLevel string `json:"evidence_level"`
 }
 
 type MutantJob struct {
@@ -56,37 +58,49 @@ type MutantJob struct {
 }
 
 type MutantResult struct {
-	MutantID     string        `json:"mutant_id"`
-	Status       Status        `json:"status"`
-	Duration     time.Duration `json:"duration"`
-	TestCommand  []string      `json:"selected_tests"`
-	StatusReason string        `json:"status_reason"`
-	Output       string        `json:"output"`
-	Mutant       Mutant        `json:"mutant"`
-	SurvivorRank int           `json:"survivor_rank,omitempty"`
-	RankReason   string        `json:"rank_reason,omitempty"`
+	MutantID           string        `json:"mutant_id"`
+	Status             Status        `json:"status"`
+	Duration           time.Duration `json:"duration"`
+	TestCommand        []string      `json:"selected_tests"`
+	StatusReason       string        `json:"status_reason"`
+	SelectionReason    string        `json:"selection_reason,omitempty"`
+	CoverageSource     string        `json:"coverage_source,omitempty"`
+	Output             string        `json:"output"`
+	Mutant             Mutant        `json:"mutant"`
+	SurvivorRank       int           `json:"survivor_rank,omitempty"`
+	RankScore          float64       `json:"rank_score,omitempty"`
+	RankReason         string        `json:"rank_reason,omitempty"`
+	Actionability      string        `json:"actionability,omitempty"`
+	SuggestedTestScope string        `json:"suggested_test_scope,omitempty"`
+	NearestTests       []string      `json:"nearest_tests,omitempty"`
 }
 
 type Summary struct {
-	Total             int                    `json:"total"`
-	Killed            int                    `json:"killed"`
-	Survived          int                    `json:"survived"`
-	NotCovered        int                    `json:"not_covered"`
-	TimedOut          int                    `json:"timed_out"`
-	CompileError      int                    `json:"compile_error"`
-	Skipped           int                    `json:"skipped"`
-	Ignored           int                    `json:"ignored"`
-	Quarantined       int                    `json:"quarantined"`
-	Cached            int                    `json:"cached"`
-	ExpiredQuarantine int                    `json:"expired_quarantine"`
-	GeneratedMutants  int                    `json:"generated_mutants"`
-	CoveredMutants    int                    `json:"covered_mutants"`
-	ExecutedMutants   int                    `json:"executed_mutants"`
-	Score             float64                `json:"score"`
-	EffectiveScore    float64                `json:"effective_score"`
-	TestEfficacy      float64                `json:"test_efficacy"`
-	MutationCoverage  float64                `json:"mutation_coverage"`
-	MutatorStats      map[string]MutatorStat `json:"mutator_statistics,omitempty"`
+	Total                         int                    `json:"total"`
+	Killed                        int                    `json:"killed"`
+	Survived                      int                    `json:"survived"`
+	NotCovered                    int                    `json:"not_covered"`
+	TimedOut                      int                    `json:"timed_out"`
+	CompileError                  int                    `json:"compile_error"`
+	Skipped                       int                    `json:"skipped"`
+	Ignored                       int                    `json:"ignored"`
+	Quarantined                   int                    `json:"quarantined"`
+	Cached                        int                    `json:"cached"`
+	ExpiredQuarantine             int                    `json:"expired_quarantine"`
+	GeneratedMutants              int                    `json:"generated_mutants"`
+	CoveredMutants                int                    `json:"covered_mutants"`
+	ExecutedMutants               int                    `json:"executed_mutants"`
+	Score                         float64                `json:"score"`
+	EffectiveScore                float64                `json:"effective_score"`
+	TestEfficacy                  float64                `json:"test_efficacy"`
+	MutationCoverage              float64                `json:"mutation_coverage"`
+	HighRiskSurvivors             int                    `json:"high_risk_survivors"`
+	SuppressionReportOnly         int                    `json:"suppression_report_only"`
+	SuppressionLowerPriority      int                    `json:"suppression_lower_priority"`
+	SuppressionSuppressed         int                    `json:"suppression_suppressed"`
+	SuppressionQuarantineRequired int                    `json:"suppression_quarantine_required"`
+	EquivalentRiskStats           map[string]int         `json:"equivalent_risk_statistics,omitempty"`
+	MutatorStats                  map[string]MutatorStat `json:"mutator_statistics,omitempty"`
 }
 
 type MutatorStat struct {
@@ -179,9 +193,10 @@ type Runner interface {
 }
 
 type TestPlan struct {
-	Command      []string `json:"command"`
-	Reason       string   `json:"reason"`
-	CoversMutant bool     `json:"covers_mutant"`
+	Command        []string `json:"command"`
+	Reason         string   `json:"reason"`
+	CoversMutant   bool     `json:"covers_mutant"`
+	CoverageSource string   `json:"coverage_source"`
 }
 
 type TestSelector interface {

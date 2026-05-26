@@ -155,7 +155,9 @@ func Defaults() Config {
 		Selection: Selection{Mode: "package", UseTimings: true, CoverageProfile: ".cervomut/coverage.out", TimingsPath: ".cervomut/timings.json"},
 		Suppression: Suppression{Enabled: true, Rules: []SuppressionRule{
 			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: "report-only", Reason: "High equivalent-mutant risk must be visible before suppression is allowed."},
-			{Name: "audit-loop-return-literal-risk", Operator: "loop-control", Action: "report-only", Reason: "Loop-control mutants are high-signal but often require manual review."},
+			{Name: "lower-priority-loop-control", Operator: "loop-control", Action: "lower-priority", Reason: "Loop-control mutants are high-signal but often require manual review."},
+			{Name: "lower-priority-broad-literals", Operator: "literals", Action: "lower-priority", Reason: "Broad literal mutants often need equivalence review before CI gating."},
+			{Name: "lower-priority-broad-returns", Operator: "returns", Action: "lower-priority", Reason: "Broad return mutants can duplicate narrower return-bool-literal signal."},
 		}},
 		Cache:    Cache{Enabled: true, Path: ".cervomut/cache", Mode: "incremental"},
 		Baseline: Baseline{Enabled: true, Path: ".cervomut/baseline.json", FailOnRegression: true, FailOnNewSurvivors: true},
@@ -233,6 +235,14 @@ func (cfg Config) Validate() error {
 	if !oneOf(cfg.Limits.Sample, "none", "random", "deterministic") {
 		return errors.New("limits.sample must be none, random, or deterministic")
 	}
+	for _, rule := range cfg.Suppression.Rules {
+		if rule.Name == "" || rule.Action == "" || rule.Reason == "" {
+			return errors.New("suppression rules require name, action, and reason")
+		}
+		if !oneOf(rule.Action, "report-only", "lower-priority", "suppress", "quarantine-required") {
+			return errors.New("suppression rule action must be report-only, lower-priority, suppress, or quarantine-required")
+		}
+	}
 	return nil
 }
 
@@ -244,24 +254,28 @@ func ApplyPolicy(cfg Config) Config {
 		cfg.Selection.Prefilter = true
 		cfg.Execution.Isolation = "overlay"
 		cfg.Tests.Timeout = 20 * time.Second
+		cfg.Reports.Formats = []string{"summary", "json", "junit"}
 	case "ci-balanced":
 		cfg.Mutators.Profile = "conservative"
 		cfg.Selection.Mode = "coverage"
 		cfg.Selection.Prefilter = true
 		cfg.Execution.Isolation = "overlay"
 		cfg.Tests.Timeout = 45 * time.Second
+		cfg.Reports.Formats = []string{"summary", "json", "junit"}
 	case "nightly":
 		cfg.Mutators.Profile = "default"
 		cfg.Selection.Mode = "coverage"
 		cfg.Selection.Prefilter = true
 		cfg.Execution.Isolation = "overlay"
 		cfg.Tests.Timeout = 90 * time.Second
+		cfg.Reports.Formats = []string{"summary", "json", "junit", "html"}
 	case "campaign":
 		cfg.Mutators.Profile = "aggressive"
 		cfg.Selection.Mode = "package"
 		cfg.Selection.Prefilter = false
 		cfg.Execution.Isolation = "temp-workdir"
 		cfg.Tests.Timeout = 2 * time.Minute
+		cfg.Reports.Formats = []string{"summary", "json", "junit", "html"}
 	}
 	return cfg
 }

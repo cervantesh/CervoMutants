@@ -15,6 +15,7 @@ cervomut init
 cervomut doctor
 cervomut run ./... --budget 10m --sample deterministic
 cervomut run ./... --policy ci-fast --budget 10m
+cervomut fast ./...
 ```
 
 ## Commands
@@ -25,6 +26,7 @@ cervomut run ./... --policy ci-fast --budget 10m
 - `cervomut run ./...`
 - `cervomut run ./... --dry-run`
 - `cervomut run ./... --policy ci-fast --coverage-prefilter`
+- `cervomut fast ./...`
 - `cervomut run ./... --workers 16 --isolation overlay`
 - `cervomut eval ./... --out .cervomut/evaluation`
 - `cervomut compare --cervomut .cervomut/reports/mutation-report.json --gremlins gremlins.json --gomu gomu.txt --go-mutesting go-mutesting.txt`
@@ -61,9 +63,14 @@ The default policy is baseline-first adoption:
   `conservative`, `default`, and `aggressive`.
 - policy presets are available: `ci-fast`, `ci-balanced`, `nightly`, and
   `campaign`.
+- `ci-fast` and `ci-balanced` emit summary, JSON, and JUnit by default; HTML is
+  reserved for `nightly`, `campaign`, or explicit report configuration.
 - JSON reports include mutation descriptions, nearby package tests, selected
-  test commands, status reasons, diffs, hints, survivor ranks, suppression
-  audit hits, and per-mutator statistics.
+  test commands, selection reasons, coverage source, status reasons, diffs,
+  hints, survivor ranks, rank scores, actionability, suggested test scope,
+  suppression audit hits, and per-mutator statistics.
+- operator definitions include risk, equivalent-risk, compile-error risk,
+  examples, and inclusion reasons.
 - worker mode applies jobs in isolated temp workdirs and returns the same JSON
   result schema as local execution.
 - cache fingerprints include the mutant patch, source file, relevant tests,

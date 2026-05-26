@@ -121,7 +121,15 @@ Minimum JSON fields for actionability:
   "mutant_id": "...",
   "status": "survived",
   "status_reason": "...",
+  "selection_reason": "coverage profile matched mutant file",
+  "coverage_source": "coverage-mode",
   "selected_tests": ["go", "test", "./pkg"],
+  "survivor_rank": 1,
+  "rank_score": 148,
+  "rank_reason": "score=148.0 risk=medium recommendation=fast-ci coverage_source=coverage-mode nearby_tests=1",
+  "actionability": "high",
+  "suggested_test_scope": "./pkg",
+  "nearest_tests": ["pkg/foo_test.go"],
   "mutant": {
     "file": "...",
     "line": 42,
@@ -130,7 +138,8 @@ Minimum JSON fields for actionability:
     "description": "...",
     "nearby_tests": ["foo_test.go"],
     "unified_diff": "...",
-    "hint": "..."
+    "hint": "...",
+    "compile_error_risk": "low"
   }
 }
 ```
@@ -248,9 +257,9 @@ Promotion policy:
 | --- | --- |
 | `gremlins-compatible` | Benchmark profile for Go-tool comparisons. Current operators: `arithmetic-basic`, `conditionals-negation`, `conditionals-boundary`. |
 | `conservative-fast` | High signal, low runtime, low equivalent risk, low compile error rate. Current operators: `arithmetic-basic`, `conditionals-negation`, `conditionals-boundary`. |
-| `conservative` | Good signal and acceptable noise for regular CI. Current operators: `conservative-fast` plus `logical` and `boolean-literals`. |
-| `default` | Valuable but broader; may require baseline adoption. Current operators: `conservative` plus `nil-checks` and controlled `error-returns`. |
-| `aggressive` | Useful for deep campaigns, too noisy or expensive for default CI. Current operators: `default` plus `literals`, `returns`, and `loop-control`. |
+| `conservative` | Good signal and acceptable noise for regular CI. Current operators: `conservative-fast` plus `logical`, `boolean-literals`, and controlled `string-empty-literals`. |
+| `default` | Valuable but broader; may require baseline adoption. Current operators: `conservative` plus `nil-checks`, controlled `error-returns`, `numeric-literals`, and `return-bool-literals`. |
+| `aggressive` | Useful for deep campaigns, too noisy or expensive for default CI. Current operators: `default` plus broad `literals`, broad `returns`, `loop-control`, and `slice-map-len-boundary`. |
 | `experimental` | Insufficient evidence; must be opt-in. |
 
 The Cobra study demoted `nil-checks` out of `conservative` because it produced
@@ -298,7 +307,7 @@ more operators.
 | Area | Improvement |
 | --- | --- |
 | Coverage | Make coverage prefilter available in fast CI and report `not_covered` even outside strict coverage mode when baseline coverage exists. |
-| Reporting | Add score decomposition blocks to summary, HTML, and JSON: efficacy, mutation coverage, operator profile, equivalent-risk, suppression audits, and ranked survivors. |
+| Reporting | Add score decomposition blocks to summary, HTML, and JSON: efficacy, mutation coverage, operator profile, equivalent-risk, suppression audits, coverage source, selection reason, and ranked survivors. |
 | Scheduling | Use operator recommendation, history, and timings to prioritize mutants inside `--budget`. |
 | Baseline | Track survivor age, first seen commit, last seen commit, and whether the survivor is new in changed code. |
 | Equivalence | Add auditable suppression rules and evidence levels. |
@@ -328,6 +337,8 @@ Candidate policy:
 - `ci-balanced`: `conservative`, coverage mode, coverage prefilter, overlay isolation.
 - `nightly`: `default`, coverage mode, coverage prefilter, longer timeout.
 - `campaign`: `aggressive`, package mode, temp-workdir isolation, longest timeout.
+- `cervomut fast ./...`: CLI shorthand for the Gremlins-like fast path using
+  `ci-fast` plus summary, JSON, and JUnit output.
 - `conservative-fast` for PR CI when no named policy is used.
 - `gremlins-compatible` for apples-to-apples Go-tool benchmarking.
 - `conservative` for local developer runs.

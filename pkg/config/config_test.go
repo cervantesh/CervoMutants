@@ -165,3 +165,17 @@ execution:
 		t.Fatalf("explicit isolation override lost: %+v", cfg.Execution)
 	}
 }
+
+func TestValidateRejectsUnauditableSuppressionRules(t *testing.T) {
+	cfg := Defaults()
+	cfg.Suppression.Rules = []SuppressionRule{{Name: "bad", Action: "hide", Reason: "not auditable"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted unsupported suppression action")
+	}
+
+	cfg = Defaults()
+	cfg.Suppression.Rules = []SuppressionRule{{Name: "missing-reason", Action: "report-only"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted suppression rule without reason")
+	}
+}

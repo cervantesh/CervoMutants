@@ -2,6 +2,8 @@ package report
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,35 +21,43 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			Quarantined: 0,
 		},
 		Mutants: []engine.MutantResult{{
-			MutantID:     "pkg/foo.go:10:conditionals-negation:eq-to-ne",
-			Status:       engine.StatusSurvived,
-			Duration:     time.Second,
-			TestCommand:  []string{"go", "test", "./pkg"},
-			StatusReason: "tests passed with mutant applied",
-			Output:       "ok",
+			MutantID:        "pkg/foo.go:10:conditionals-negation:eq-to-ne",
+			Status:          engine.StatusSurvived,
+			Duration:        time.Second,
+			TestCommand:     []string{"go", "test", "./pkg"},
+			StatusReason:    "tests passed with mutant applied",
+			SelectionReason: "coverage profile matched mutant file",
+			CoverageSource:  "coverage-mode",
+			Output:          "ok",
 			Mutant: engine.Mutant{
-				ID:             "pkg/foo.go:10:conditionals-negation:eq-to-ne",
-				Package:        "pkg",
-				File:           "pkg/foo.go",
-				Line:           10,
-				Function:       "Check",
-				Operator:       "conditionals-negation",
-				Original:       "==",
-				Mutated:        "!=",
-				Diff:           "--- pkg/foo.go\n+++ pkg/foo.go\n",
-				Hint:           "Add an assertion for the opposite branch.",
-				Description:    "Changed == to != in Check.",
-				NearbyTests:    []string{"pkg/foo_test.go"},
-				EquivalentRisk: "medium",
-				Recommendation: "fast-ci",
+				ID:               "pkg/foo.go:10:conditionals-negation:eq-to-ne",
+				Package:          "pkg",
+				File:             "pkg/foo.go",
+				Line:             10,
+				Function:         "Check",
+				Operator:         "conditionals-negation",
+				Original:         "==",
+				Mutated:          "!=",
+				Diff:             "--- pkg/foo.go\n+++ pkg/foo.go\n",
+				Hint:             "Add an assertion for the opposite branch.",
+				Description:      "Changed == to != in Check.",
+				NearbyTests:      []string{"pkg/foo_test.go"},
+				EquivalentRisk:   "medium",
+				Recommendation:   "fast-ci",
+				CompileErrorRisk: "low",
 				SuppressionAudit: []engine.SuppressionAudit{{
-					Name:   "audit-high-equivalent-risk",
-					Action: "report-only",
-					Reason: "visible audit",
+					Name:          "audit-high-equivalent-risk",
+					Action:        "report-only",
+					Reason:        "visible audit",
+					EvidenceLevel: "suspected",
 				}},
 			},
-			SurvivorRank: 1,
-			RankReason:   "risk=medium recommendation=fast-ci nearby_tests=1",
+			SurvivorRank:       1,
+			RankScore:          140,
+			RankReason:         "risk=medium recommendation=fast-ci nearby_tests=1",
+			Actionability:      "high",
+			SuggestedTestScope: "./pkg",
+			NearestTests:       []string{"pkg/foo_test.go"},
 		}},
 	}
 
@@ -63,7 +73,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"baseline", "cache", "quarantine", "unified_diff", "status_reason", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "suppression_audit", "survivor_rank", "rank_reason"} {
+	for _, want := range []string{"baseline", "cache", "quarantine", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -73,13 +83,16 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T) {
 	run := engine.RunResult{
 		Summary: engine.Summary{
-			Total:            3,
-			Killed:           1,
-			Survived:         1,
-			NotCovered:       1,
-			Score:            50,
-			TestEfficacy:     50,
-			MutationCoverage: 66.66666666666666,
+			Total:                 3,
+			Killed:                1,
+			Survived:              1,
+			NotCovered:            1,
+			Score:                 50,
+			TestEfficacy:          50,
+			MutationCoverage:      66.66666666666666,
+			HighRiskSurvivors:     1,
+			SuppressionReportOnly: 2,
+			EquivalentRiskStats:   map[string]int{"high": 1, "medium": 2},
 			MutatorStats: map[string]engine.MutatorStat{
 				"conditionals-negation": {Total: 2, Killed: 1, Survived: 1, Recommendation: "fast-ci"},
 				"logical":               {Total: 1, NotCovered: 1, Recommendation: "conservative"},
@@ -92,6 +105,9 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"Not covered: 1",
 		"Test efficacy: 50.00%",
 		"Mutation coverage: 66.67%",
+		"High-risk survivors: 1",
+		"Suppression audits: report_only=2",
+		"Equivalent-risk statistics:",
 		"conditionals-negation: total=2 killed=1 survived=1 not_covered=0",
 		"recommendation=fast-ci",
 		"logical: total=1 killed=0 survived=0 not_covered=1",
@@ -112,7 +128,24 @@ func TestSurvivorsReportIsRanked(t *testing.T) {
 	}
 
 	text := Survivors(run)
-	if !strings.Contains(text, "#1 first") || strings.Index(text, "#1 first") > strings.Index(text, "#2 later") {
+	if !strings.Contains(text, "#1 0.0 first") || strings.Index(text, "#1 0.0 first") > strings.Index(text, "#2 0.0 later") {
 		t.Fatalf("survivors were not ranked:\n%s", text)
+	}
+}
+
+func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
+	dir := t.TempDir()
+	run := engine.RunResult{SchemaVersion: "1", Summary: engine.Summary{Total: 1}}
+
+	if err := WriteFormats(dir, run, []string{"summary", "json"}); err != nil {
+		t.Fatalf("WriteFormats returned error: %v", err)
+	}
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json"} {
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Fatalf("missing %s: %v", want, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); !os.IsNotExist(err) {
+		t.Fatalf("index.html should not be written for summary/json formats: %v", err)
 	}
 }

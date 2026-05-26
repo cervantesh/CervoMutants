@@ -25,7 +25,7 @@ func JSON(result engine.RunResult) ([]byte, error) {
 
 func Summary(result engine.RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\n",
+	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
 		result.Summary.Score,
 		result.Summary.GeneratedMutants,
 		result.Summary.CoveredMutants,
@@ -38,7 +38,23 @@ func Summary(result engine.RunResult) string {
 		result.Summary.CompileError,
 		result.Summary.TestEfficacy,
 		result.Summary.MutationCoverage,
+		result.Summary.HighRiskSurvivors,
+		result.Summary.SuppressionReportOnly,
+		result.Summary.SuppressionLowerPriority,
+		result.Summary.SuppressionSuppressed,
+		result.Summary.SuppressionQuarantineRequired,
 	)
+	if len(result.Summary.EquivalentRiskStats) > 0 {
+		b.WriteString("Equivalent-risk statistics:\n")
+		keys := make([]string, 0, len(result.Summary.EquivalentRiskStats))
+		for key := range result.Summary.EquivalentRiskStats {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(&b, "- %s: %d\n", key, result.Summary.EquivalentRiskStats[key])
+		}
+	}
 	if len(result.Summary.MutatorStats) > 0 {
 		b.WriteString("Mutator statistics:\n")
 		keys := make([]string, 0, len(result.Summary.MutatorStats))
@@ -83,7 +99,7 @@ func Survivors(result engine.RunResult) string {
 		return survivors[i].SurvivorRank < survivors[j].SurvivorRank
 	})
 	for _, mutant := range survivors {
-		fmt.Fprintf(&b, "#%d %s %s:%d %s %s -> %s (%s)\n", mutant.SurvivorRank, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.RankReason)
+		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.RankReason)
 	}
 	return b.String()
 }
@@ -140,23 +156,37 @@ func JUnit(result engine.RunResult) ([]byte, error) {
 }
 
 func WriteAll(dir string, result engine.RunResult) error {
+	return WriteFormats(dir, result, []string{"summary", "json", "junit", "html"})
+}
+
+func WriteFormats(dir string, result engine.RunResult, formats []string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	jsonData, err := JSON(result)
-	if err != nil {
-		return err
+	if len(formats) == 0 {
+		formats = []string{"summary", "json"}
 	}
-	junitData, err := JUnit(result)
-	if err != nil {
-		return err
-	}
-	files := map[string][]byte{
-		"summary.txt":          []byte(Summary(result)),
-		"mutation-report.json": jsonData,
-		"junit.xml":            junitData,
-		"index.html":           []byte(HTML(result)),
-		"survivors.txt":        []byte(Survivors(result)),
+	files := map[string][]byte{}
+	for _, format := range formats {
+		switch strings.TrimSpace(format) {
+		case "summary":
+			files["summary.txt"] = []byte(Summary(result))
+			files["survivors.txt"] = []byte(Survivors(result))
+		case "json":
+			jsonData, err := JSON(result)
+			if err != nil {
+				return err
+			}
+			files["mutation-report.json"] = jsonData
+		case "junit":
+			junitData, err := JUnit(result)
+			if err != nil {
+				return err
+			}
+			files["junit.xml"] = junitData
+		case "html":
+			files["index.html"] = []byte(HTML(result))
+		}
 	}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {

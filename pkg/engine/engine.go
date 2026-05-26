@@ -287,6 +287,7 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 				NearbyTests:      nearbyTests(file.ModuleDir, file.Path),
 				EquivalentRisk:   generated[i].EquivalentRisk,
 				Recommendation:   generated[i].Recommendation,
+				CompileErrorRisk: generated[i].CompileErrorRisk,
 				SuppressionAudit: e.suppressionAudit(generated[i].Operator, generated[i].EquivalentRisk),
 			})
 		}
@@ -334,7 +335,11 @@ func (e *Engine) suppressionAudit(operator, equivalentRisk string) []Suppression
 		if rule.EquivalentRisk != "" && rule.EquivalentRisk != equivalentRisk {
 			continue
 		}
-		audits = append(audits, SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason})
+		evidenceLevel := "suspected"
+		if rule.Action == "suppress" {
+			evidenceLevel = "rule-suppressed"
+		}
+		audits = append(audits, SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason, EvidenceLevel: evidenceLevel})
 	}
 	return audits
 }
@@ -409,11 +414,15 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 	plan := e.selectTests(mutant)
 	if !plan.CoversMutant {
 		return MutantResult{
-			MutantID:     mutant.ID,
-			Status:       StatusNotCovered,
-			TestCommand:  plan.Command,
-			StatusReason: "coverage profile did not execute mutant file",
-			Mutant:       mutant,
+			MutantID:           mutant.ID,
+			Status:             StatusNotCovered,
+			TestCommand:        plan.Command,
+			StatusReason:       "coverage profile did not execute mutant file",
+			SelectionReason:    plan.Reason,
+			CoverageSource:     plan.CoverageSource,
+			Mutant:             mutant,
+			SuggestedTestScope: suggestedTestScope(mutant),
+			NearestTests:       mutant.NearbyTests,
 		}, nil
 	}
 	key, err := e.cacheKey(mutant, plan)
@@ -434,6 +443,10 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 	}
 	defer cleanup()
 	result, err := e.runTest(ctx, MutantJob{ID: mutant.ID, Mutant: mutant, WorkDir: workdir, TestCommand: command, Timeout: e.cfg.Tests.Timeout.String()})
+	result.SelectionReason = plan.Reason
+	result.CoverageSource = plan.CoverageSource
+	result.SuggestedTestScope = suggestedTestScope(mutant)
+	result.NearestTests = mutant.NearbyTests
 	e.recordTiming(mutant.ID, result.Duration)
 	if err == nil && e.cfg.Cache.Enabled && e.cfg.Cache.Mode == "incremental" {
 		_ = e.putCached(key, result)
@@ -521,20 +534,24 @@ func (e *Engine) selectTests(mutant Mutant) TestPlan {
 		command = []string{"go", "test", "./..."}
 	}
 	if e.cfg.Selection.Prefilter && !e.coverageMentions(mutant) {
-		return TestPlan{Command: command, Reason: "coverage prefilter did not match mutant file", CoversMutant: false}
+		return TestPlan{Command: command, Reason: "coverage prefilter did not match mutant file", CoversMutant: false, CoverageSource: "package-mode-prefilter"}
 	}
 	if e.cfg.Selection.Mode == "package" && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
 		command[2] = mutant.Package
-		return TestPlan{Command: command, Reason: "package selected from mutant file", CoversMutant: true}
+		source := "unknown"
+		if e.cfg.Selection.Prefilter {
+			source = "package-mode-prefilter"
+		}
+		return TestPlan{Command: command, Reason: "package selected from mutant file", CoversMutant: true, CoverageSource: source}
 	}
 	if e.cfg.Selection.Mode == "coverage" {
 		if e.coverageMentions(mutant) && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
 			command[2] = mutant.Package
-			return TestPlan{Command: command, Reason: "coverage profile matched mutant file", CoversMutant: true}
+			return TestPlan{Command: command, Reason: "coverage profile matched mutant file", CoversMutant: true, CoverageSource: "coverage-mode"}
 		}
-		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file", CoversMutant: false}
+		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file", CoversMutant: false, CoverageSource: "coverage-mode"}
 	}
-	return TestPlan{Command: command, Reason: "all tests selected", CoversMutant: true}
+	return TestPlan{Command: command, Reason: "all tests selected", CoversMutant: true, CoverageSource: "unknown"}
 }
 
 func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, error) {
@@ -610,7 +627,7 @@ func moduleForTargets(targets []string) (string, error) {
 }
 
 func summarize(results []MutantResult) Summary {
-	s := Summary{MutatorStats: map[string]MutatorStat{}}
+	s := Summary{MutatorStats: map[string]MutatorStat{}, EquivalentRiskStats: map[string]int{}}
 	s.Total = len(results)
 	s.GeneratedMutants = len(results)
 	for _, result := range results {
@@ -620,6 +637,11 @@ func summarize(results []MutantResult) Summary {
 		}
 		stat := s.MutatorStats[operator]
 		stat.Total++
+		risk := result.Mutant.EquivalentRisk
+		if risk == "" {
+			risk = "unknown"
+		}
+		s.EquivalentRiskStats[risk]++
 		if stat.Recommendation == "" {
 			stat.Recommendation = result.Mutant.Recommendation
 		}
@@ -637,6 +659,9 @@ func summarize(results []MutantResult) Summary {
 			stat.Survived++
 			s.ExecutedMutants++
 			s.CoveredMutants++
+			if result.Mutant.EquivalentRisk == "high" {
+				s.HighRiskSurvivors++
+			}
 		case StatusNotCovered:
 			s.NotCovered++
 			stat.NotCovered++
@@ -663,6 +688,18 @@ func summarize(results []MutantResult) Summary {
 			s.Cached++
 			stat.Cached++
 		}
+		for _, audit := range result.Mutant.SuppressionAudit {
+			switch audit.Action {
+			case "report-only":
+				s.SuppressionReportOnly++
+			case "lower-priority":
+				s.SuppressionLowerPriority++
+			case "suppress":
+				s.SuppressionSuppressed++
+			case "quarantine-required":
+				s.SuppressionQuarantineRequired++
+			}
+		}
 		s.MutatorStats[operator] = stat
 	}
 	eligible := s.Total - s.Ignored - s.Quarantined - s.Skipped - s.NotCovered
@@ -688,6 +725,11 @@ func rankSurvivors(results []MutantResult) {
 	sort.SliceStable(survivors, func(i, j int) bool {
 		left := results[survivors[i]]
 		right := results[survivors[j]]
+		leftScore, _ := survivorRankScore(left)
+		rightScore, _ := survivorRankScore(right)
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
 		if riskPriority(left.Mutant.EquivalentRisk) != riskPriority(right.Mutant.EquivalentRisk) {
 			return riskPriority(left.Mutant.EquivalentRisk) < riskPriority(right.Mutant.EquivalentRisk)
 		}
@@ -700,9 +742,76 @@ func rankSurvivors(results []MutantResult) {
 		return left.MutantID < right.MutantID
 	})
 	for rank, index := range survivors {
+		score, reason := survivorRankScore(results[index])
 		results[index].SurvivorRank = rank + 1
-		results[index].RankReason = fmt.Sprintf("risk=%s recommendation=%s nearby_tests=%d", results[index].Mutant.EquivalentRisk, results[index].Mutant.Recommendation, len(results[index].Mutant.NearbyTests))
+		results[index].RankScore = score
+		results[index].RankReason = reason
+		results[index].Actionability = actionability(score)
+		results[index].SuggestedTestScope = suggestedTestScope(results[index].Mutant)
+		results[index].NearestTests = results[index].Mutant.NearbyTests
 	}
+}
+
+func survivorRankScore(result MutantResult) (float64, string) {
+	score := 100.0
+	risk := result.Mutant.EquivalentRisk
+	switch risk {
+	case "low":
+		score += 20
+	case "medium":
+		score += 5
+	case "high":
+		score -= 25
+	default:
+		score -= 10
+	}
+	switch result.Mutant.Recommendation {
+	case "fast-ci":
+		score += 20
+	case "conservative":
+		score += 12
+	case "default":
+		score += 4
+	case "aggressive":
+		score -= 12
+	}
+	if len(result.Mutant.NearbyTests) > 0 {
+		score += 12
+	}
+	if result.Mutant.Function != "" && strings.HasPrefix(result.Mutant.Function, strings.ToUpper(result.Mutant.Function[:1])) {
+		score += 5
+	}
+	if result.CoverageSource != "" && result.CoverageSource != "unknown" {
+		score += 6
+	}
+	for _, audit := range result.Mutant.SuppressionAudit {
+		if audit.Action == "lower-priority" || audit.Action == "report-only" {
+			score -= 8
+		}
+	}
+	reason := fmt.Sprintf("score=%.1f risk=%s recommendation=%s coverage_source=%s nearby_tests=%d", score, risk, result.Mutant.Recommendation, result.CoverageSource, len(result.Mutant.NearbyTests))
+	return score, reason
+}
+
+func actionability(score float64) string {
+	switch {
+	case score >= 125:
+		return "high"
+	case score >= 95:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func suggestedTestScope(mutant Mutant) string {
+	if mutant.Package != "" && mutant.Package != "." {
+		return mutant.Package
+	}
+	if len(mutant.NearbyTests) > 0 {
+		return filepath.ToSlash(filepath.Dir(mutant.NearbyTests[0]))
+	}
+	return "."
 }
 
 func riskPriority(risk string) int {

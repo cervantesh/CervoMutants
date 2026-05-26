@@ -86,6 +86,9 @@ func Check(n int, ready bool, p *int) bool {
 		if mutant.EquivalentRisk == "" || mutant.Recommendation == "" {
 			t.Fatalf("mutant missing governance fields: %+v", mutant)
 		}
+		if mutant.CompileErrorRisk == "" {
+			t.Fatalf("mutant missing compile-error risk: %+v", mutant)
+		}
 		if seen[mutant.ID] {
 			t.Fatalf("duplicate mutant ID: %s", mutant.ID)
 		}
@@ -115,7 +118,10 @@ func Check(n int, ready bool, p *int) bool {
 func TestDefaultProfileAddsNilChecks(t *testing.T) {
 	src := `package sample
 
-func Check(p *int) bool {
+func Check(p *int, n int) bool {
+	if n == 2 {
+		return true
+	}
 	return p == nil
 }
 `
@@ -125,6 +131,9 @@ func Check(p *int) bool {
 	}
 	if !operatorSet(mutants)["nil-checks"] {
 		t.Fatalf("default profile missing nil-checks: %+v", mutants)
+	}
+	if !operatorSet(mutants)["numeric-literals"] || !operatorSet(mutants)["return-bool-literals"] {
+		t.Fatalf("default profile missing controlled literal/return operators: %+v", operatorSet(mutants))
 	}
 }
 
@@ -137,6 +146,13 @@ func Answer() int {
 
 func Ready() bool {
 	return true
+}
+
+func Count(xs []int) int {
+	for i := 0; i < len(xs); i++ {
+		return i
+	}
+	return 0
 }
 `
 
@@ -156,12 +172,24 @@ func Ready() bool {
 	}
 	foundLiteral := false
 	foundReturn := false
+	foundLoop := false
+	foundLen := false
 	for _, mutant := range aggressive {
 		foundLiteral = foundLiteral || mutant.Operator == "literals"
 		foundReturn = foundReturn || mutant.Operator == "returns"
+		foundLoop = foundLoop || mutant.Operator == "loop-control"
+		foundLen = foundLen || mutant.Operator == "slice-map-len-boundary"
 	}
-	if !foundLiteral || !foundReturn {
-		t.Fatalf("aggressive profile missing literal/return mutants: literal=%v return=%v mutants=%+v", foundLiteral, foundReturn, aggressive)
+	if !foundLiteral || !foundReturn || !foundLoop || !foundLen {
+		t.Fatalf("aggressive profile missing operators: literal=%v return=%v loop=%v len=%v mutants=%+v", foundLiteral, foundReturn, foundLoop, foundLen, aggressive)
+	}
+}
+
+func TestDefinitionsCarryGovernanceMetadata(t *testing.T) {
+	for _, definition := range Definitions() {
+		if definition.CompileErrorRisk == "" || definition.Reason == "" {
+			t.Fatalf("definition missing governance metadata: %+v", definition)
+		}
 	}
 }
 
@@ -186,6 +214,16 @@ func Check(n int) bool {
 	bad := []byte(strings.Replace(src, ` reason="covered by generated contract"`, "", 1))
 	if _, err := ValidateInlineIgnores("sample.go", bad, true); err == nil {
 		t.Fatal("ValidateInlineIgnores accepted ignore without reason")
+	}
+}
+
+func TestInlineIgnoreParserIgnoresStringLiterals(t *testing.T) {
+	src := []byte(`package sample
+
+const marker = "cervomut:ignore"
+`)
+	if _, err := ValidateInlineIgnores("sample.go", src, true); err != nil {
+		t.Fatalf("ValidateInlineIgnores treated string literal as directive: %v", err)
 	}
 }
 

@@ -45,6 +45,8 @@ func run(args []string) error {
 		return cmdAffected(args[1:])
 	case "run":
 		return cmdRun(args[1:])
+	case "fast":
+		return cmdFast(args[1:])
 	case "eval":
 		return cmdEval(args[1:])
 	case "compare":
@@ -68,7 +70,7 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Println("usage: cervomut <init|doctor|affected|run|eval|compare|baseline|report|show|explain|list-mutators|daemon|worker>")
+	fmt.Println("usage: cervomut <init|doctor|affected|run|fast|eval|compare|baseline|report|show|explain|list-mutators|daemon|worker>")
 }
 
 func cmdInit() error {
@@ -184,7 +186,7 @@ func cmdRun(args []string) error {
 		fmt.Println(string(data))
 		return nil
 	}
-	if err := report.WriteAll(cfg.Reports.Output, result); err != nil {
+	if err := report.WriteFormats(cfg.Reports.Output, result, cfg.Reports.Formats); err != nil {
 		return err
 	}
 	fmt.Print(report.Summary(result))
@@ -192,6 +194,11 @@ func cmdRun(args []string) error {
 		return fmt.Errorf("mutation score %.2f below threshold %d", result.Summary.Score, cfg.CI.FailUnder)
 	}
 	return nil
+}
+
+func cmdFast(args []string) error {
+	next := append([]string{"--policy", "ci-fast", "--report", "summary,json,junit"}, args...)
+	return cmdRun(next)
 }
 
 func cmdEval(args []string) error {
@@ -241,7 +248,7 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := report.WriteAll(cfg.Reports.Output, runResult); err != nil {
+	if err := report.WriteFormats(cfg.Reports.Output, runResult, cfg.Reports.Formats); err != nil {
 		return err
 	}
 	evaluation := evalpkg.Build(evalpkg.BuildRequest{
@@ -492,10 +499,18 @@ suppression:
       equivalent_risk: high
       action: report-only
       reason: High equivalent-mutant risk must be visible before suppression is allowed.
-    - name: audit-loop-return-literal-risk
+    - name: lower-priority-loop-control
       operator: loop-control
-      action: report-only
+      action: lower-priority
       reason: Loop-control mutants are high-signal but often require manual review.
+    - name: lower-priority-broad-literals
+      operator: literals
+      action: lower-priority
+      reason: Broad literal mutants often need equivalence review before CI gating.
+    - name: lower-priority-broad-returns
+      operator: returns
+      action: lower-priority
+      reason: Broad return mutants can duplicate narrower return-bool-literal signal.
 cache:
   enabled: true
   path: .cervomut/cache
