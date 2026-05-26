@@ -15,5 +15,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.6"
+      - run: go vet ./...
       - run: go test ./...
-
+      - run: go test -race ./pkg/engine ./pkg/mutator ./pkg/report
+      - run: go run ./cmd/cervomut list-mutators
+      - run: go run ./cmd/cervomut fast ./pkg/config --max-mutants 3 --workers 2 --out .cervomut/ci-smoke
+      - run: test -f .cervomut/ci-smoke/mutation-report.json
+      - run: go run ./cmd/cervomut run ./pkg/config --policy ci-balanced --max-mutants 5 --workers 2 --out .cervomut/ci-balanced-smoke
+      - run: grep -q '"schema_version": "1"' .cervomut/ci-balanced-smoke/mutation-report.json

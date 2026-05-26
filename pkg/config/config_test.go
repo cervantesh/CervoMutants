@@ -178,4 +178,12 @@ func TestValidateRejectsUnauditableSuppressionRules(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate accepted suppression rule without reason")
 	}
+	cfg.Suppression.Rules = []SuppressionRule{{Name: "unsafe-suppress", Action: "suppress", Reason: "too weak", Evidence: "sampled"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted suppress rule without confirmed evidence and reviewer")
+	}
+	cfg.Suppression.Rules = []SuppressionRule{{Name: "confirmed-suppress", Action: "suppress", Reason: "reviewed equivalent", Evidence: "confirmed", Reviewers: 1}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected audited suppress rule: %v", err)
+	}
 }

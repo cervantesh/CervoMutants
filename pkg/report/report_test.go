@@ -58,6 +58,12 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			Actionability:      "high",
 			SuggestedTestScope: "./pkg",
 			NearestTests:       []string{"pkg/foo_test.go"},
+			PreviousStatus:     engine.StatusKilled,
+			FirstSeen:          "2026-05-26T00:00:00Z",
+			LastSeen:           "2026-05-26T01:00:00Z",
+			SurvivorAgeRuns:    2,
+			HistoryStatus:      "long_standing_survivor",
+			OperatorYield:      0.5,
 		}},
 	}
 
@@ -73,7 +79,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"baseline", "cache", "quarantine", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests"} {
+	for _, want := range []string{"baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -91,6 +97,8 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 			TestEfficacy:          50,
 			MutationCoverage:      66.66666666666666,
 			HighRiskSurvivors:     1,
+			NewSurvivors:          1,
+			LongStandingSurvivors: 1,
 			SuppressionReportOnly: 2,
 			EquivalentRiskStats:   map[string]int{"high": 1, "medium": 2},
 			MutatorStats: map[string]engine.MutatorStat{
@@ -106,6 +114,8 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"Test efficacy: 50.00%",
 		"Mutation coverage: 66.67%",
 		"High-risk survivors: 1",
+		"New survivors: 1",
+		"Long-standing survivors: 1",
 		"Suppression audits: report_only=2",
 		"Equivalent-risk statistics:",
 		"conditionals-negation: total=2 killed=1 survived=1 not_covered=0",

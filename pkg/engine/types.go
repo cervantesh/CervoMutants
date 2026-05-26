@@ -47,6 +47,7 @@ type SuppressionAudit struct {
 	Action        string `json:"action"`
 	Reason        string `json:"reason"`
 	EvidenceLevel string `json:"evidence_level"`
+	ReviewerCount int    `json:"reviewer_count,omitempty"`
 }
 
 type MutantJob struct {
@@ -73,6 +74,12 @@ type MutantResult struct {
 	Actionability      string        `json:"actionability,omitempty"`
 	SuggestedTestScope string        `json:"suggested_test_scope,omitempty"`
 	NearestTests       []string      `json:"nearest_tests,omitempty"`
+	PreviousStatus     Status        `json:"previous_status,omitempty"`
+	FirstSeen          string        `json:"first_seen,omitempty"`
+	LastSeen           string        `json:"last_seen,omitempty"`
+	SurvivorAgeRuns    int           `json:"survivor_age_runs,omitempty"`
+	HistoryStatus      string        `json:"history_status,omitempty"`
+	OperatorYield      float64       `json:"operator_historical_yield,omitempty"`
 }
 
 type Summary struct {
@@ -99,6 +106,8 @@ type Summary struct {
 	SuppressionLowerPriority      int                    `json:"suppression_lower_priority"`
 	SuppressionSuppressed         int                    `json:"suppression_suppressed"`
 	SuppressionQuarantineRequired int                    `json:"suppression_quarantine_required"`
+	NewSurvivors                  int                    `json:"new_survivors"`
+	LongStandingSurvivors         int                    `json:"long_standing_survivors"`
 	EquivalentRiskStats           map[string]int         `json:"equivalent_risk_statistics,omitempty"`
 	MutatorStats                  map[string]MutatorStat `json:"mutator_statistics,omitempty"`
 }
@@ -136,6 +145,16 @@ type QuarantineStats struct {
 	Expired int `json:"expired"`
 }
 
+type HistoryStats struct {
+	Enabled                bool               `json:"enabled"`
+	Path                   string             `json:"path,omitempty"`
+	LoadedMutants          int                `json:"loaded_mutants"`
+	UpdatedMutants         int                `json:"updated_mutants"`
+	NewSurvivors           int                `json:"new_survivors"`
+	LongStandingSurvivors  int                `json:"long_standing_survivors"`
+	OperatorUsefulSurvivor map[string]float64 `json:"operator_useful_survivor_yield,omitempty"`
+}
+
 type RunResult struct {
 	SchemaVersion string             `json:"schema_version"`
 	Summary       Summary            `json:"summary"`
@@ -143,6 +162,7 @@ type RunResult struct {
 	Baseline      BaselineComparison `json:"baseline"`
 	Cache         CacheStats         `json:"cache"`
 	Quarantine    QuarantineStats    `json:"quarantine"`
+	History       HistoryStats       `json:"history"`
 	Mutants       []MutantResult     `json:"mutants"`
 }
 

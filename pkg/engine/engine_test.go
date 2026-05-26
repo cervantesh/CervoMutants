@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
+	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
 )
 
 func writeFixture(t *testing.T) string {
@@ -345,6 +346,29 @@ func TestCoverageSelectionCanClassifyUncoveredMutantWithoutRunningAllTests(t *te
 	}
 }
 
+func TestCoverageSelectionUsesLineRangesNotOnlyFilePresence(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Selection.Mode = "coverage"
+	isolateArtifacts(&cfg, dir)
+	if err := os.MkdirAll(filepath.Dir(cfg.Selection.CoverageProfile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Selection.CoverageProfile, []byte("mode: set\ncalc.go:1.1,2.1 1 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e := New(cfg)
+	covered := e.coverageMentions(Mutant{Module: dir, File: filepath.Join(dir, "calc.go"), Line: 1})
+	uncovered := e.coverageMentions(Mutant{Module: dir, File: filepath.Join(dir, "calc.go"), Line: 3})
+	if !covered {
+		t.Fatal("coverage range should cover line 1")
+	}
+	if uncovered {
+		t.Fatal("coverage range should not cover line 3 just because the same file appears")
+	}
+}
+
 func TestPackageSelectionCanPrefilterUncoveredMutants(t *testing.T) {
 	dir := writeFixture(t)
 	cfg := config.Defaults()
@@ -379,6 +403,74 @@ func TestPackageSelectionCanPrefilterUncoveredMutants(t *testing.T) {
 	}
 	if !strings.Contains(result.StatusReason, "coverage profile") {
 		t.Fatalf("status reason should mention coverage profile: %q", result.StatusReason)
+	}
+}
+
+func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Suppression.Rules = []config.SuppressionRule{{
+		Name:      "known-equivalent-conditional",
+		Operator:  "conditionals-boundary",
+		Action:    "suppress",
+		Reason:    "Audited as equivalent in generated comparison wrappers.",
+		Evidence:  "confirmed",
+		Reviewers: 1,
+	}}
+	mutant := Mutant{
+		ID:               "m-suppressed",
+		Module:           t.TempDir(),
+		Package:          ".",
+		File:             "calc.go",
+		Line:             3,
+		Operator:         "conditionals-boundary",
+		SuppressionAudit: New(cfg).suppressionAudit(mutator.Mutant{Operator: "conditionals-boundary", EquivalentRisk: "medium"}),
+	}
+
+	results, err := New(cfg).runMutantsSerial(context.Background(), []Mutant{mutant}, map[string]bool{})
+	if err != nil {
+		t.Fatalf("runMutantsSerial returned error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	if results[0].Status != StatusIgnored {
+		t.Fatalf("status = %q, want %q", results[0].Status, StatusIgnored)
+	}
+	if !strings.Contains(results[0].StatusReason, "known-equivalent-conditional") {
+		t.Fatalf("status reason does not name suppression rule: %q", results[0].StatusReason)
+	}
+}
+
+func TestHistoryTracksNewAndLongStandingSurvivors(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.History.Path = filepath.Join(dir, "history.json")
+	e := New(cfg)
+	first := []MutantResult{{
+		MutantID: "m-history",
+		Status:   StatusSurvived,
+		Mutant:   Mutant{Operator: "conditionals-negation"},
+	}}
+
+	stats := e.applyHistory(first)
+	if stats.NewSurvivors != 1 {
+		t.Fatalf("new survivors = %d, want 1", stats.NewSurvivors)
+	}
+	if first[0].HistoryStatus != "new_survivor" || first[0].SurvivorAgeRuns != 1 {
+		t.Fatalf("first run history not populated: %+v", first[0])
+	}
+
+	second := []MutantResult{{
+		MutantID: "m-history",
+		Status:   StatusSurvived,
+		Mutant:   Mutant{Operator: "conditionals-negation"},
+	}}
+	stats = e.applyHistory(second)
+	if stats.LongStandingSurvivors != 1 {
+		t.Fatalf("long-standing survivors = %d, want 1", stats.LongStandingSurvivors)
+	}
+	if second[0].PreviousStatus != StatusSurvived || second[0].HistoryStatus != "long_standing_survivor" || second[0].SurvivorAgeRuns != 2 {
+		t.Fatalf("second run history not populated: %+v", second[0])
 	}
 }
 

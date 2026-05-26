@@ -25,7 +25,7 @@ func JSON(result engine.RunResult) ([]byte, error) {
 
 func Summary(result engine.RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
+	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nNew survivors: %d\nLong-standing survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
 		result.Summary.Score,
 		result.Summary.GeneratedMutants,
 		result.Summary.CoveredMutants,
@@ -39,6 +39,8 @@ func Summary(result engine.RunResult) string {
 		result.Summary.TestEfficacy,
 		result.Summary.MutationCoverage,
 		result.Summary.HighRiskSurvivors,
+		result.Summary.NewSurvivors,
+		result.Summary.LongStandingSurvivors,
 		result.Summary.SuppressionReportOnly,
 		result.Summary.SuppressionLowerPriority,
 		result.Summary.SuppressionSuppressed,

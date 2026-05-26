@@ -68,6 +68,8 @@ func Definitions() []Definition {
 		{Name: "error-returns", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "high", CompileErrorRisk: "medium", ASTNodes: []string{"ast.IfStmt"}, Example: "err == nil -> err != nil", Reason: "Controlled error-path mutation for nightly/default runs."},
 		{Name: "numeric-literals", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "medium", CompileErrorRisk: "low", ASTNodes: []string{"ast.BasicLit"}, Example: "2 -> 1", Reason: "Controlled numeric literal signal for default runs."},
 		{Name: "return-bool-literals", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "medium", CompileErrorRisk: "low", ASTNodes: []string{"ast.ReturnStmt"}, Example: "return true -> return false", Reason: "Return behavior signal without broad return rewrites."},
+		{Name: "assignment-arithmetic", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "medium", CompileErrorRisk: "medium", ASTNodes: []string{"ast.AssignStmt"}, Example: "x += n -> x -= n", Reason: "Assignment-update signal from Go-heavy operator catalogs."},
+		{Name: "inc-dec", Profile: ProfileDefault, Risk: "medium", EquivalentMutantRisk: "medium", CompileErrorRisk: "low", ASTNodes: []string{"ast.IncDecStmt"}, Example: "i++ -> i--", Reason: "Loop and counter update signal without broad loop-control mutation."},
 		{Name: "literals", Profile: ProfileAggressive, Risk: "high", EquivalentMutantRisk: "high", CompileErrorRisk: "medium", ASTNodes: []string{"ast.BasicLit"}, Example: "1 -> 0", Reason: "Broad campaign-only literal exploration."},
 		{Name: "returns", Profile: ProfileAggressive, Risk: "high", EquivalentMutantRisk: "high", CompileErrorRisk: "medium", ASTNodes: []string{"ast.ReturnStmt"}, Example: "return true -> return false", Reason: "Campaign-only return behavior exploration."},
 		{Name: "loop-control", Profile: ProfileAggressive, Risk: "high", EquivalentMutantRisk: "high", CompileErrorRisk: "medium", ASTNodes: []string{"ast.ForStmt"}, Example: "i < n -> i <= n", Reason: "Campaign-only loop boundary exploration."},
@@ -191,6 +193,24 @@ func collectNode(mutants *[]Mutant, fset *token.FileSet, pkg, filename string, s
 	case *ast.ForStmt:
 		if expr, ok := n.Cond.(*ast.BinaryExpr); ok {
 			addLoopControlMutant(mutants, fset, pkg, filename, src, fn, expr, profile, ignores)
+		}
+	case *ast.AssignStmt:
+		switch n.Tok {
+		case token.ADD_ASSIGN:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "assignment-arithmetic", "+=", "-=", profile, ignores)
+		case token.SUB_ASSIGN:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "assignment-arithmetic", "-=", "+=", profile, ignores)
+		case token.MUL_ASSIGN:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "assignment-arithmetic", "*=", "/=", profile, ignores)
+		case token.QUO_ASSIGN:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "assignment-arithmetic", "/=", "*=", profile, ignores)
+		}
+	case *ast.IncDecStmt:
+		switch n.Tok {
+		case token.INC:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "inc-dec", "++", "--", profile, ignores)
+		case token.DEC:
+			addMutation(mutants, fset, pkg, filename, src, fn, n, "inc-dec", "--", "++", profile, ignores)
 		}
 	}
 }
@@ -354,7 +374,7 @@ func operatorEnabled(operator, profile string) bool {
 		return true
 	case "logical", "boolean-literals", "string-empty-literals":
 		return profile == ProfileConservative || profile == ProfileDefault || profile == ProfileAggressive
-	case "nil-checks", "error-returns", "numeric-literals", "return-bool-literals":
+	case "nil-checks", "error-returns", "numeric-literals", "return-bool-literals", "assignment-arithmetic", "inc-dec":
 		return profile == ProfileDefault || profile == ProfileAggressive
 	case "literals", "returns", "loop-control", "slice-map-len-boundary":
 		return profile == ProfileAggressive
@@ -367,7 +387,7 @@ func equivalentRisk(operator string) string {
 	switch operator {
 	case "arithmetic-basic", "boolean-literals":
 		return "low"
-	case "conditionals-negation", "conditionals-boundary", "logical", "string-empty-literals", "numeric-literals", "return-bool-literals", "slice-map-len-boundary":
+	case "conditionals-negation", "conditionals-boundary", "logical", "string-empty-literals", "numeric-literals", "return-bool-literals", "assignment-arithmetic", "inc-dec", "slice-map-len-boundary":
 		return "medium"
 	case "nil-checks", "error-returns", "literals", "returns", "loop-control":
 		return "high"
@@ -382,7 +402,7 @@ func recommendation(operator string) string {
 		return "fast-ci"
 	case "logical", "boolean-literals", "string-empty-literals":
 		return "conservative"
-	case "nil-checks", "error-returns", "numeric-literals", "return-bool-literals":
+	case "nil-checks", "error-returns", "numeric-literals", "return-bool-literals", "assignment-arithmetic", "inc-dec":
 		return "default"
 	case "literals", "returns", "loop-control":
 		return "aggressive"
@@ -393,7 +413,7 @@ func recommendation(operator string) string {
 
 func compileErrorRisk(operator string) string {
 	switch operator {
-	case "conditionals-negation", "conditionals-boundary", "logical", "boolean-literals", "nil-checks", "string-empty-literals", "numeric-literals", "return-bool-literals", "slice-map-len-boundary":
+	case "conditionals-negation", "conditionals-boundary", "logical", "boolean-literals", "nil-checks", "string-empty-literals", "numeric-literals", "return-bool-literals", "inc-dec", "slice-map-len-boundary":
 		return "low"
 	case "arithmetic-basic", "error-returns", "literals", "returns", "loop-control":
 		return "medium"
@@ -454,6 +474,10 @@ func hint(operator string) string {
 		return "Add an assertion for numeric boundaries and configured constants."
 	case "slice-map-len-boundary":
 		return "Add tests for empty and single-element collection boundaries."
+	case "assignment-arithmetic":
+		return "Add assertions for cumulative updates and arithmetic assignment effects."
+	case "inc-dec":
+		return "Add assertions for counter direction and loop iteration counts."
 	case "loop-control":
 		return "Add tests for loop boundary counts and off-by-one behavior."
 	default:
