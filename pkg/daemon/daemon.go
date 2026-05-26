@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
@@ -60,11 +59,10 @@ func (r WorkerRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 		return engine.MutantResult{}, err
 	}
 	defer isolate.Cleanup(workdir)
-	rel, err := filepath.Rel(moduleDir, job.Mutant.File)
+	targetFile, err := isolate.ContainedTargetPath(moduleDir, workdir, job.Mutant.File)
 	if err != nil {
 		return engine.MutantResult{}, err
 	}
-	targetFile := filepath.Join(workdir, rel)
 	if err := applyPatch(targetFile, job.Mutant); err != nil {
 		return engine.MutantResult{}, err
 	}

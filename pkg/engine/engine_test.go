@@ -14,6 +14,15 @@ import (
 func writeFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	writeFixtureFiles(t, dir)
+	return dir
+}
+
+func writeFixtureFiles(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fixture\n\ngo 1.25.6\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +46,6 @@ func TestIsPositiveOrZero(t *testing.T) {
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return dir
 }
 
 func isolateArtifacts(cfg *config.Config, dir string) {
@@ -71,6 +79,14 @@ func TestRunDryRunDiscoversMutantsWithoutChangingWorkspace(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("dry-run changed source workspace")
 	}
+	for _, mutant := range result.Mutants {
+		if filepath.IsAbs(mutant.MutantID) || strings.Contains(mutant.MutantID, `\`) {
+			t.Fatalf("mutant ID should be module-relative and slash-normalized, got %q", mutant.MutantID)
+		}
+		if strings.Contains(mutant.MutantID, ":\\") {
+			t.Fatalf("mutant ID contains raw Windows drive path: %q", mutant.MutantID)
+		}
+	}
 }
 
 func TestRunClassifiesSurvivorAndWritesReports(t *testing.T) {
@@ -98,6 +114,41 @@ func TestRunClassifiesSurvivorAndWritesReports(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"schema_version": "1"`) {
 		t.Fatalf("report missing schema version: %s", data)
+	}
+}
+
+func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "OneDrive - Personal", "Documents", "CervoSoft", "cobra doc")
+	writeFixtureFiles(t, dir)
+	before, err := os.ReadFile(filepath.Join(dir, "calc.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+
+	result, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err != nil {
+		t.Fatalf("Run returned error for OneDrive-style path: %v", err)
+	}
+	if len(result.Mutants) != 1 {
+		t.Fatalf("mutants = %d, want 1", len(result.Mutants))
+	}
+	if filepath.IsAbs(result.Mutants[0].MutantID) || strings.Contains(result.Mutants[0].MutantID, `\`) {
+		t.Fatalf("mutant ID should not contain raw absolute Windows-style path: %q", result.Mutants[0].MutantID)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Reports.Output, "mutation-report.json")); err != nil {
+		t.Fatalf("report missing for OneDrive-style path: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "calc.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("run changed source workspace under OneDrive-style path")
 	}
 }
 

@@ -30,6 +30,39 @@ func TestCheck(t *testing.T) {
 		t.Fatal("want true")
 	}
 }
+
+func TestWorkerRunnerRejectsMutantFileOutsideModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module workerfixture\n\ngo 1.25.6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "check.go"), []byte("package workerfixture\n\nfunc Check() bool { return true }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("package outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := WorkerRunner{MaxOutputBytes: 12000}.Run(context.Background(), engine.MutantJob{
+		ID: "outside",
+		Mutant: engine.Mutant{
+			ID:          "outside",
+			Module:      dir,
+			File:        outside,
+			Original:    "true",
+			Mutated:     "false",
+			StartOffset: 0,
+			EndOffset:   1,
+		},
+		WorkDir:     dir,
+		TestCommand: []string{"go", "test", "."},
+		Timeout:     "30s",
+	})
+	if err == nil {
+		t.Fatal("WorkerRunner accepted mutant file outside module")
+	}
+}
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}

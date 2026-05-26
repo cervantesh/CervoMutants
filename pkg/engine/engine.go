@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -156,8 +158,9 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 		for i := range generated {
 			generated[i].Module = file.ModuleDir
 			generated[i].Package = file.Package
+			id, fingerprint := e.stableMutantIdentity(generated[i])
 			mutants = append(mutants, Mutant{
-				ID:          generated[i].ID,
+				ID:          id,
 				Module:      generated[i].Module,
 				Package:     generated[i].Package,
 				File:        generated[i].File,
@@ -169,12 +172,31 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 				StartOffset: generated[i].StartOffset,
 				EndOffset:   generated[i].EndOffset,
 				Diff:        generated[i].Diff,
-				Fingerprint: generated[i].Fingerprint,
+				Fingerprint: fingerprint,
 				Hint:        generated[i].Hint,
 			})
 		}
 	}
 	return mutants, nil
+}
+
+func (e *Engine) stableMutantIdentity(mutant mutator.Mutant) (string, string) {
+	rel, err := filepath.Rel(mutant.Module, mutant.File)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		rel = filepath.Base(mutant.File)
+	}
+	rel = filepath.ToSlash(rel)
+	fp := digestBytes([]byte(strings.Join([]string{
+		rel,
+		strconv.Itoa(mutant.Line),
+		strconv.Itoa(mutant.StartOffset),
+		strconv.Itoa(mutant.EndOffset),
+		mutant.Operator,
+		mutant.Original,
+		mutant.Mutated,
+		mutant.Diff,
+	}, "\x00")))
+	return fmt.Sprintf("%s:%d:%s:%s", rel, mutant.Line, mutant.Operator, fp[:12]), fp
 }
 
 func (e *Engine) runBaseline(ctx context.Context, targets []string) (MutantResult, error) {
@@ -230,11 +252,10 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 		return MutantResult{}, err
 	}
 	defer isolate.Cleanup(workdir)
-	rel, err := filepath.Rel(mutant.Module, mutant.File)
+	targetFile, err := isolate.ContainedTargetPath(mutant.Module, workdir, mutant.File)
 	if err != nil {
 		return MutantResult{}, err
 	}
-	targetFile := filepath.Join(workdir, rel)
 	if err := applyDiffReplacement(targetFile, mutant); err != nil {
 		return MutantResult{}, err
 	}
@@ -499,10 +520,6 @@ func (e *Engine) putCached(key string, result MutantResult) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(e.cfg.Cache.Path, key+".json"), data, 0o644)
-}
-
-func localKey(parts ...string) string {
-	return strings.NewReplacer("\\", "/", " ", "_", ":", "_").Replace(strings.Join(parts, "_"))
 }
 
 func (e *Engine) discoverForTest(targets []string) (discover.Result, error) {

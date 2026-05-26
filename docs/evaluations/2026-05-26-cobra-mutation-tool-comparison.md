@@ -206,6 +206,16 @@ After the initial study, CervoMutant added Gremlins-inspired reporting primitive
 
 The same Cobra `./doc` sample now reports these fields in `summary.txt`, `mutation-report.json`, and `evaluation.json`.
 
+## Windows Path Hardening Follow-Up
+
+The gomu and go-mutesting failures were converted into executable CervoMutant safeguards:
+
+- isolated workdirs now use a sanitized module token plus hash instead of any raw absolute path fragment;
+- isolated workdirs include a `.cervomut-workdir` marker, and cleanup refuses to delete unmarked paths;
+- mutant patch target paths are resolved through a containment check, so a malformed worker job cannot escape the copied module;
+- engine-generated mutant IDs are module-relative and slash-normalized instead of embedding raw absolute `C:\...` paths;
+- regression tests cover Windows-invalid filename characters, OneDrive-style paths with spaces, worker containment, and source-tree preservation.
+
 ## Current Assessment
 
 For this Windows/OneDrive study, CervoMutant is operationally more robust than gomu and go-mutesting, but Gremlins is currently the strongest direct Go implementation reference for speed and concise mutation semantics.
