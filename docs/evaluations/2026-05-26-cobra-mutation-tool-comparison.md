@@ -151,6 +151,173 @@ go-mutesting v2 failure signature:
 panic: mkdir ...\go-mutesting-...\C:: The filename, directory name, or volume label syntax is incorrect.
 ```
 
+## Library-By-Library Lessons
+
+This section analyzes the non-CervoMutant tools one by one. The point is not to
+copy their implementation. The point is to identify product and engineering
+choices that CervoMutant should either avoid or deliberately adopt.
+
+### Gremlins
+
+Negative points to avoid:
+
+- Gremlins is strong for a fast package-level run, but its report contract is
+  comparatively narrow for CI and AI agents. CervoMutant should not stop at a
+  compact mutation summary; it needs stable schema, survivor context, selected
+  tests, threshold decisions, baseline comparison, and machine-readable reasons.
+- The human output is useful, but the product surface is mostly "run and read
+  result". CervoMutant should avoid making follow-up work manual by default.
+  Survivors need enough context to directly generate or review tests.
+- Gremlins exposes useful efficacy and coverage metrics, but does not solve the
+  governance problem around baselines, quarantine, expiry, and regression policy.
+  CervoMutant should keep quality gates baseline-first and auditable.
+
+Positive points to adopt:
+
+- Keep a fast path for package-level mutation testing. In the WSL run Gremlins
+  completed 87 mutants in 6.78 seconds, which is the direct speed target for
+  CervoMutant package mode.
+- Preserve distinct statuses for `killed`, `lived`, `not covered`, `not viable`,
+  timeout, and skipped. This avoids confusing unexecuted mutants with weak tests.
+- Keep separate metrics for test efficacy and mutator coverage. CervoMutant has
+  already adopted `test_efficacy` and `mutation_coverage`; these should remain
+  first-class and visible in summary, JSON, and HTML reports.
+- Keep per-mutator statistics visible. They make weak operator families obvious
+  and help tune mutator profiles.
+- Keep the default terminal summary compact. CervoMutant can keep richer
+  artifacts, but the default console path should stay scannable.
+
+Application to CervoMutant:
+
+- Add a "fast package benchmark" profile that minimizes report overhead and
+  runs with `selection.mode=package`.
+- Track Gremlins-style status mapping in the external comparison harness.
+- Treat Gremlins as the speed/clarity reference, not as the governance/reporting
+  reference.
+
+### gomu
+
+Negative points to avoid:
+
+- Do not derive filesystem names from raw mutant IDs or absolute paths. gomu's
+  Windows failure came from a temp directory name containing `C:\...`.
+- Do not let very broad mutator generation inflate the denominator with many
+  invalid, not viable, or compile-error mutants. In WSL, gomu found 413 mutants
+  but reported 197 errors and 51 not viable. That creates review noise and makes
+  score interpretation harder.
+- Do not mix preparation failures with mutation outcomes. A path-preparation
+  error should be reported as an operational/tool failure, not as a survived or
+  killed mutant.
+- Do not make the main report hard to compare across tools. gomu's JSON is useful
+  but needs normalization before it can be evaluated beside Gremlins,
+  go-mutesting, and CervoMutant.
+
+Positive points to adopt:
+
+- Overlay-based execution is worth studying. It avoids modifying the source tree
+  and can reduce copy overhead when implemented with safe path handling.
+- Incremental history is valuable for large projects. gomu's history-oriented
+  design reinforces CervoMutant's decision to make cache/history a first-class
+  feature.
+- gomu has broad Go-specific mutation ideas, including error handling and return
+  mutations. CervoMutant should borrow the categories carefully, but keep them
+  behind profiles with explicit equivalent-mutant risk.
+- The CLI has CI concepts such as thresholds and fail-on-gate behavior. CervoMutant
+  should keep similar CI ergonomics but combine them with baseline-first adoption.
+
+Application to CervoMutant:
+
+- Keep all filesystem names hash/token based and add regression tests for Windows
+  drive letters, spaces, and OneDrive-style paths.
+- Explore overlay isolation as an optional execution backend, but only after
+  containment checks and cleanup markers are part of the design.
+- Keep aggressive mutators separate from conservative/default profiles, and
+  report invalid/not viable rates by mutator.
+- Add external-result normalization for gomu so future studies can distinguish
+  valid mutants from errors and not-viable outcomes.
+
+### go-mutesting v2
+
+Negative points to avoid:
+
+- Do not assume Unix tools exist. go-mutesting required an external `diff`
+  executable and failed on Windows native. CervoMutant should use Go-native
+  libraries or internal implementations for required operations.
+- Do not build temp paths by concatenating a temp directory with a user/source
+  path. go-mutesting's Windows failure came from creating paths under
+  `tmpDir/.../C:`.
+- Do not let advanced modes block basic usefulness. The first Windows retry with
+  `coverage` and `per-test` stalled before producing comparable results.
+  Advanced selection should have timeouts, progress, and graceful fallback.
+- Do not make report filenames unpredictable or hard to collect. In WSL,
+  go-mutesting wrote `report.json` in the target checkout while the command
+  flag suggested summary JSON behavior. CervoMutant should keep all report
+  outputs under the configured output directory.
+
+Positive points to adopt:
+
+- go-mutesting has the richest mutator set among the Go tools observed in this
+  study. It is the best reference for long-term operator breadth.
+- Its per-mutator breakdown is useful and should remain a visible CervoMutant
+  report section.
+- Its agentic JSON direction is aligned with CervoMutant's AI-first goal:
+  survived mutants should include stable IDs, diffs, context, nearby tests,
+  descriptions, and hints.
+- The `noop` preflight is valuable. Running the clean suite before mutation
+  prevents meaningless mutation results.
+- The `coverage` and `per-test` modes are strategically important for large
+  projects, even if they need careful fallback behavior.
+- It has useful CI ideas: minimum MSI gates, changed-line filtering, and
+  baseline-style survivor handling.
+
+Application to CervoMutant:
+
+- Use go-mutesting as the operator-breadth and agent-report reference.
+- Keep all command dependencies internal or explicitly checked by `doctor`.
+- Make `doctor` detect external Unix-tool assumptions when running external
+  comparison studies.
+- Build coverage/per-test selection with bounded setup time, progress reporting,
+  and fallback to package/all selection when coverage mapping fails.
+- Add report fields for nearby tests, natural-language mutation description, and
+  concrete test-writing hints.
+
+## Cross-Tool Design Rules For CervoMutant
+
+Rules to avoid repeating negative patterns:
+
+- Never use raw absolute paths, mutant IDs, or package names as filesystem names.
+  Use relative paths for identity and hashes/tokens for files.
+- Never rely on external Unix commands for core behavior.
+- Never treat operational failures as mutation outcomes.
+- Never expose an advanced mode without timeout, fallback, and reportable reason.
+- Never make reports appear outside the configured output directory.
+- Never optimize for raw mutant count without tracking invalid, equivalent,
+  not viable, compile-error, and not-covered rates.
+
+Practices to adopt:
+
+- Gremlins-style speed and concise summaries.
+- Gremlins-style distinction between efficacy and coverage.
+- gomu-style overlay/isolation ideas, but with strict path containment.
+- gomu-style incremental history, but with deterministic cache keys.
+- go-mutesting-style broad operator catalog, but split by conservative/default/
+  aggressive profiles.
+- go-mutesting-style AI/agent report richness.
+- CI-friendly preflight, thresholds, changed-scope execution, baseline compare,
+  and report formats.
+
+Priority actions for CervoMutant:
+
+1. Add a benchmark/compare harness that runs Gremlins, gomu, go-mutesting, and
+   CervoMutant under WSL/Linux and normalizes their result schemas.
+2. Optimize CervoMutant package mode against Gremlins' speed target.
+3. Add a Go-native overlay execution backend prototype with the path-hardening
+   rules already implemented in `pkg/isolate`.
+4. Expand mutator profiles using go-mutesting and gomu as references, but track
+   invalid/not-viable/equivalent risk per operator.
+5. Improve AI actionability by adding nearby tests, mutation descriptions, and
+   stronger hints to survivor reports.
+
 ## What Gremlins Gives Us As A Concrete Reference
 
 Gremlins is the most useful direct Go reference from this run.
