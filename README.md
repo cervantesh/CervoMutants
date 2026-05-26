@@ -70,6 +70,11 @@ Use [docs/evaluation-framework.md](docs/evaluation-framework.md) to compare
 mutation testing tools and decide whether `cervo-mutant` should be the default
 for CervoClaw and CervoSoft projects.
 
+Use [docs/signal-first-mutation-testing.md](docs/signal-first-mutation-testing.md)
+for the product framework behind CervoMutant defaults: coverage semantics,
+score decomposition, CI relevance, history-aware scheduling, equivalence
+governance, and agent actionability.
+
 Use [docs/evaluation-template.md](docs/evaluation-template.md) for manual
 reviews, or run:
 

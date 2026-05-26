@@ -12,6 +12,12 @@ libraries. It combines published mutation-testing tool comparison work with
 engineering criteria needed for CI, large Go modules, and agent-driven test
 improvement.
 
+For the product framework CervoMutant should use after evaluation, see
+[Signal-First Mutation Testing Framework](signal-first-mutation-testing.md).
+That document covers the non-operator design areas: coverage semantics, score
+decomposition, CI relevance, history-aware scheduling, equivalence governance,
+and agent actionability.
+
 The decisive question is:
 
 > Does the tool produce actionable survivors, with low noise, in acceptable
