@@ -7,6 +7,7 @@ import (
 	"html"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
@@ -23,14 +24,39 @@ func JSON(result engine.RunResult) ([]byte, error) {
 }
 
 func Summary(result engine.RunResult) string {
-	return fmt.Sprintf("Mutation score: %.2f%%\nKilled: %d\nSurvived: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\n",
+	var b strings.Builder
+	fmt.Fprintf(&b, "Mutation score: %.2f%%\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\n",
 		result.Summary.Score,
 		result.Summary.Killed,
 		result.Summary.Survived,
+		result.Summary.NotCovered,
 		result.Summary.Quarantined,
 		result.Summary.TimedOut,
 		result.Summary.CompileError,
+		result.Summary.TestEfficacy,
+		result.Summary.MutationCoverage,
 	)
+	if len(result.Summary.MutatorStats) > 0 {
+		b.WriteString("Mutator statistics:\n")
+		keys := make([]string, 0, len(result.Summary.MutatorStats))
+		for key := range result.Summary.MutatorStats {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			stat := result.Summary.MutatorStats[key]
+			fmt.Fprintf(&b, "- %s: total=%d killed=%d survived=%d not_covered=%d timed_out=%d compile_error=%d\n",
+				key,
+				stat.Total,
+				stat.Killed,
+				stat.Survived,
+				stat.NotCovered,
+				stat.TimedOut,
+				stat.CompileError,
+			)
+		}
+	}
+	return b.String()
 }
 
 func Survivors(result engine.RunResult) string {
@@ -86,7 +112,7 @@ func JUnit(result engine.RunResult) ([]byte, error) {
 	suite := junitTestsuite{Name: "cervomut", Tests: len(result.Mutants)}
 	for _, mutant := range result.Mutants {
 		tc := junitTestcase{Name: mutant.MutantID}
-		if mutant.Status == engine.StatusSurvived || mutant.Status == engine.StatusTimedOut {
+		if mutant.Status == engine.StatusSurvived || mutant.Status == engine.StatusTimedOut || mutant.Status == engine.StatusNotCovered {
 			suite.Failures++
 			tc.Failure = &junitFailure{Message: string(mutant.Status), Text: mutant.StatusReason}
 		}

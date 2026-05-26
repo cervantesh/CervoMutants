@@ -188,17 +188,26 @@ That is aligned with the goal of being the default AI-friendly mutation-testing 
 
 These should become proposal issues before implementation:
 
-- Add `not_covered` as a first-class mutation status or reason in JSON schema v1.
-- Add top-level mutation coverage and test efficacy metrics, distinct from mutation score.
-- Add mutator statistics to summary, JSON, and HTML reports.
+- Add `not_covered` as a first-class mutation status or reason in JSON schema v1. Implemented in issue #10 follow-up work.
+- Add top-level mutation coverage and test efficacy metrics, distinct from mutation score. Implemented in issue #10 follow-up work.
+- Add mutator statistics to summary, JSON, and HTML reports. Implemented in issue #10 follow-up work.
 - Add an external-tool comparison harness that can ingest Gremlins, gomu, and go-mutesting reports/logs.
 - Optimize temp-workdir and package-mode execution to close the performance gap with Gremlins.
 - Add a benchmark profile for popular Go repos with pinned commits, package scopes, and repeatable commands.
 - Add Windows path regression fixtures for isolation, overlay, and worker temp paths.
+
+## Issue #10 Follow-Up Implementation
+
+After the initial study, CervoMutant added Gremlins-inspired reporting primitives:
+
+- `not_covered` mutation status for coverage-guided selection when the coverage profile does not execute the mutated file.
+- `test_efficacy` and `mutation_coverage` as separate summary and evaluation metrics.
+- `mutator_statistics` in JSON plus visible mutator statistics in summary and HTML reports.
+
+The same Cobra `./doc` sample now reports these fields in `summary.txt`, `mutation-report.json`, and `evaluation.json`.
 
 ## Current Assessment
 
 For this Windows/OneDrive study, CervoMutant is operationally more robust than gomu and go-mutesting, but Gremlins is currently the strongest direct Go implementation reference for speed and concise mutation semantics.
 
 The next improvement cycle should focus on Gremlins-inspired execution/reporting concepts while preserving CervoMutant's stronger CI, schema, baseline, and agent-oriented artifacts.
-

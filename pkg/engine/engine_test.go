@@ -177,3 +177,69 @@ func TestCacheKeyChangesWhenGoModOrTestsChange(t *testing.T) {
 		t.Fatal("cache key did not change after relevant test file changed")
 	}
 }
+
+func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
+	result := summarize([]MutantResult{
+		{Status: StatusKilled, Mutant: Mutant{Operator: "conditionals"}},
+		{Status: StatusSurvived, Mutant: Mutant{Operator: "conditionals"}},
+		{Status: StatusNotCovered, Mutant: Mutant{Operator: "logical"}},
+		{Status: StatusSkipped, Mutant: Mutant{Operator: "boolean"}},
+	})
+
+	if result.NotCovered != 1 {
+		t.Fatalf("not covered = %d, want 1", result.NotCovered)
+	}
+	if result.Score != 50 {
+		t.Fatalf("score = %.2f, want 50", result.Score)
+	}
+	if result.TestEfficacy != 50 {
+		t.Fatalf("test efficacy = %.2f, want 50", result.TestEfficacy)
+	}
+	if result.MutationCoverage != 66.66666666666666 {
+		t.Fatalf("mutation coverage = %.14f, want 66.66666666666666", result.MutationCoverage)
+	}
+	if result.MutatorStats["conditionals"].Killed != 1 || result.MutatorStats["conditionals"].Survived != 1 {
+		t.Fatalf("conditionals stats not populated: %+v", result.MutatorStats["conditionals"])
+	}
+	if result.MutatorStats["logical"].NotCovered != 1 {
+		t.Fatalf("logical not-covered stats not populated: %+v", result.MutatorStats["logical"])
+	}
+}
+
+func TestCoverageSelectionCanClassifyUncoveredMutantWithoutRunningAllTests(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Selection.Mode = "coverage"
+	isolateArtifacts(&cfg, dir)
+	if err := os.MkdirAll(filepath.Dir(cfg.Selection.CoverageProfile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Selection.CoverageProfile, []byte("mode: set\nother.go:1.1,1.2 1 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e := New(cfg)
+	result, err := e.runMutant(context.Background(), Mutant{
+		ID:          "m-uncovered",
+		Module:      dir,
+		Package:     ".",
+		File:        filepath.Join(dir, "calc.go"),
+		Line:        3,
+		Operator:    "conditionals",
+		Original:    ">=",
+		Mutated:     ">",
+		StartOffset: 0,
+		EndOffset:   1,
+	})
+	if err != nil {
+		t.Fatalf("runMutant returned error: %v", err)
+	}
+	if result.Status != StatusNotCovered {
+		t.Fatalf("status = %q, want %q", result.Status, StatusNotCovered)
+	}
+	if !strings.Contains(result.StatusReason, "coverage profile") {
+		t.Fatalf("status reason should mention coverage profile: %q", result.StatusReason)
+	}
+}

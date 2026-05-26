@@ -13,6 +13,7 @@ const (
 	StatusTimedOut     Status = "timed_out"
 	StatusCompileError Status = "compile_error"
 	StatusSkipped      Status = "skipped"
+	StatusNotCovered   Status = "not_covered"
 	StatusIgnored      Status = "ignored"
 	StatusQuarantined  Status = "quarantined"
 	StatusCached       Status = "cached"
@@ -54,18 +55,35 @@ type MutantResult struct {
 }
 
 type Summary struct {
-	Total             int     `json:"total"`
-	Killed            int     `json:"killed"`
-	Survived          int     `json:"survived"`
-	TimedOut          int     `json:"timed_out"`
-	CompileError      int     `json:"compile_error"`
-	Skipped           int     `json:"skipped"`
-	Ignored           int     `json:"ignored"`
-	Quarantined       int     `json:"quarantined"`
-	Cached            int     `json:"cached"`
-	ExpiredQuarantine int     `json:"expired_quarantine"`
-	Score             float64 `json:"score"`
-	EffectiveScore    float64 `json:"effective_score"`
+	Total             int                    `json:"total"`
+	Killed            int                    `json:"killed"`
+	Survived          int                    `json:"survived"`
+	NotCovered        int                    `json:"not_covered"`
+	TimedOut          int                    `json:"timed_out"`
+	CompileError      int                    `json:"compile_error"`
+	Skipped           int                    `json:"skipped"`
+	Ignored           int                    `json:"ignored"`
+	Quarantined       int                    `json:"quarantined"`
+	Cached            int                    `json:"cached"`
+	ExpiredQuarantine int                    `json:"expired_quarantine"`
+	Score             float64                `json:"score"`
+	EffectiveScore    float64                `json:"effective_score"`
+	TestEfficacy      float64                `json:"test_efficacy"`
+	MutationCoverage  float64                `json:"mutation_coverage"`
+	MutatorStats      map[string]MutatorStat `json:"mutator_statistics,omitempty"`
+}
+
+type MutatorStat struct {
+	Total        int `json:"total"`
+	Killed       int `json:"killed"`
+	Survived     int `json:"survived"`
+	NotCovered   int `json:"not_covered"`
+	TimedOut     int `json:"timed_out"`
+	CompileError int `json:"compile_error"`
+	Skipped      int `json:"skipped"`
+	Ignored      int `json:"ignored"`
+	Quarantined  int `json:"quarantined"`
+	Cached       int `json:"cached"`
 }
 
 type BaselineComparison struct {
@@ -143,8 +161,9 @@ type Runner interface {
 }
 
 type TestPlan struct {
-	Command []string `json:"command"`
-	Reason  string   `json:"reason"`
+	Command      []string `json:"command"`
+	Reason       string   `json:"reason"`
+	CoversMutant bool     `json:"covers_mutant"`
 }
 
 type TestSelector interface {

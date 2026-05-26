@@ -74,11 +74,14 @@ type Metrics struct {
 	TotalMutants                   int     `json:"total_mutants"`
 	Killed                         int     `json:"killed"`
 	Survived                       int     `json:"survived"`
+	NotCovered                     int     `json:"not_covered"`
 	TimedOut                       int     `json:"timed_out"`
 	CompileError                   int     `json:"compile_error"`
 	Skipped                        int     `json:"skipped"`
 	Quarantined                    int     `json:"quarantined"`
 	Cached                         int     `json:"cached"`
+	TestEfficacy                   float64 `json:"test_efficacy"`
+	MutationCoverage               float64 `json:"mutation_coverage"`
 	CacheHitRate                   float64 `json:"cache_hit_rate"`
 	ActionableSurvivorsReviewed    int     `json:"actionable_survivors_reviewed"`
 	EquivalentReviewed             int     `json:"equivalent_reviewed"`
@@ -155,7 +158,7 @@ func Markdown(e Evaluation) string {
 		fmt.Fprintf(&b, "| %s | %d/%d | %s |\n", row.name, row.c.Score, row.c.Max, row.c.Evidence)
 	}
 	fmt.Fprintf(&b, "\n## Metrics\n\n")
-	fmt.Fprintf(&b, "- Mutation score: %.2f\n- Total mutants: %d\n- Killed: %d\n- Survived: %d\n- Cached: %d\n- Quarantined: %d\n\n", e.Metrics.MutationScore, e.Metrics.TotalMutants, e.Metrics.Killed, e.Metrics.Survived, e.Metrics.Cached, e.Metrics.Quarantined)
+	fmt.Fprintf(&b, "- Mutation score: %.2f\n- Test efficacy: %.2f\n- Mutation coverage: %.2f\n- Total mutants: %d\n- Killed: %d\n- Survived: %d\n- Not covered: %d\n- Cached: %d\n- Quarantined: %d\n\n", e.Metrics.MutationScore, e.Metrics.TestEfficacy, e.Metrics.MutationCoverage, e.Metrics.TotalMutants, e.Metrics.Killed, e.Metrics.Survived, e.Metrics.NotCovered, e.Metrics.Cached, e.Metrics.Quarantined)
 	fmt.Fprintf(&b, "## Required Manual Review\n\n")
 	for _, item := range e.RequiredManualReview {
 		fmt.Fprintf(&b, "- [ ] %s\n", item)
@@ -192,16 +195,19 @@ func metricsFromRun(run engine.RunResult) Metrics {
 		cacheHitRate = float64(run.Cache.Hits) / float64(totalCache)
 	}
 	return Metrics{
-		MutationScore: run.Summary.Score,
-		TotalMutants:  run.Summary.Total,
-		Killed:        run.Summary.Killed,
-		Survived:      run.Summary.Survived,
-		TimedOut:      run.Summary.TimedOut,
-		CompileError:  run.Summary.CompileError,
-		Skipped:       run.Summary.Skipped,
-		Quarantined:   run.Summary.Quarantined,
-		Cached:        run.Summary.Cached,
-		CacheHitRate:  cacheHitRate,
+		MutationScore:    run.Summary.Score,
+		TotalMutants:     run.Summary.Total,
+		Killed:           run.Summary.Killed,
+		Survived:         run.Summary.Survived,
+		NotCovered:       run.Summary.NotCovered,
+		TimedOut:         run.Summary.TimedOut,
+		CompileError:     run.Summary.CompileError,
+		Skipped:          run.Summary.Skipped,
+		Quarantined:      run.Summary.Quarantined,
+		Cached:           run.Summary.Cached,
+		TestEfficacy:     run.Summary.TestEfficacy,
+		MutationCoverage: run.Summary.MutationCoverage,
+		CacheHitRate:     cacheHitRate,
 	}
 }
 

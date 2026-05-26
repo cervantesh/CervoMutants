@@ -204,6 +204,15 @@ func (e *Engine) runBaseline(ctx context.Context, targets []string) (MutantResul
 
 func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, error) {
 	plan := e.selectTests(mutant)
+	if e.cfg.Selection.Mode == "coverage" && !plan.CoversMutant {
+		return MutantResult{
+			MutantID:     mutant.ID,
+			Status:       StatusNotCovered,
+			TestCommand:  plan.Command,
+			StatusReason: "coverage profile did not execute mutant file",
+			Mutant:       mutant,
+		}, nil
+	}
 	key, err := e.cacheKey(mutant, plan)
 	if err != nil {
 		return MutantResult{}, err
@@ -244,16 +253,16 @@ func (e *Engine) selectTests(mutant Mutant) TestPlan {
 	}
 	if e.cfg.Selection.Mode == "package" && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
 		command[2] = mutant.Package
-		return TestPlan{Command: command, Reason: "package selected from mutant file"}
+		return TestPlan{Command: command, Reason: "package selected from mutant file", CoversMutant: true}
 	}
 	if e.cfg.Selection.Mode == "coverage" {
 		if e.coverageMentions(mutant) && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
 			command[2] = mutant.Package
-			return TestPlan{Command: command, Reason: "coverage profile matched mutant file"}
+			return TestPlan{Command: command, Reason: "coverage profile matched mutant file", CoversMutant: true}
 		}
-		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file; all tests selected"}
+		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file", CoversMutant: false}
 	}
-	return TestPlan{Command: command, Reason: "all tests selected"}
+	return TestPlan{Command: command, Reason: "all tests selected", CoversMutant: true}
 }
 
 func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, error) {
@@ -329,32 +338,55 @@ func moduleForTargets(targets []string) (string, error) {
 }
 
 func summarize(results []MutantResult) Summary {
-	var s Summary
+	s := Summary{MutatorStats: map[string]MutatorStat{}}
 	s.Total = len(results)
 	for _, result := range results {
+		operator := result.Mutant.Operator
+		if operator == "" {
+			operator = "unknown"
+		}
+		stat := s.MutatorStats[operator]
+		stat.Total++
 		switch result.Status {
 		case StatusKilled:
 			s.Killed++
+			stat.Killed++
 		case StatusSurvived:
 			s.Survived++
+			stat.Survived++
+		case StatusNotCovered:
+			s.NotCovered++
+			stat.NotCovered++
 		case StatusTimedOut:
 			s.TimedOut++
+			stat.TimedOut++
 		case StatusCompileError:
 			s.CompileError++
+			stat.CompileError++
 		case StatusSkipped:
 			s.Skipped++
+			stat.Skipped++
 		case StatusIgnored:
 			s.Ignored++
+			stat.Ignored++
 		case StatusQuarantined:
 			s.Quarantined++
+			stat.Quarantined++
 		case StatusCached:
 			s.Cached++
+			stat.Cached++
 		}
+		s.MutatorStats[operator] = stat
 	}
-	denom := s.Total - s.Ignored - s.Quarantined - s.Skipped
-	if denom > 0 {
-		s.Score = float64(s.Killed) / float64(denom) * 100
+	eligible := s.Total - s.Ignored - s.Quarantined - s.Skipped - s.NotCovered
+	if eligible > 0 {
+		s.Score = float64(s.Killed) / float64(eligible) * 100
 		s.EffectiveScore = s.Score
+		s.TestEfficacy = s.Score
+	}
+	coverable := s.Total - s.Ignored - s.Quarantined - s.Skipped
+	if coverable > 0 {
+		s.MutationCoverage = float64(coverable-s.NotCovered) / float64(coverable) * 100
 	}
 	return s
 }

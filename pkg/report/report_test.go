@@ -58,3 +58,34 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T) {
+	run := engine.RunResult{
+		Summary: engine.Summary{
+			Total:            3,
+			Killed:           1,
+			Survived:         1,
+			NotCovered:       1,
+			Score:            50,
+			TestEfficacy:     50,
+			MutationCoverage: 66.66666666666666,
+			MutatorStats: map[string]engine.MutatorStat{
+				"conditionals": {Total: 2, Killed: 1, Survived: 1},
+				"logical":      {Total: 1, NotCovered: 1},
+			},
+		},
+	}
+
+	text := Summary(run)
+	for _, want := range []string{
+		"Not covered: 1",
+		"Test efficacy: 50.00%",
+		"Mutation coverage: 66.67%",
+		"conditionals: total=2 killed=1 survived=1 not_covered=0",
+		"logical: total=1 killed=0 survived=0 not_covered=1",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}

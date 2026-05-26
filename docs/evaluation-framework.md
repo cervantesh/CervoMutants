@@ -207,8 +207,12 @@ Use this layer to keep evaluation claims defensible.
 Collect these metrics for every evaluation run:
 
 - mutation score and effective score excluding active quarantine
-- total, killed, survived, timed out, compile error, skipped, ignored,
-  quarantined, and cached mutants
+- total, killed, survived, not covered, timed out, compile error, skipped,
+  ignored, quarantined, and cached mutants
+- test efficacy and mutation coverage as separate metrics, so unexecuted
+  mutants are not confused with executed survivors
+- mutator statistics by operator, including total, killed, survived, not
+  covered, timed out, and compile error counts
 - runtime, budget usage, cache hits, cache misses, and test-selection mode
 - number of survivors converted into tests
 - number of survivors classified as equivalent, redundant, invalid, or useful

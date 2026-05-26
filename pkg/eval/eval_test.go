@@ -14,12 +14,15 @@ func TestBuildCreatesDecisionCompleteEvaluation(t *testing.T) {
 	run := engine.RunResult{
 		SchemaVersion: "1",
 		Summary: engine.Summary{
-			Total:       10,
-			Killed:      6,
-			Survived:    2,
-			Cached:      1,
-			Quarantined: 1,
-			Score:       75,
+			Total:            10,
+			Killed:           6,
+			Survived:         2,
+			NotCovered:       1,
+			Cached:           1,
+			Quarantined:      1,
+			Score:            75,
+			TestEfficacy:     75,
+			MutationCoverage: 90,
 		},
 		Cache: engine.CacheStats{Hits: 1, Misses: 9},
 		Mutants: []engine.MutantResult{
@@ -49,6 +52,15 @@ func TestBuildCreatesDecisionCompleteEvaluation(t *testing.T) {
 	}
 	if evaluation.Scorecard.FaultRevealing.Evidence != EvidenceRequiresReview {
 		t.Fatalf("manual evidence not marked for review: %+v", evaluation.Scorecard.FaultRevealing)
+	}
+	if evaluation.Metrics.NotCovered != 1 {
+		t.Fatalf("not covered = %d, want 1", evaluation.Metrics.NotCovered)
+	}
+	if evaluation.Metrics.TestEfficacy != 75 {
+		t.Fatalf("test efficacy = %.2f, want 75", evaluation.Metrics.TestEfficacy)
+	}
+	if evaluation.Metrics.MutationCoverage != 90 {
+		t.Fatalf("mutation coverage = %.2f, want 90", evaluation.Metrics.MutationCoverage)
 	}
 
 	data, err := json.Marshal(evaluation)
