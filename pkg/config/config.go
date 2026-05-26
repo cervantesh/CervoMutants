@@ -53,8 +53,10 @@ type Execution struct {
 }
 
 type Selection struct {
-	Mode       string `yaml:"mode" json:"mode"`
-	UseTimings bool   `yaml:"use_timings" json:"use_timings"`
+	Mode            string `yaml:"mode" json:"mode"`
+	UseTimings      bool   `yaml:"use_timings" json:"use_timings"`
+	CoverageProfile string `yaml:"coverage_profile" json:"coverage_profile"`
+	TimingsPath     string `yaml:"timings_path" json:"timings_path"`
 }
 
 type Cache struct {
@@ -134,7 +136,7 @@ func Defaults() Config {
 		},
 		Mutators:  Mutators{Profile: "conservative"},
 		Execution: Execution{Workers: workers, Isolation: "temp-workdir"},
-		Selection: Selection{Mode: "package", UseTimings: true},
+		Selection: Selection{Mode: "package", UseTimings: true, CoverageProfile: ".cervomut/coverage.out", TimingsPath: ".cervomut/timings.json"},
 		Cache:     Cache{Enabled: true, Path: ".cervomut/cache", Mode: "incremental"},
 		Baseline:  Baseline{Enabled: true, Path: ".cervomut/baseline.json", FailOnRegression: true, FailOnNewSurvivors: true},
 		Limits:    Limits{Sample: "none"},

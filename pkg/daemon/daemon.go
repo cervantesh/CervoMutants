@@ -5,8 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/isolate"
+	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/runner"
 )
 
 type Message struct {
@@ -39,4 +44,47 @@ func ServeJSONLines(ctx context.Context, in io.Reader, out io.Writer, runner eng
 		}
 	}
 	return scanner.Err()
+}
+
+type WorkerRunner struct {
+	MaxOutputBytes int
+}
+
+func (r WorkerRunner) Run(ctx context.Context, job engine.MutantJob) (engine.MutantResult, error) {
+	moduleDir := job.Mutant.Module
+	if moduleDir == "" {
+		moduleDir = job.WorkDir
+	}
+	workdir, err := isolate.CopyModule(moduleDir)
+	if err != nil {
+		return engine.MutantResult{}, err
+	}
+	defer isolate.Cleanup(workdir)
+	rel, err := filepath.Rel(moduleDir, job.Mutant.File)
+	if err != nil {
+		return engine.MutantResult{}, err
+	}
+	targetFile := filepath.Join(workdir, rel)
+	if err := applyPatch(targetFile, job.Mutant); err != nil {
+		return engine.MutantResult{}, err
+	}
+	job.WorkDir = workdir
+	return runner.GoTestRunner{MaxOutputBytes: r.MaxOutputBytes}.Run(ctx, job)
+}
+
+func applyPatch(path string, mutant engine.Mutant) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if mutant.StartOffset < 0 || mutant.EndOffset > len(data) || mutant.StartOffset >= mutant.EndOffset {
+		return os.ErrInvalid
+	}
+	segment := string(data[mutant.StartOffset:mutant.EndOffset])
+	if !strings.Contains(segment, mutant.Original) {
+		return os.ErrInvalid
+	}
+	replaced := strings.Replace(segment, mutant.Original, mutant.Mutated, 1)
+	next := string(data[:mutant.StartOffset]) + replaced + string(data[mutant.EndOffset:])
+	return os.WriteFile(path, []byte(next), 0o644)
 }

@@ -43,6 +43,12 @@ The default policy is baseline-first adoption:
 - quarantine entries require owner, issue, reason, and expiry.
 - reports include summary, JSON schema v1, JUnit XML, and HTML.
 - execution uses temp workdirs so source workspaces are not mutated.
+- coverage mode records a Go coverage profile during baseline and uses it to
+  pick package-scoped test commands when the mutated file is covered.
+- worker mode applies jobs in isolated temp workdirs and returns the same JSON
+  result schema as local execution.
+- cache fingerprints include the mutant patch, source file, relevant tests,
+  Go version, effective config, test command, and module files.
 
 ## Development
 
@@ -50,4 +56,3 @@ The default policy is baseline-first adoption:
 go test ./...
 go run ./cmd/cervomut list-mutators
 ```
-

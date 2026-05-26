@@ -1,0 +1,76 @@
+package daemon
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+)
+
+func TestWorkerRunnerAppliesMutantInIsolatedWorkdir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module workerfixture\n\ngo 1.25.6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := []byte("package workerfixture\n\nfunc Check() bool { return true }\n")
+	if err := os.WriteFile(filepath.Join(dir, "check.go"), src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "check_test.go"), []byte(`package workerfixture
+
+import "testing"
+
+func TestCheck(t *testing.T) {
+	if !Check() {
+		t.Fatal("want true")
+	}
+}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	start := strings.Index(string(src), "true")
+	job := engine.MutantJob{
+		ID: "job1",
+		Mutant: engine.Mutant{
+			ID:          "check.go:3:boolean-literals",
+			Module:      dir,
+			File:        filepath.Join(dir, "check.go"),
+			Package:     ".",
+			Original:    "true",
+			Mutated:     "false",
+			StartOffset: start,
+			EndOffset:   start + len("true"),
+		},
+		WorkDir:     dir,
+		TestCommand: []string{"go", "test", "."},
+		Timeout:     "30s",
+	}
+	var in bytes.Buffer
+	if err := json.NewEncoder(&in).Encode(Message{Type: "job", Job: job}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := ServeJSONLines(context.Background(), &in, &out, WorkerRunner{MaxOutputBytes: 12000}); err != nil {
+		t.Fatalf("ServeJSONLines returned error: %v", err)
+	}
+	var msg Message
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &msg); err != nil {
+		t.Fatalf("worker output is not JSON: %s", out.String())
+	}
+	if msg.Type != "result" || msg.Result.Status != engine.StatusKilled {
+		t.Fatalf("worker did not execute real mutant: %+v", msg)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "check.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(src) {
+		t.Fatal("worker mutated original workdir instead of isolated copy")
+	}
+}

@@ -51,7 +51,7 @@ func run(args []string) error {
 	case "list-mutators":
 		return cmdListMutators()
 	case "daemon", "worker":
-		return daemon.ServeJSONLines(context.Background(), os.Stdin, os.Stdout, noopRunner{})
+		return daemon.ServeJSONLines(context.Background(), os.Stdin, os.Stdout, daemon.WorkerRunner{MaxOutputBytes: 12000})
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", args[0])
@@ -139,6 +139,8 @@ func cmdRun(args []string) error {
 	if *out != "" {
 		cfg.Reports.Output = *out
 		cfg.Cache.Path = filepath.Join(*out, "cache")
+		cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
+		cfg.Selection.TimingsPath = filepath.Join(*out, "timings.json")
 	}
 	result, err := engine.New(cfg).Run(context.Background(), engine.RunRequest{Targets: fs.Args(), DryRun: *dryRun})
 	if err != nil {
@@ -311,6 +313,8 @@ execution:
 selection:
   mode: package
   use_timings: true
+  coverage_profile: .cervomut/coverage.out
+  timings_path: .cervomut/timings.json
 cache:
   enabled: true
   path: .cervomut/cache
@@ -385,10 +389,4 @@ func reorderFlags(args []string, takesValue map[string]bool) []string {
 		}
 	}
 	return append(flags, positional...)
-}
-
-type noopRunner struct{}
-
-func (noopRunner) Run(ctx context.Context, job engine.MutantJob) (engine.MutantResult, error) {
-	return engine.MutantResult{MutantID: job.Mutant.ID, Status: engine.StatusSkipped, StatusReason: "noop daemon runner", Mutant: job.Mutant}, nil
 }

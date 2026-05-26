@@ -3,11 +3,15 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -178,7 +182,16 @@ func (e *Engine) runBaseline(ctx context.Context, targets []string) (MutantResul
 	if err != nil {
 		return MutantResult{}, err
 	}
-	job := MutantJob{ID: "baseline", WorkDir: moduleDir, TestCommand: e.cfg.Tests.Command, Timeout: e.cfg.Tests.Timeout.String()}
+	command := append([]string{}, e.cfg.Tests.Command...)
+	if e.cfg.Selection.Mode == "coverage" {
+		profile := e.cfg.Selection.CoverageProfile
+		if !filepath.IsAbs(profile) {
+			profile = filepath.Join(moduleDir, profile)
+		}
+		_ = os.MkdirAll(filepath.Dir(profile), 0o755)
+		command = withCoverProfile(command, profile)
+	}
+	job := MutantJob{ID: "baseline", WorkDir: moduleDir, TestCommand: command, Timeout: e.cfg.Tests.Timeout.String()}
 	result, err := e.runTest(ctx, job)
 	if err != nil {
 		return MutantResult{}, err
@@ -191,7 +204,10 @@ func (e *Engine) runBaseline(ctx context.Context, targets []string) (MutantResul
 
 func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, error) {
 	plan := e.selectTests(mutant)
-	key := localKey(mutant.Fingerprint, strings.Join(plan.Command, " "), e.cfg.Mutators.Profile)
+	key, err := e.cacheKey(mutant, plan)
+	if err != nil {
+		return MutantResult{}, err
+	}
 	if e.cfg.Cache.Enabled && e.cfg.Cache.Mode != "off" {
 		if cached, ok, err := e.getCached(key); err == nil && ok {
 			result := cached
@@ -214,6 +230,7 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 		return MutantResult{}, err
 	}
 	result, err := e.runTest(ctx, MutantJob{ID: mutant.ID, Mutant: mutant, WorkDir: workdir, TestCommand: plan.Command, Timeout: e.cfg.Tests.Timeout.String()})
+	e.recordTiming(mutant.ID, result.Duration)
 	if err == nil && e.cfg.Cache.Enabled && e.cfg.Cache.Mode == "incremental" {
 		_ = e.putCached(key, result)
 	}
@@ -230,7 +247,11 @@ func (e *Engine) selectTests(mutant Mutant) TestPlan {
 		return TestPlan{Command: command, Reason: "package selected from mutant file"}
 	}
 	if e.cfg.Selection.Mode == "coverage" {
-		return TestPlan{Command: command, Reason: "coverage timing data unavailable; package fallback selected"}
+		if e.coverageMentions(mutant) && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
+			command[2] = mutant.Package
+			return TestPlan{Command: command, Reason: "coverage profile matched mutant file"}
+		}
+		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file; all tests selected"}
 	}
 	return TestPlan{Command: command, Reason: "all tests selected"}
 }
@@ -450,4 +471,145 @@ func (e *Engine) putCached(key string, result MutantResult) error {
 
 func localKey(parts ...string) string {
 	return strings.NewReplacer("\\", "/", " ", "_", ":", "_").Replace(strings.Join(parts, "_"))
+}
+
+func (e *Engine) discoverForTest(targets []string) (discover.Result, error) {
+	return discover.Discover(targets)
+}
+
+func (e *Engine) cacheKeyForTest(mutant Mutant, plan TestPlan) (string, error) {
+	return e.cacheKey(mutant, plan)
+}
+
+func (e *Engine) cacheKey(mutant Mutant, plan TestPlan) (string, error) {
+	parts := []string{
+		"v2",
+		mutant.Fingerprint,
+		mutant.File,
+		mutant.Package,
+		e.cfg.Mutators.Profile,
+		e.cfg.Selection.Mode,
+		strings.Join(plan.Command, "\x00"),
+		runtime.Version(),
+	}
+	for _, name := range []string{"go.mod", "go.sum"} {
+		if digest, err := digestFile(filepath.Join(mutant.Module, name)); err == nil {
+			parts = append(parts, name+"="+digest)
+		}
+	}
+	sourceDigest, err := digestFile(mutant.File)
+	if err != nil {
+		return "", err
+	}
+	parts = append(parts, "source="+sourceDigest)
+	testDigests, err := e.testDigests(mutant.Module, mutant.Package)
+	if err != nil {
+		return "", err
+	}
+	parts = append(parts, testDigests...)
+	configData, _ := json.Marshal(e.cfg)
+	parts = append(parts, "config="+digestBytes(configData))
+	return digestBytes([]byte(strings.Join(parts, "\x00"))), nil
+}
+
+func (e *Engine) testDigests(moduleDir, pkg string) ([]string, error) {
+	dir := moduleDir
+	if pkg != "." && strings.HasPrefix(pkg, "./") {
+		dir = filepath.Join(moduleDir, filepath.FromSlash(strings.TrimPrefix(pkg, "./")))
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var digests []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		digest, err := digestFile(path)
+		if err != nil {
+			return nil, err
+		}
+		digests = append(digests, "test:"+entry.Name()+"="+digest)
+	}
+	sort.Strings(digests)
+	return digests, nil
+}
+
+func digestFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func digestBytes(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+func (e *Engine) coverageMentions(mutant Mutant) bool {
+	profile := e.cfg.Selection.CoverageProfile
+	if !filepath.IsAbs(profile) {
+		profile = filepath.Join(mutant.Module, profile)
+	}
+	data, err := os.ReadFile(profile)
+	if err != nil {
+		return false
+	}
+	rel, _ := filepath.Rel(mutant.Module, mutant.File)
+	rel = filepath.ToSlash(rel)
+	base := filepath.Base(mutant.File)
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, rel+":") || strings.Contains(line, base+":") {
+			return true
+		}
+	}
+	return false
+}
+
+func withCoverProfile(command []string, profile string) []string {
+	if len(command) < 2 || command[0] != "go" || command[1] != "test" {
+		return command
+	}
+	next := append([]string{}, command...)
+	for _, arg := range next[2:] {
+		if strings.HasPrefix(arg, "-coverprofile") {
+			return next
+		}
+	}
+	return append(next[:2], append([]string{"-coverprofile", profile}, next[2:]...)...)
+}
+
+func (e *Engine) recordTiming(mutantID string, duration time.Duration) {
+	if !e.cfg.Selection.UseTimings || e.cfg.Selection.TimingsPath == "" || mutantID == "" {
+		return
+	}
+	path := e.cfg.Selection.TimingsPath
+	if !filepath.IsAbs(path) {
+		moduleDir := "."
+		path = filepath.Join(moduleDir, path)
+	}
+	timings := map[string]int64{}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &timings)
+	}
+	timings[mutantID] = duration.Milliseconds()
+	if timings[mutantID] == 0 {
+		timings[mutantID] = 1
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(timings, "", "  ")
+	if err == nil {
+		_ = os.WriteFile(path, data, 0o644)
+	}
 }
