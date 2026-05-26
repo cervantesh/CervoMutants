@@ -1,0 +1,119 @@
+diff --git a/cmd/go-mutesting/main.go b/cmd/go-mutesting/main.go
+index 7237958..7a54813 100644
+--- a/cmd/go-mutesting/main.go
++++ b/cmd/go-mutesting/main.go
+@@ -590,6 +590,51 @@ func mutateAllPackages(
+ 
+ // processMutationFile parses one source file, applies all mutators, and enqueues jobs.
+ // Returns the mutation count for this file and an exit code.
++func diffFiles(originalPath, mutationPath string) ([]byte, int, error) {
++	orig, err := os.ReadFile(originalPath)
++	if err != nil {
++		return nil, 2, err
++	}
++	mut, err := os.ReadFile(mutationPath)
++	if err != nil {
++		return nil, 2, err
++	}
++	if bytes.Equal(orig, mut) {
++		return nil, 0, nil
++	}
++	origLines := strings.Split(string(orig), "\n")
++	mutLines := strings.Split(string(mut), "\n")
++	var b bytes.Buffer
++	fmt.Fprintf(&b, "--- Original\n")
++	fmt.Fprintf(&b, "+++ New\n")
++	fmt.Fprintf(&b, "@@ -1,%d +1,%d @@\n", len(origLines), len(mutLines))
++	for _, line := range origLines {
++		if line != "" {
++			fmt.Fprintf(&b, "-%s\n", line)
++		}
++	}
++	for _, line := range mutLines {
++		if line != "" {
++			fmt.Fprintf(&b, "+%s\n", line)
++		}
++	}
++	return b.Bytes(), 1, nil
++}
++func tempMutationFilePath(tmpDir, moduleRoot, file string) (string, error) {
++	absFile, err := filepath.Abs(file)
++	if err != nil {
++		return "", err
++	}
++	absRoot, err := filepath.Abs(moduleRoot)
++	if err != nil {
++		return "", err
++	}
++	rel, err := filepath.Rel(absRoot, absFile)
++	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
++		rel = filepath.Base(absFile)
++	}
++	return filepath.Join(tmpDir, "mutations", rel), nil
++}
+ func processMutationFile(
+ 	opts *models.Options,
+ 	file string,
+@@ -621,11 +666,13 @@ func processMutationFile(
+ 		return 0, exitError(err.Error())
+ 	}
+ 
+-	if err = os.MkdirAll(tmpDir+"/"+filepath.Dir(file), 0755); err != nil {
++	tmpFile, err := tempMutationFilePath(tmpDir, moduleRoot, file)
++	if err != nil {
++		panic(err)
++	}
++	if err = os.MkdirAll(filepath.Dir(tmpFile), 0755); err != nil {
+ 		panic(err)
+ 	}
+-
+-	tmpFile := tmpDir + "/" + file
+ 	originalFile := fmt.Sprintf("%s.original", tmpFile)
+ 	if err = osutil.CopyFile(file, originalFile); err != nil {
+ 		panic(err)
+@@ -1015,7 +1062,7 @@ func runExecJob(job execJob, stats *models.Report, mu *sync.Mutex) {
+ 	mutant := job.mutant
+ 
+ 	if job.gitChangedLines != nil {
+-		diffOut, _ := exec.Command("diff", "--label=Original", "--label=New", "-u", job.originalFile, job.mutationFile).CombinedOutput()
++		diffOut, _, _ := diffFiles(job.originalFile, job.mutationFile)
+ 		lineNum := int(parser.FindOriginalStartLine(diffOut))
+ 		if !gitdiff.IsLineChanged(job.gitChangedLines, job.absFile, lineNum) {
+ 			console.Debug(opts, "Skip %q at line %d (not in git diff)", job.mutationFile, lineNum)
+@@ -1024,7 +1071,7 @@ func runExecJob(job execJob, stats *models.Report, mu *sync.Mutex) {
+ 	}
+ 
+ 	if job.runMutantID != "" {
+-		diffOut, _ := exec.Command("diff", "--label=Original", "--label=New", "-u", job.originalFile, job.mutationFile).CombinedOutput()
++		diffOut, _, _ := diffFiles(job.originalFile, job.mutationFile)
+ 		relFile := job.absFile
+ 		if job.moduleRoot != "" {
+ 			if rel, err := filepath.Rel(job.moduleRoot, job.absFile); err == nil {
+@@ -1141,16 +1188,11 @@ func runBuiltinExec(
+ ) int {
+ 	console.Debug(opts, "Execute built-in exec command for mutation")
+ 
+-	diff, err := exec.Command("diff", "--label=Original", "--label=New", "-u", file, mutationFile).CombinedOutput()
++	diff, diffExitCode, err := diffFiles(file, mutationFile)
+ 	startLine := parser.FindOriginalStartLine(diff)
+ 	mutant.Mutator.OriginalStartLine = startLine
+ 
+-	var diffExitCode int
+-	if err == nil {
+-		diffExitCode = 0
+-	} else if e, ok := err.(*exec.ExitError); ok {
+-		diffExitCode = e.Sys().(syscall.WaitStatus).ExitStatus()
+-	} else {
++	if err != nil {
+ 		panic(err)
+ 	}
+ 	if diffExitCode != 0 && diffExitCode != 1 {
+@@ -1252,7 +1294,7 @@ func interpretBuiltinExitCode(opts *models.Options, execExitCode int, diff []byt
+ func runCustomExec(opts *models.Options, pkg *types.Package, file string, mutationFile string, execs []string, mutant *models.Mutant) int {
+ 	console.Debug(opts, "Execute %q for mutation", opts.Exec.Exec)
+ 
+-	extDiff, _ := exec.Command("diff", "--label=Original", "--label=New", "-u", file, mutationFile).CombinedOutput()
++	extDiff, _, _ := diffFiles(file, mutationFile)
+ 	mutant.Mutator.OriginalStartLine = parser.FindOriginalStartLine(extDiff)
+ 	mutant.Diff = string(extDiff)
+ 

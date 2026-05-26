@@ -94,6 +94,13 @@ go-mutesting /noop /quiet /no-diffs /logger-summary-json /logger-agentic-json /c
 | gomu | No | 390 discovered | 0 valid | 0 valid | 390 preparation errors | 1.59s | All mutants failed before execution due invalid temp directory name derived from Windows absolute paths. |
 | go-mutesting v2 | No | Not completed | N/A | N/A | Panic or timeout | 15.74s before panic; retry timed out at 184s | Import-path run panicked on `C:` temp path; relative retry stalled while building per-test coverage map. |
 
+Patched local validation:
+
+| Tool | Patch | Completed? | Mutants attempted | Killed | Survived/escaped | Other statuses | Time | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| gomu v0.2.0 | [windows paths](../external-patches/gomu-v0.2.0-windows-paths.patch) | Yes | 390 | 64 | 99 survived | 176 errors, 51 not viable | 98s | The `mutant_C:` preparation failure is fixed. Remaining errors are mutation/compile outcomes from gomu's generated mutants, not temp path creation failures. |
+| go-mutesting v2.6.13 | [windows paths](../external-patches/go-mutesting-v2.6.13-windows-paths.patch) | Yes | 361 | 170 | 191 escaped | 0 errored, 0 not covered, 0 skipped | 129s | The `C:` temp path panic and missing Unix `diff` executable failure are fixed for the non-coverage run. |
+
 Gremlins reported:
 
 ```text
@@ -215,6 +222,11 @@ The gomu and go-mutesting failures were converted into executable CervoMutant sa
 - mutant patch target paths are resolved through a containment check, so a malformed worker job cannot escape the copied module;
 - engine-generated mutant IDs are module-relative and slash-normalized instead of embedding raw absolute `C:\...` paths;
 - regression tests cover Windows-invalid filename characters, OneDrive-style paths with spaces, worker containment, and source-tree preservation.
+
+Local patches were also produced for the external tools so the comparison can be rerun on Windows:
+
+- [gomu v0.2.0 Windows path patch](../external-patches/gomu-v0.2.0-windows-paths.patch)
+- [go-mutesting v2.6.13 Windows path patch](../external-patches/go-mutesting-v2.6.13-windows-paths.patch)
 
 ## Current Assessment
 

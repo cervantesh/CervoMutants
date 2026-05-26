@@ -1,0 +1,50 @@
+diff --git a/internal/execution/overlay.go b/internal/execution/overlay.go
+index 63e30a7..78dbfcb 100644
+--- a/internal/execution/overlay.go
++++ b/internal/execution/overlay.go
+@@ -1,6 +1,8 @@
+ package execution
+ 
+ import (
++	"crypto/sha256"
++	"encoding/hex"
+ 	"encoding/json"
+ 	"fmt"
+ 	"go/ast"
+@@ -9,6 +11,7 @@ import (
+ 	"go/token"
+ 	"os"
+ 	"path/filepath"
++	"strings"
+ 	"time"
+ 
+ 	"golang.org/x/tools/go/ast/astutil"
+@@ -50,7 +53,7 @@ func NewOverlayMutator() (*OverlayMutator, error) {
+ // PrepareMutation prepares the mutation execution by creating mutated file and overlay.json.
+ func (om *OverlayMutator) PrepareMutation(mutant mutation.Mutant) (*MutationContext, error) {
+ 	// Create unique directory for this mutant
+-	mutantDir := filepath.Join(om.baseDir, fmt.Sprintf("mutant_%s", mutant.ID))
++	mutantDir := filepath.Join(om.baseDir, "mutant_"+safeMutationDirName(mutant))
+ 	if err := os.MkdirAll(mutantDir, 0750); err != nil {
+ 		return nil, fmt.Errorf("failed to create mutant directory: %w", err)
+ 	}
+@@ -111,6 +114,18 @@ func (om *OverlayMutator) Cleanup() error {
+ }
+ 
+ // createMutatedFile creates a mutated version of the source file.
++
++func safeMutationDirName(mutant mutation.Mutant) string {
++	key := strings.Join([]string{
++		mutant.ID,
++		mutant.FilePath,
++		mutant.Type,
++		mutant.Original,
++		mutant.Mutated,
++	}, "\x00")
++	sum := sha256.Sum256([]byte(key))
++	return hex.EncodeToString(sum[:])[:24]
++}
+ func (om *OverlayMutator) createMutatedFile(mutant mutation.Mutant, originalPath, mutatedPath string) error {
+ 	src, err := os.ReadFile(originalPath)
+ 	if err != nil {
+
