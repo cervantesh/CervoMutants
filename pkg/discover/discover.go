@@ -33,15 +33,23 @@ func Discover(targets []string) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		moduleDir := findModule(abs)
-		if moduleDir == "" {
-			moduleDir = abs
+		walkRoot := abs
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			walkRoot = resolved
 		}
+		if info, err := os.Stat(walkRoot); err == nil && info.IsDir() && !strings.HasSuffix(walkRoot, string(os.PathSeparator)) {
+			walkRoot += string(os.PathSeparator)
+		}
+		moduleDir := findModule(walkRoot)
+		if moduleDir == "" {
+			moduleDir = walkRoot
+		}
+		moduleDir = filepath.Clean(moduleDir)
 		if !seenModules[moduleDir] {
 			seenModules[moduleDir] = true
 			result.Modules = append(result.Modules, moduleDir)
 		}
-		err = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
+		err = filepath.WalkDir(walkRoot, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}

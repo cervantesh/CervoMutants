@@ -66,3 +66,57 @@ CervoMutant now supports the calibration hooks needed for this study:
 - ranked survivors in JSON and `report survivors`
 - auditable suppression rule hits in JSON
 
+## 2026-05-26 Calibration Sample
+
+Environment:
+
+- OS: Windows under OneDrive paths.
+- Binary: local `cervomut` built from issue #10 branch.
+- Scope: 20 deterministic mutants per repository and policy.
+- Workers: 4.
+- Budget: 3 minutes.
+- Output root: `C:\Users\c___h\AppData\Local\Temp\cervomut-multirepo-calibration-20260526-r2`.
+
+Commands:
+
+```powershell
+cervomut run <target> --policy ci-fast --max-mutants 20 --sample deterministic --workers 4 --budget 3m --out <out>
+cervomut run <target> --profile gremlins-compatible --isolation overlay --max-mutants 20 --sample deterministic --workers 4 --budget 3m --out <out>
+```
+
+Results:
+
+| Repository | Target | Policy/profile | Seconds | Generated | Covered | Executed | Killed | Survived | Not covered | Score | Mutation coverage |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cobra | `./doc` | `ci-fast` | 6.21 | 20 | 20 | 20 | 13 | 7 | 0 | 65.00% | 100.00% |
+| Cobra | `./doc` | `gremlins-compatible` | 6.31 | 20 | 20 | 20 | 13 | 7 | 0 | 65.00% | 100.00% |
+| CervoClaw CervoCore | `./...` | `ci-fast` | 11.51 | 20 | 20 | 20 | 7 | 13 | 0 | 35.00% | 100.00% |
+| CervoClaw CervoCore | `./...` | `gremlins-compatible` | 10.16 | 20 | 20 | 20 | 7 | 13 | 0 | 35.00% | 100.00% |
+| CervoRetry | `./...` | `ci-fast` | 10.41 | 20 | 20 | 20 | 5 | 15 | 0 | 25.00% | 100.00% |
+| CervoRetry | `./...` | `gremlins-compatible` | 5.73 | 20 | 20 | 20 | 5 | 15 | 0 | 25.00% | 100.00% |
+| pflag | `./...` | `ci-fast` | 8.42 | 20 | 20 | 20 | 17 | 3 | 0 | 85.00% | 100.00% |
+| pflag | `./...` | `gremlins-compatible` | 8.31 | 20 | 20 | 20 | 17 | 3 | 0 | 85.00% | 100.00% |
+
+Findings:
+
+- `ci-fast` is stable across the sampled repositories and does not exceed the
+  3-minute budget in these small runs.
+- `gremlins-compatible` and `ci-fast` intentionally produce the same operator
+  set today, so scores match. Runtime variance is mostly baseline coverage and
+  filesystem noise.
+- CervoRetry exposed a Windows junction discovery bug: the repository path under
+  `CervoSoft` is a junction to `CervoClaw\cervo-retry`, and Go's `WalkDir`
+  reports a junction root as non-directory unless the path is normalized with a
+  trailing separator. Discovery now handles this case.
+- CervoCore and CervoRetry have low sampled scores. That is a test-suite signal,
+  not a tool failure: all sampled mutants were covered and executed.
+- pflag is a useful external control because it is small, popular, and produced
+  a high kill rate under the same budget.
+
+Next calibration step:
+
+- Expand each target to 100 deterministic mutants.
+- Add one `nightly` sample for CervoCore and CervoRetry.
+- Compare survivor rankings against manual review to tune the rank formula.
+- Add a deliberate uncovered fixture to verify `not_covered` reporting in
+  package mode with `selection.prefilter: true`.
