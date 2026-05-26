@@ -4,6 +4,7 @@ Tracking issues:
 
 - https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/5
 - https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/6
+- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/7
 
 This framework evaluates mutation testing tools for CervoSoft and decides
 whether `cervo-mutant` should be the default for CervoClaw and related Go
@@ -19,7 +20,8 @@ The decisive question is:
 
 ## Research Basis
 
-Use these studies as the methodological baseline:
+Use these studies as the methodological baseline. Full links are listed in
+[References](#references).
 
 - **How Do Java Mutation Tools Differ?**  
   CACM tool-comparison framework. Use its five dimensions: tool version,
@@ -38,7 +40,8 @@ Use these studies as the methodological baseline:
   Use as a threats-to-validity checklist for equivalent mutants, flaky tests,
   sampling bias, operator bias, and over-reliance on mutation score.
 
-Use these recent studies as extensions to the baseline:
+Use these recent studies as extensions to the baseline. Full links are listed
+in [References](#references).
 
 - **Equivalent Mutants in the Wild**  
   ISSTA 2024 study on identifying and suppressing equivalent mutants in real
@@ -349,3 +352,108 @@ Track:
 Reject or defer default adoption if the tool is fast but not actionable, has a
 high equivalent-mutant burden, produces unstable CI results, or improves
 mutation score without improving real-fault detection.
+
+## References
+
+The framework intentionally cites studies by their role in the evaluation
+method. When a DOI is known, prefer the DOI URL. When the publisher page is
+closed or metadata-only, include an accessible preprint or project page as a
+secondary URL.
+
+### Baseline Methodology
+
+- Amalfitano, D., et al. **How Do Java Mutation Tools Differ?**
+  Communications of the ACM, 2022.  
+  Project page:
+  https://homes.cs.washington.edu/~rjust/publ/AmalfitanoPIPFJ2022-abstract.html  
+  PDF:
+  https://homes.cs.washington.edu/~rjust/publ/mutation_tools_cacm_2022.pdf
+
+- Kintis, M., Papadakis, M., Papadopoulos, A., Valvis, E., Malevris, N.,
+  and Le Traon, Y. **How effective are mutation testing tools? An empirical
+  analysis of Java mutation testing tools with manual analysis and real
+  faults.** Empirical Software Engineering, 2018.  
+  DOI: https://doi.org/10.1007/s10664-017-9582-5  
+  ORBilu:
+  https://orbilu.uni.lu/handle/10993/35336
+
+- Ma, X., et al. **On the use of commit-relevant mutants.** Empirical
+  Software Engineering, 2022.  
+  DOI: https://doi.org/10.1007/s10664-022-10138-1  
+  Springer:
+  https://link.springer.com/article/10.1007/s10664-022-10138-1
+
+- Titcheu Chekam, T., Papadakis, M., Bissyande, T. F., Le Traon, Y.,
+  and Sen, K. **Selecting fault revealing mutants.** Empirical Software
+  Engineering, 2020.  
+  DOI: https://doi.org/10.1007/s10664-019-09778-7  
+  Springer:
+  https://link.springer.com/article/10.1007/s10664-019-09778-7
+
+- Papadakis, M., Kintis, M., Zhang, J., Jia, Y., Le Traon, Y., and Harman, M.
+  **Mutation Testing Advances: An Analysis and Survey.** Advances in
+  Computers, 2019.  
+  DOI: https://doi.org/10.1016/bs.adcom.2018.03.015  
+  ScienceDirect:
+  https://www.sciencedirect.com/science/article/pii/S0065245818300305
+
+### Recent Research Extensions
+
+- Kushigian, B., Kaufman, S., Featherman, R., Potter, H., Madadi, A.,
+  and Just, R. **Equivalent Mutants in the Wild: Identifying and Efficiently
+  Suppressing Equivalent Mutants for Java Programs.** ISSTA 2024.  
+  DOI: https://doi.org/10.1145/3650212.3680310  
+  Project page:
+  https://homes.cs.washington.edu/~rjust/publ/KushigianKFPMJ2024-abstract.html  
+  ISSTA page:
+  https://2024.issta.org/details/issta-2024-papers/53/Equivalent-Mutants-in-the-Wild-Identifying-and-Efficiently-Suppressing-Equivalent-Mu
+
+- Straubinger, P., Degenhart, A., and Fraser, G. **An Empirical Evaluation of
+  Manually Created Equivalent Mutants.** Mutation 2024 / ICST 2024.  
+  Preprint:
+  https://arxiv.org/abs/2404.09241  
+  Conference page:
+  https://conf.researchr.org/details/icst-2024/mutation-2024-papers/3/An-Empirical-Evaluation-of-Manually-Created-Equivalent-Mutants
+
+- Ojdanic, M., Khanfir, A., Garg, A., Degiovanni, R., Papadakis, M.,
+  and Le Traon, Y. **On Comparing Mutation Testing Tools through
+  Learning-based Mutant Selection.** 2023.  
+  ORBilu:
+  https://orbilu.uni.lu/handle/10993/55802  
+  PDF:
+  https://orbilu.uni.lu/bitstream/10993/55802/1/On_Comparing_Mutation_Testing_Tools_through_Learning-based_Mutant_Selection.pdf
+
+- **An Exploratory Study on Using Large Language Models for Mutation Testing.**
+  2024.  
+  Preprint:
+  https://arxiv.org/abs/2406.09843
+
+- **Latent Mutants: A large-scale study on the Interplay between mutation
+  testing and software evolution.** 2025.  
+  Preprint:
+  https://arxiv.org/abs/2501.01873
+
+- Wang, Y., Zhang, Z., Yao, Y., and Huang, Z. **A Fine-Grained Evaluation of
+  Mutation Operators for Deep Learning Systems: A Selective Mutation
+  Approach.** Internetware 2023.  
+  Conference page:
+  https://conf.researchr.org/details/internetware-2023/internetware-2023-papers/17/A-Fine-Grained-Evaluation-of-Mutation-Operators-for-Deep-Learning-Systems-A-Selectiv
+
+- **A fine-grained evaluation of mutation operators to boost mutation testing
+  for deep learning systems.** Empirical Software Engineering, 2025.  
+  Springer:
+  https://link.springer.com/article/10.1007/s10664-025-10613-5
+
+- **METFORD -- Mutation tEsTing Framework fOR anDroid.** Journal of Systems
+  and Software, 2025.  
+  DOI: https://doi.org/10.1016/j.jss.2024.112332  
+  ScienceDirect:
+  https://www.sciencedirect.com/science/article/pii/S0164121224003765  
+  Preprint:
+  https://arxiv.org/abs/2501.02875
+
+- Leotta, M., Paparella, D., and Ricca, F. **Mutta: a novel tool for E2E web
+  mutation testing.** Software Quality Journal, 2024.  
+  DOI: https://doi.org/10.1007/s11219-023-09616-6  
+  Springer:
+  https://link.springer.com/article/10.1007/s11219-023-09616-6
