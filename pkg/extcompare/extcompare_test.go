@@ -22,11 +22,12 @@ func TestParseCervoReportNormalizesMetrics(t *testing.T) {
 
 func TestParseGremlinsReportNormalizesMetrics(t *testing.T) {
 	path := writeJSON(t, `{
-  "total_mutants": 4,
-  "killed": 2,
-  "survived": 1,
-  "not_covered": 1,
-  "mutation_score": 66.6667
+  "mutants_total": 4,
+  "mutants_killed": 2,
+  "mutants_lived": 1,
+  "mutants_not_covered": 1,
+  "mutants_not_viable": 0,
+  "test_efficacy": 66.6667
 }`)
 
 	result, err := ParseGremlins(path)
@@ -38,20 +39,40 @@ func TestParseGremlinsReportNormalizesMetrics(t *testing.T) {
 	}
 }
 
-func TestParseGomuReportAcceptsLineSummaries(t *testing.T) {
-	path := writeText(t, "total=5 killed=2 survived=2 timed_out=1 score=50.0\n")
+func TestParseGomuReportAcceptsJSONStatusResults(t *testing.T) {
+	path := writeJSON(t, `{
+  "totalMutants": 5,
+  "results": [
+    {"status": "KILLED"},
+    {"status": "KILLED"},
+    {"status": "SURVIVED"},
+    {"status": "ERROR"},
+    {"status": "NOT_VIABLE"}
+  ]
+}`)
 
 	result, err := ParseGomu(path)
 	if err != nil {
 		t.Fatalf("ParseGomu returned error: %v", err)
 	}
-	if result.Tool != "gomu" || result.Total != 5 || result.Killed != 2 || result.Survived != 2 || result.TimedOut != 1 || result.Score != 50 {
+	if result.Tool != "gomu" || result.Total != 5 || result.Killed != 2 || result.Survived != 1 || result.Errors != 1 || result.NotViable != 1 {
 		t.Fatalf("unexpected normalized result: %+v", result)
 	}
 }
 
-func TestParseGoMutestingReportAcceptsTextSummary(t *testing.T) {
-	path := writeText(t, "The mutation score is 75.00%: 3 killed, 1 survived, 0 timed out, 4 total\n")
+func TestParseGoMutestingReportAcceptsJSONStats(t *testing.T) {
+	path := writeJSON(t, `{
+  "stats": {
+    "totalMutantsCount": 4,
+    "killedCount": 3,
+    "escapedCount": 1,
+    "notCoveredCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "timeOutCount": 0,
+    "msi": 0.75
+  }
+}`)
 
 	result, err := ParseGoMutesting(path)
 	if err != nil {

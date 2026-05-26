@@ -64,21 +64,51 @@ func ParseGremlins(path string) (ToolResult, error) {
 	if err := readJSON(path, &report); err != nil {
 		return ToolResult{}, err
 	}
-	total := intField(report, "total_mutants", "total", "mutants")
-	killed := intField(report, "killed", "killed_mutants")
-	survived := intField(report, "survived", "survived_mutants")
-	notCovered := intField(report, "not_covered", "notCovered", "uncovered")
-	score := floatField(report, "mutation_score", "score")
+	total := intField(report, "mutants_total", "total_mutants", "total", "mutants")
+	killed := intField(report, "mutants_killed", "killed", "killed_mutants")
+	survived := intField(report, "mutants_lived", "survived", "survived_mutants")
+	notCovered := intField(report, "mutants_not_covered", "not_covered", "notCovered", "uncovered")
+	notViable := intField(report, "mutants_not_viable", "not_viable", "notViable")
+	skipped := intField(report, "mutants_skipped", "skipped")
+	timedOut := intField(report, "mutants_timed_out", "timed_out", "timedOut")
+	score := floatField(report, "test_efficacy", "mutation_score", "score")
 	if score == 0 {
 		score = scoreFrom(killed, survived)
 	}
-	return ToolResult{Tool: "gremlins", Completed: true, Total: total, Killed: killed, Survived: survived, NotCovered: notCovered, Score: score}, nil
+	return ToolResult{Tool: "gremlins", Completed: true, Total: total, Killed: killed, Survived: survived, NotCovered: notCovered, NotViable: notViable, Skipped: skipped, TimedOut: timedOut, Score: score}, nil
 }
 
 func ParseGomu(path string) (ToolResult, error) {
 	text, err := os.ReadFile(path)
 	if err != nil {
 		return ToolResult{}, err
+	}
+	var report struct {
+		TotalMutants int `json:"totalMutants"`
+		Results      []struct {
+			Status string `json:"status"`
+		} `json:"results"`
+	}
+	if json.Unmarshal(text, &report) == nil && report.TotalMutants > 0 {
+		result := ToolResult{Tool: "gomu", Completed: true, Total: report.TotalMutants}
+		for _, item := range report.Results {
+			switch item.Status {
+			case "KILLED":
+				result.Killed++
+			case "SURVIVED":
+				result.Survived++
+			case "ERROR":
+				result.Errors++
+			case "NOT_VIABLE":
+				result.NotViable++
+			case "SKIPPED":
+				result.Skipped++
+			case "TIMEOUT", "TIMED_OUT":
+				result.TimedOut++
+			}
+		}
+		result.Score = scoreFrom(result.Killed, result.Survived)
+		return result, nil
 	}
 	return parseKeyValueText("gomu", string(text)), nil
 }
@@ -87,6 +117,32 @@ func ParseGoMutesting(path string) (ToolResult, error) {
 	text, err := os.ReadFile(path)
 	if err != nil {
 		return ToolResult{}, err
+	}
+	var report struct {
+		Stats struct {
+			TotalMutantsCount int     `json:"totalMutantsCount"`
+			KilledCount       int     `json:"killedCount"`
+			NotCoveredCount   int     `json:"notCoveredCount"`
+			EscapedCount      int     `json:"escapedCount"`
+			ErrorCount        int     `json:"errorCount"`
+			SkippedCount      int     `json:"skippedCount"`
+			TimeOutCount      int     `json:"timeOutCount"`
+			MSI               float64 `json:"msi"`
+		} `json:"stats"`
+	}
+	if json.Unmarshal(text, &report) == nil && report.Stats.TotalMutantsCount > 0 {
+		return ToolResult{
+			Tool:       "go-mutesting",
+			Completed:  true,
+			Total:      report.Stats.TotalMutantsCount,
+			Killed:     report.Stats.KilledCount,
+			Survived:   report.Stats.EscapedCount,
+			NotCovered: report.Stats.NotCoveredCount,
+			Errors:     report.Stats.ErrorCount,
+			Skipped:    report.Stats.SkippedCount,
+			TimedOut:   report.Stats.TimeOutCount,
+			Score:      report.Stats.MSI * 100,
+		}, nil
 	}
 	result := parseKeyValueText("go-mutesting", string(text))
 	if result.Total == 0 {
