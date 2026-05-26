@@ -1,6 +1,9 @@
 # CervoMutant Evaluation Framework
 
-Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/5
+Tracking issues:
+
+- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/5
+- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/6
 
 This framework evaluates mutation testing tools for CervoSoft and decides
 whether `cervo-mutant` should be the default for CervoClaw and related Go
@@ -35,6 +38,41 @@ Use these studies as the methodological baseline:
   Use as a threats-to-validity checklist for equivalent mutants, flaky tests,
   sampling bias, operator bias, and over-reliance on mutation score.
 
+Use these recent studies as extensions to the baseline:
+
+- **Equivalent Mutants in the Wild**  
+  ISSTA 2024 study on identifying and suppressing equivalent mutants in real
+  Java projects. Use it to evaluate equivalent-mutant suppression, false
+  suppression risk, and noisy-operator behavior.
+- **An Empirical Evaluation of Manually Created Equivalent Mutants**  
+  Mutation 2024 / ICST 2024 study on human-created and human-identified
+  equivalent mutants. Use it to avoid over-trusting single-reviewer equivalent
+  classifications.
+- **On Comparing Mutation Testing Tools through Learning-based Mutant
+  Selection**  
+  2023 study on comparing mutation tools through selected mutants. Use it to
+  measure complementarity and unique useful survivors instead of rewarding raw
+  mutant volume.
+- **An Exploratory Study on Using Large Language Models for Mutation Testing**  
+  2024 study on LLM-generated mutations over real-bug benchmarks. Use it to
+  evaluate agent-facing explanations, AI-generated test value, and uncompilable
+  mutant rates.
+- **Latent Mutants: A large-scale study on the Interplay between mutation
+  testing and software evolution**  
+  2025 study on mutation testing across project releases. Use it to track
+  long-standing survivors and determine whether survivors predict future
+  changes, bugs, or persistent test debt.
+- **A fine-grained evaluation of mutation operators to boost mutation testing
+  for deep learning systems**  
+  2025 study introducing operator quality and redundancy-style measures. Use
+  the metric pattern, not the DL domain, to evaluate whether each Go mutator
+  belongs in `conservative`, `default`, or `aggressive`.
+- **METFORD: Mutation Testing Framework for Android** and **Mutta: a novel tool
+  for E2E web mutation testing**  
+  Recent framework/tool studies outside Go. Use them only for operational
+  evaluation ideas: reproducible scripts, execution-strategy comparisons, and
+  high-cost integration/E2E mutation tradeoffs.
+
 These studies are technology-independent at the evaluation level. They should
 not be copied as Java/JVM implementation details. Translate their concepts into
 Go terms: classes become packages/files/functions, JUnit tests become `go test`
@@ -52,9 +90,10 @@ layer behind a strong total score.
 | Fault-revealing effectiveness | 25 |
 | CI and commit relevance | 15 |
 | Actionability and agent utility | 15 |
-| Cost and scalability | 10 |
+| Cost and scalability | 8 |
 | Noise and equivalent-mutant burden | 10 |
-| Validity controls | 5 |
+| Longitudinal and evolution relevance | 4 |
+| Validity controls | 3 |
 
 ### Tool Capability - 20
 
@@ -106,27 +145,51 @@ humans and coding agents.
 | Low-context reports | 2 | Reports are compact enough for agents while retaining necessary evidence. |
 | Grouping and prioritization | 2 | Survivors can be sorted by package, operator, changed code, or prior history. |
 
-### Cost And Scalability - 10
+### Cost And Scalability - 8
 
 | Criterion | Points | Evidence |
 | --- | ---: | --- |
 | Time budget support | 2 | `--budget` stops work predictably and reports skipped mutants. |
 | Incremental cache value | 2 | Cache hit rate and time saved are reported and reproducible. |
 | Test selection value | 2 | Package/coverage selection reduces test work without losing signal. |
-| Workspace isolation cost | 2 | Temp-workdir overhead is measured, especially on Windows/OneDrive. |
-| Large-project threshold behavior | 2 | Behavior is measured at 100+ packages, 5+ minute tests, or 1,000+ mutants. |
+| Workspace isolation cost | 1 | Temp-workdir overhead is measured, especially on Windows/OneDrive. |
+| Large-project threshold behavior | 1 | Behavior is measured at 100+ packages, 5+ minute tests, or 1,000+ mutants. |
 
 ### Noise And Equivalent-Mutant Burden - 10
 
 | Criterion | Points | Evidence |
 | --- | ---: | --- |
-| Equivalent rate | 3 | Manual sample estimates equivalent survivors by mutator/profile. |
+| Equivalent rate | 2 | Manual sample estimates equivalent survivors by mutator/profile. |
+| Suppression precision | 2 | Automatically suppressed or ignored mutants are sampled for false suppression. |
 | Triage time | 2 | Median time to classify or act on a survivor. |
-| Redundancy | 2 | Mutants killed by the same test or producing same signal are measured. |
+| Redundancy | 1 | Mutants killed by the same test or producing same signal are measured. |
 | Quarantine discipline | 2 | Quarantine requires reason, owner, issue, expiry, and does not inflate score. |
 | Repeat offenders | 1 | Noisy operators are identified and moved to stricter profiles or disabled. |
 
-### Validity Controls - 5
+Equivalent-mutant classifications must be graded by evidence quality:
+
+| Evidence level | Meaning |
+| --- | --- |
+| Preliminary | One reviewer classified the mutant. |
+| Accepted | Two reviewers agree, or a reproducible rule proves equivalence. |
+| Disputed | Reviewers disagree or the classification depends on undocumented assumptions. |
+| Suppressed | The tool automatically suppressed it; false-suppression risk must be sampled. |
+
+Do not treat a single human classification as definitive evidence. Record
+reviewer disagreement rate when manual classification influences adoption.
+
+### Longitudinal And Evolution Relevance - 4
+
+Based on latent-mutant and software-evolution studies.
+
+| Criterion | Points | Evidence |
+| --- | ---: | --- |
+| Long-standing survivor tracking | 1 | Survivors persisting across releases are tracked by stable identity. |
+| Survivor aging policy | 1 | Old survivors are resolved, quarantined with expiry, or intentionally rejected. |
+| Evolution alignment | 1 | Survivors are checked against later changes, bugs, or contract updates. |
+| Debt and release trend | 1 | Active survivors, quarantine count, and scores are comparable across releases. |
+
+### Validity Controls - 3
 
 Use this layer to keep evaluation claims defensible.
 
@@ -134,9 +197,7 @@ Use this layer to keep evaluation claims defensible.
 | --- | ---: | --- |
 | Baseline stability | 1 | Baseline tests pass repeatedly before mutation. |
 | Flaky-test control | 1 | Timeouts/flaky failures are rerun or classified separately. |
-| Sampling validity | 1 | Sampling method and seed are recorded. |
-| Operator bias control | 1 | Results are reported per mutator profile/operator. |
-| Threats documented | 1 | Known limitations are recorded with their likely impact. |
+| Sampling, operator bias, and threats | 1 | Seed, operator/profile breakdown, and known limitations are recorded. |
 
 ## Required Metrics
 
@@ -148,6 +209,12 @@ Collect these metrics for every evaluation run:
 - runtime, budget usage, cache hits, cache misses, and test-selection mode
 - number of survivors converted into tests
 - number of survivors classified as equivalent, redundant, invalid, or useful
+- equivalent suppression precision and sampled false-suppression count
+- unique actionable survivors not found by other tools or profiles
+- reviewer disagreement rate for equivalent-mutant classifications
+- long-standing survivor rate across releases
+- survivor age distribution
+- operator quality score and operator redundancy score
 - cost per killed mutant
 - cost per actionable survivor
 - cost per real or realistic fault revealed
@@ -192,6 +259,78 @@ For each target:
    realistic contract violations.
 8. Record time spent, false starts, equivalent mutants, and test value.
 
+### Level 3: Longitudinal Default-Readiness Study
+
+Use this level before declaring `cervo-mutant` the default across CervoSoft.
+
+1. Keep stable mutant identities across releases when source locations shift
+   only minimally.
+2. Track survivors that persist for more than one release or evaluation cycle.
+3. Classify persistent survivors as useful debt, equivalent, redundant,
+   flaky-test related, or intentionally accepted risk.
+4. Check whether later bug fixes, contract changes, or production incidents
+   touch code associated with long-standing survivors.
+5. Report survivor age, quarantine age, expired quarantine, and resolved
+   survivor counts.
+6. Use the trend to decide whether the tool is improving test quality or merely
+   accumulating mutation debt.
+
+## Operator Quality And Redundancy
+
+Evaluate mutators independently before promoting them between profiles.
+
+For each mutator, measure:
+
+- generated mutant count
+- killed count
+- survivor count
+- equivalent rate
+- compile-error rate
+- timeout rate
+- unique actionable survivor count
+- redundancy with other mutators
+- median triage time
+- real or realistic fault detection yield
+
+Use these derived scores:
+
+```text
+operator_quality =
+  unique_actionable_survivors / generated_mutants
+
+operator_redundancy =
+  redundant_or_duplicate_signal_mutants / generated_mutants
+```
+
+Promotion rules:
+
+- `conservative`: low compile-error rate, low equivalent rate, high
+  actionability, and low triage cost.
+- `default`: useful but noisier operators, including domain-sensitive
+  mutations such as controlled error-return changes.
+- `aggressive`: exploratory operators with high cost, high equivalence risk, or
+  high redundancy.
+
+## AI And Agent-Facing Evaluation
+
+When evaluating agent utility, distinguish three cases:
+
+1. The tool generated a useful mutant.
+2. The agent understood the survivor and wrote a meaningful test.
+3. The new test detected a real or realistic fault.
+
+All three are required for strong evidence. A good explanation that leads to a
+test that only kills an artificial mutant is useful, but weaker than a test that
+also detects historical or seeded realistic faults.
+
+Track:
+
+- uncompilable mutant rate for any AI-generated or AI-suggested mutations
+- prompt/explanation length needed for an agent to act
+- number of agent attempts per useful test
+- tests that kill the mutant but assert implementation details
+- tests that kill the mutant and improve public behavior coverage
+
 ## Acceptance Guidance
 
 `cervo-mutant` can be considered the default only if:
@@ -199,6 +338,8 @@ For each target:
 - it scores at least 80 overall,
 - it scores at least 18/25 on fault-revealing effectiveness,
 - it scores at least 11/15 on actionability and agent utility,
+- it has an accepted equivalent-classification process for sampled survivors,
+- it tracks long-standing survivors and quarantine growth across releases,
 - it does not create untracked artifacts in target workspaces when `--out` is
   used,
 - quarantine does not grow without issue-backed cleanup,
@@ -208,4 +349,3 @@ For each target:
 Reject or defer default adoption if the tool is fast but not actionable, has a
 high equivalent-mutant burden, produces unstable CI results, or improves
 mutation score without improving real-fault detection.
-
