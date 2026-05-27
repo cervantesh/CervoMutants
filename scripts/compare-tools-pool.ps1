@@ -14,8 +14,12 @@ param(
     [int]$KillBelowFreeCommitMB = 4096,
     [int]$MaxUsedMemoryMB = 0,
     [int]$MaxCommittedMemoryMB = 0,
+    [int]$MaxProcessTreeMemoryMB = 0,
     [int]$MemoryWaitSeconds = 900,
     [int]$MemoryPollSeconds = 5,
+    [string]$GoMemoryLimit = "",
+    [int]$GoMaxProcs = 0,
+    [string]$GoFlags = "",
     [switch]$Resume,
     [string]$CervoMutant = "$env:TEMP/cervomut-pool.exe",
     [string]$Gremlins = "$env:TEMP/cervomut-study-cobra/tools/gremlins.exe",
@@ -82,6 +86,26 @@ function Stop-ProcessTree {
     Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
+function Get-ProcessTreeMemoryMB {
+    param([int]$ProcessId)
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+    if (!$process) {
+        return [pscustomobject]@{ working_set_mb = 0; private_mb = 0 }
+    }
+    $workingSet = [double]$process.WorkingSetSize
+    $privateBytes = [double]$process.PrivatePageCount
+    $children = @(Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $ProcessId })
+    foreach ($child in $children) {
+        $childMemory = Get-ProcessTreeMemoryMB -ProcessId ([int]$child.ProcessId)
+        $workingSet += $childMemory.working_set_mb * 1MB
+        $privateBytes += $childMemory.private_mb * 1MB
+    }
+    return [pscustomobject]@{
+        working_set_mb = [int][math]::Round($workingSet / 1MB, 0)
+        private_mb = [int][math]::Round($privateBytes / 1MB, 0)
+    }
+}
+
 function Set-MemoryLimitsFromMaximums {
     if ($script:MaxUsedMemoryMB -gt 0) {
         $physical = Get-CimInstance Win32_OperatingSystem
@@ -112,8 +136,12 @@ function Invoke-LoggedCommand {
         [int]$MinFreeCommitMB,
         [int]$KillBelowFreeMemoryMB,
         [int]$KillBelowFreeCommitMB,
+        [int]$MaxProcessTreeMemoryMB,
         [int]$MemoryWaitSeconds,
-        [int]$MemoryPollSeconds
+        [int]$MemoryPollSeconds,
+        [string]$GoMemoryLimit,
+        [int]$GoMaxProcs,
+        [string]$GoFlags
     )
     $stdout = "$LogPath.stdout"
     $stderr = "$LogPath.stderr"
@@ -123,11 +151,21 @@ function Invoke-LoggedCommand {
         "skipped after waiting $($memory.waited_seconds)s for ${MinFreeMemoryMB}MB free memory and ${MinFreeCommitMB}MB free commit; free memory=$($memory.free_mb)MB free commit=$($memory.free_commit_mb)MB" | Set-Content -LiteralPath $LogPath
         return 125
     }
+    $oldGoMemoryLimit = $env:GOMEMLIMIT
+    $oldGoMaxProcs = $env:GOMAXPROCS
+    $oldGoFlags = $env:GOFLAGS
     try {
+        if ($GoMemoryLimit -ne "") { $env:GOMEMLIMIT = $GoMemoryLimit }
+        if ($GoMaxProcs -gt 0) { $env:GOMAXPROCS = "$GoMaxProcs" }
+        if ($GoFlags -ne "") { $env:GOFLAGS = $GoFlags }
         $proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     } catch {
         $_ | Out-String | Set-Content -LiteralPath $LogPath
         return 125
+    } finally {
+        $env:GOMEMLIMIT = $oldGoMemoryLimit
+        $env:GOMAXPROCS = $oldGoMaxProcs
+        $env:GOFLAGS = $oldGoFlags
     }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (!$proc.HasExited) {
@@ -145,6 +183,15 @@ function Invoke-LoggedCommand {
             [void]$proc.WaitForExit()
             "killed by memory watchdog after $([int]$sw.Elapsed.TotalSeconds)s; free memory=$($memory.free_mb)MB free commit=$($memory.free_commit_mb)MB" | Set-Content -LiteralPath $LogPath
             return 126
+        }
+        if ($MaxProcessTreeMemoryMB -gt 0) {
+            $treeMemory = Get-ProcessTreeMemoryMB -ProcessId $proc.Id
+            if ($treeMemory.private_mb -gt $MaxProcessTreeMemoryMB -or $treeMemory.working_set_mb -gt $MaxProcessTreeMemoryMB) {
+                Stop-ProcessTree -ProcessId $proc.Id
+                [void]$proc.WaitForExit()
+                "killed by process-tree memory watchdog after $([int]$sw.Elapsed.TotalSeconds)s; working set=$($treeMemory.working_set_mb)MB private=$($treeMemory.private_mb)MB limit=${MaxProcessTreeMemoryMB}MB" | Set-Content -LiteralPath $LogPath
+                return 126
+            }
         }
         Start-Sleep -Seconds $MemoryPollSeconds
         $proc.Refresh()
@@ -277,7 +324,7 @@ foreach ($repo in $repos) {
         Remove-Item -LiteralPath $tool.report -Force -ErrorAction SilentlyContinue
         $log = Join-Path $repoOut "$($tool.name).log"
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds -MinFreeMemoryMB $MinFreeMemoryMB -MinFreeCommitMB $MinFreeCommitMB -KillBelowFreeMemoryMB $KillBelowFreeMemoryMB -KillBelowFreeCommitMB $KillBelowFreeCommitMB -MemoryWaitSeconds $MemoryWaitSeconds -MemoryPollSeconds $MemoryPollSeconds
+        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds -MinFreeMemoryMB $MinFreeMemoryMB -MinFreeCommitMB $MinFreeCommitMB -KillBelowFreeMemoryMB $KillBelowFreeMemoryMB -KillBelowFreeCommitMB $KillBelowFreeCommitMB -MaxProcessTreeMemoryMB $MaxProcessTreeMemoryMB -MemoryWaitSeconds $MemoryWaitSeconds -MemoryPollSeconds $MemoryPollSeconds -GoMemoryLimit $GoMemoryLimit -GoMaxProcs $GoMaxProcs -GoFlags $GoFlags
         $sw.Stop()
         $metrics = @{}
         switch ($tool.parser) {
