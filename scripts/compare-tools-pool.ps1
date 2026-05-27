@@ -5,7 +5,11 @@ param(
     [string[]]$Names = @("cobra", "pflag", "moby", "hugo", "prometheus", "terraform", "grpc-go", "echo", "logrus", "validator", "decimal", "gjson"),
     [string[]]$Tools = @("cervomut", "gremlins", "gomu", "go-mutesting"),
     [int]$Workers = 2,
+    [int]$GomuWorkers = 1,
+    [int]$GoMutestingWorkers = 1,
     [int]$TimeoutSeconds = 600,
+    [int]$MinFreeMemoryMB = 4096,
+    [int]$MemoryWaitSeconds = 900,
     [switch]$Resume,
     [string]$CervoMutant = "$env:TEMP/cervomut-pool.exe",
     [string]$Gremlins = "$env:TEMP/cervomut-study-cobra/tools/gremlins.exe",
@@ -28,17 +32,50 @@ foreach ($tool in $Tools) {
 
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 
+function Get-FreeMemoryMB {
+    $os = Get-CimInstance Win32_OperatingSystem
+    return [int][math]::Round($os.FreePhysicalMemory / 1024, 0)
+}
+
+function Wait-FreeMemory {
+    param(
+        [int]$MinFreeMemoryMB,
+        [int]$TimeoutSeconds
+    )
+    if ($MinFreeMemoryMB -le 0) {
+        return [pscustomobject]@{ ready = $true; free_mb = Get-FreeMemoryMB; waited_seconds = 0 }
+    }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $free = Get-FreeMemoryMB
+        if ($free -ge $MinFreeMemoryMB) {
+            return [pscustomobject]@{ ready = $true; free_mb = $free; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
+        }
+        if ($sw.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            return [pscustomobject]@{ ready = $false; free_mb = $free; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
+        }
+        Start-Sleep -Seconds 15
+    }
+}
+
 function Invoke-LoggedCommand {
     param(
         [string]$FilePath,
         [string[]]$Arguments,
         [string]$WorkingDirectory,
         [string]$LogPath,
-        [int]$TimeoutSeconds
+        [int]$TimeoutSeconds,
+        [int]$MinFreeMemoryMB,
+        [int]$MemoryWaitSeconds
     )
     $stdout = "$LogPath.stdout"
     $stderr = "$LogPath.stderr"
     Remove-Item -LiteralPath $stdout, $stderr, $LogPath -Force -ErrorAction SilentlyContinue
+    $memory = Wait-FreeMemory -MinFreeMemoryMB $MinFreeMemoryMB -TimeoutSeconds $MemoryWaitSeconds
+    if (!$memory.ready) {
+        "skipped after waiting $($memory.waited_seconds)s for ${MinFreeMemoryMB}MB free memory; only $($memory.free_mb)MB free" | Set-Content -LiteralPath $LogPath
+        return 125
+    }
     $proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if (!$proc.WaitForExit($TimeoutSeconds * 1000)) {
         try { $proc.Kill($true) } catch { $proc.Kill() }
@@ -155,8 +192,8 @@ foreach ($repo in $repos) {
     $toolDefs = New-Object System.Collections.Generic.List[object]
     $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo" }) | Out-Null
     $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = @("unleash", $repo.target, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json")); report = Join-Path $repoOut "gremlins.json"; parser = "gremlins" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$Workers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$Workers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$GomuWorkers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$GoMutestingWorkers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
     $selectedTools = @()
     foreach ($candidateTool in $toolDefs) {
         if ($wantedTools.ContainsKey($candidateTool.name)) {
@@ -170,7 +207,7 @@ foreach ($repo in $repos) {
         Remove-Item -LiteralPath $tool.report -Force -ErrorAction SilentlyContinue
         $log = Join-Path $repoOut "$($tool.name).log"
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds
+        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds -MinFreeMemoryMB $MinFreeMemoryMB -MemoryWaitSeconds $MemoryWaitSeconds
         $sw.Stop()
         $metrics = @{}
         switch ($tool.parser) {
