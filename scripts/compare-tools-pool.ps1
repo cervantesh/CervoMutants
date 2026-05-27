@@ -9,7 +9,11 @@ param(
     [int]$GoMutestingWorkers = 1,
     [int]$TimeoutSeconds = 600,
     [int]$MinFreeMemoryMB = 4096,
+    [int]$MinFreeCommitMB = 8192,
+    [int]$KillBelowFreeMemoryMB = 2048,
+    [int]$KillBelowFreeCommitMB = 4096,
     [int]$MemoryWaitSeconds = 900,
+    [int]$MemoryPollSeconds = 5,
     [switch]$Resume,
     [string]$CervoMutant = "$env:TEMP/cervomut-pool.exe",
     [string]$Gremlins = "$env:TEMP/cervomut-study-cobra/tools/gremlins.exe",
@@ -32,30 +36,48 @@ foreach ($tool in $Tools) {
 
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 
-function Get-FreeMemoryMB {
-    $os = Get-CimInstance Win32_OperatingSystem
-    return [int][math]::Round($os.FreePhysicalMemory / 1024, 0)
+function Get-MemoryStatus {
+    $physical = Get-CimInstance Win32_OperatingSystem
+    $commit = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+    $freeCommitMB = [int][math]::Round(($commit.CommitLimit - $commit.CommittedBytes) / 1MB, 0)
+    return [pscustomobject]@{
+        free_mb = [int][math]::Round($physical.FreePhysicalMemory / 1024, 0)
+        free_commit_mb = $freeCommitMB
+    }
 }
 
 function Wait-FreeMemory {
     param(
         [int]$MinFreeMemoryMB,
+        [int]$MinFreeCommitMB,
         [int]$TimeoutSeconds
     )
-    if ($MinFreeMemoryMB -le 0) {
-        return [pscustomobject]@{ ready = $true; free_mb = Get-FreeMemoryMB; waited_seconds = 0 }
+    if ($MinFreeMemoryMB -le 0 -and $MinFreeCommitMB -le 0) {
+        $memory = Get-MemoryStatus
+        return [pscustomobject]@{ ready = $true; free_mb = $memory.free_mb; free_commit_mb = $memory.free_commit_mb; waited_seconds = 0 }
     }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($true) {
-        $free = Get-FreeMemoryMB
-        if ($free -ge $MinFreeMemoryMB) {
-            return [pscustomobject]@{ ready = $true; free_mb = $free; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
+        $memory = Get-MemoryStatus
+        $hasMemory = $MinFreeMemoryMB -le 0 -or $memory.free_mb -ge $MinFreeMemoryMB
+        $hasCommit = $MinFreeCommitMB -le 0 -or $memory.free_commit_mb -ge $MinFreeCommitMB
+        if ($hasMemory -and $hasCommit) {
+            return [pscustomobject]@{ ready = $true; free_mb = $memory.free_mb; free_commit_mb = $memory.free_commit_mb; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
         }
         if ($sw.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
-            return [pscustomobject]@{ ready = $false; free_mb = $free; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
+            return [pscustomobject]@{ ready = $false; free_mb = $memory.free_mb; free_commit_mb = $memory.free_commit_mb; waited_seconds = [int]$sw.Elapsed.TotalSeconds }
         }
         Start-Sleep -Seconds 15
     }
+}
+
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+    $children = @(Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $ProcessId })
+    foreach ($child in $children) {
+        Stop-ProcessTree -ProcessId ([int]$child.ProcessId)
+    }
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
 function Invoke-LoggedCommand {
@@ -66,20 +88,47 @@ function Invoke-LoggedCommand {
         [string]$LogPath,
         [int]$TimeoutSeconds,
         [int]$MinFreeMemoryMB,
-        [int]$MemoryWaitSeconds
+        [int]$MinFreeCommitMB,
+        [int]$KillBelowFreeMemoryMB,
+        [int]$KillBelowFreeCommitMB,
+        [int]$MemoryWaitSeconds,
+        [int]$MemoryPollSeconds
     )
     $stdout = "$LogPath.stdout"
     $stderr = "$LogPath.stderr"
     Remove-Item -LiteralPath $stdout, $stderr, $LogPath -Force -ErrorAction SilentlyContinue
-    $memory = Wait-FreeMemory -MinFreeMemoryMB $MinFreeMemoryMB -TimeoutSeconds $MemoryWaitSeconds
+    $memory = Wait-FreeMemory -MinFreeMemoryMB $MinFreeMemoryMB -MinFreeCommitMB $MinFreeCommitMB -TimeoutSeconds $MemoryWaitSeconds
     if (!$memory.ready) {
-        "skipped after waiting $($memory.waited_seconds)s for ${MinFreeMemoryMB}MB free memory; only $($memory.free_mb)MB free" | Set-Content -LiteralPath $LogPath
+        "skipped after waiting $($memory.waited_seconds)s for ${MinFreeMemoryMB}MB free memory and ${MinFreeCommitMB}MB free commit; free memory=$($memory.free_mb)MB free commit=$($memory.free_commit_mb)MB" | Set-Content -LiteralPath $LogPath
         return 125
     }
-    $proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    if (!$proc.WaitForExit($TimeoutSeconds * 1000)) {
-        try { $proc.Kill($true) } catch { $proc.Kill() }
-        [void]$proc.WaitForExit()
+    try {
+        $proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    } catch {
+        $_ | Out-String | Set-Content -LiteralPath $LogPath
+        return 125
+    }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while (!$proc.HasExited) {
+        if ($sw.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            Stop-ProcessTree -ProcessId $proc.Id
+            [void]$proc.WaitForExit()
+            "timed out after ${TimeoutSeconds}s" | Set-Content -LiteralPath $LogPath
+            return 124
+        }
+        $memory = Get-MemoryStatus
+        $belowMemory = $KillBelowFreeMemoryMB -gt 0 -and $memory.free_mb -lt $KillBelowFreeMemoryMB
+        $belowCommit = $KillBelowFreeCommitMB -gt 0 -and $memory.free_commit_mb -lt $KillBelowFreeCommitMB
+        if ($belowMemory -or $belowCommit) {
+            Stop-ProcessTree -ProcessId $proc.Id
+            [void]$proc.WaitForExit()
+            "killed by memory watchdog after $([int]$sw.Elapsed.TotalSeconds)s; free memory=$($memory.free_mb)MB free commit=$($memory.free_commit_mb)MB" | Set-Content -LiteralPath $LogPath
+            return 126
+        }
+        Start-Sleep -Seconds $MemoryPollSeconds
+        $proc.Refresh()
+    }
+    if ($proc.ExitCode -eq 124) {
         "timed out after ${TimeoutSeconds}s" | Set-Content -LiteralPath $LogPath
         return 124
     }
@@ -207,7 +256,7 @@ foreach ($repo in $repos) {
         Remove-Item -LiteralPath $tool.report -Force -ErrorAction SilentlyContinue
         $log = Join-Path $repoOut "$($tool.name).log"
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds -MinFreeMemoryMB $MinFreeMemoryMB -MemoryWaitSeconds $MemoryWaitSeconds
+        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds -MinFreeMemoryMB $MinFreeMemoryMB -MinFreeCommitMB $MinFreeCommitMB -KillBelowFreeMemoryMB $KillBelowFreeMemoryMB -KillBelowFreeCommitMB $KillBelowFreeCommitMB -MemoryWaitSeconds $MemoryWaitSeconds -MemoryPollSeconds $MemoryPollSeconds
         $sw.Stop()
         $metrics = @{}
         switch ($tool.parser) {
