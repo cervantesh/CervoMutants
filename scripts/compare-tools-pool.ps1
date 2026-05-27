@@ -84,10 +84,14 @@ function Read-GomuReport($path) {
     foreach ($g in ($j.results | Group-Object status)) {
         $groups[$g.Name] = $g.Count
     }
-    $killed = [int]($groups["KILLED"] ?? 0)
-    $survived = [int]($groups["SURVIVED"] ?? 0)
-    $errors = [int]($groups["ERROR"] ?? 0)
-    $notViable = [int]($groups["NOT_VIABLE"] ?? 0)
+    $killed = 0
+    $survived = 0
+    $errors = 0
+    $notViable = 0
+    if ($groups.ContainsKey("KILLED")) { $killed = [int]$groups["KILLED"] }
+    if ($groups.ContainsKey("SURVIVED")) { $survived = [int]$groups["SURVIVED"] }
+    if ($groups.ContainsKey("ERROR")) { $errors = [int]$groups["ERROR"] }
+    if ($groups.ContainsKey("NOT_VIABLE")) { $notViable = [int]$groups["NOT_VIABLE"] }
     $denom = $killed + $survived
     $score = 0.0
     if ($denom -gt 0) { $score = [math]::Round(($killed / $denom) * 100, 2) }
