@@ -152,42 +152,40 @@ foreach ($repo in $repos) {
     }
     $repoOut = Join-Path $OutputRoot $repo.name
     New-Item -ItemType Directory -Path $repoOut -Force | Out-Null
-    $tools = @(
-        @{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo" },
-        @{ name = "gremlins"; exe = $Gremlins; args = @("unleash", $repo.target, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json")); report = Join-Path $repoOut "gremlins.json"; parser = "gremlins" },
-        @{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$Workers", "--timeout", "30", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" },
-        @{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:30", "/workers:$Workers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }
-    )
+    $toolDefs = New-Object System.Collections.Generic.List[object]
+    $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = @("unleash", $repo.target, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json")); report = Join-Path $repoOut "gremlins.json"; parser = "gremlins" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$Workers", "--timeout", "30", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:30", "/workers:$Workers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
     $selectedTools = @()
-    foreach ($candidateTool in $tools) {
-        if ($wantedTools.ContainsKey($candidateTool["name"])) {
+    foreach ($candidateTool in $toolDefs) {
+        if ($wantedTools.ContainsKey($candidateTool.name)) {
             $selectedTools += $candidateTool
         }
     }
-    $tools = $selectedTools
-    foreach ($tool in $tools) {
-        if ($Resume -and (Has-Result $results $repo.name $tool["name"])) {
+    foreach ($tool in $selectedTools) {
+        if ($Resume -and (Has-Result $results $repo.name $tool.name)) {
             continue
         }
-        Remove-Item -LiteralPath $tool["report"] -Force -ErrorAction SilentlyContinue
-        $log = Join-Path $repoOut "$($tool["name"]).log"
+        Remove-Item -LiteralPath $tool.report -Force -ErrorAction SilentlyContinue
+        $log = Join-Path $repoOut "$($tool.name).log"
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $exit = Invoke-LoggedCommand -FilePath $tool["exe"] -Arguments $tool["args"] -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds
+        $exit = Invoke-LoggedCommand -FilePath $tool.exe -Arguments $tool.args -WorkingDirectory $repoDir -LogPath $log -TimeoutSeconds $TimeoutSeconds
         $sw.Stop()
         $metrics = @{}
-        switch ($tool["parser"]) {
-            "cervo" { $metrics = Read-CervoReport $tool["report"] }
-            "gremlins" { $metrics = Read-GremlinsReport $tool["report"] }
+        switch ($tool.parser) {
+            "cervo" { $metrics = Read-CervoReport $tool.report }
+            "gremlins" { $metrics = Read-GremlinsReport $tool.report }
             "gomu" {
-                if (Test-Path -LiteralPath $tool["report"]) {
-                    Copy-Item -LiteralPath $tool["report"] -Destination (Join-Path $repoOut "gomu-mutation-report.json") -Force
-                    $metrics = Read-GomuReport $tool["report"]
+                if (Test-Path -LiteralPath $tool.report) {
+                    Copy-Item -LiteralPath $tool.report -Destination (Join-Path $repoOut "gomu-mutation-report.json") -Force
+                    $metrics = Read-GomuReport $tool.report
                 }
             }
             "go-mutesting" {
-                if (Test-Path -LiteralPath $tool["report"]) {
-                    Copy-Item -LiteralPath $tool["report"] -Destination (Join-Path $repoOut "go-mutesting-report.json") -Force
-                    $metrics = Read-GoMutestingReport $tool["report"]
+                if (Test-Path -LiteralPath $tool.report) {
+                    Copy-Item -LiteralPath $tool.report -Destination (Join-Path $repoOut "go-mutesting-report.json") -Force
+                    $metrics = Read-GoMutestingReport $tool.report
                 }
             }
         }
@@ -196,7 +194,7 @@ foreach ($repo in $repos) {
             target = $repo.target
             lane = $repo.lane
             domain = $repo.domain
-            tool = $tool["name"]
+            tool = $tool.name
             exit = $exit
             seconds = [math]::Round($sw.Elapsed.TotalSeconds, 2)
             total = $metrics.total
