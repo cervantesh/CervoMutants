@@ -155,8 +155,8 @@ foreach ($repo in $repos) {
     $toolDefs = New-Object System.Collections.Generic.List[object]
     $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo" }) | Out-Null
     $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = @("unleash", $repo.target, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json")); report = Join-Path $repoOut "gremlins.json"; parser = "gremlins" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$Workers", "--timeout", "30", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:30", "/workers:$Workers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$Workers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$Workers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
     $selectedTools = @()
     foreach ($candidateTool in $toolDefs) {
         if ($wantedTools.ContainsKey($candidateTool.name)) {
