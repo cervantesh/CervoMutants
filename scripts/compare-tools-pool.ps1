@@ -12,6 +12,8 @@ param(
     [int]$MinFreeCommitMB = 8192,
     [int]$KillBelowFreeMemoryMB = 2048,
     [int]$KillBelowFreeCommitMB = 4096,
+    [int]$MaxUsedMemoryMB = 0,
+    [int]$MaxCommittedMemoryMB = 0,
     [int]$MemoryWaitSeconds = 900,
     [int]$MemoryPollSeconds = 5,
     [switch]$Resume,
@@ -79,6 +81,25 @@ function Stop-ProcessTree {
     }
     Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
+
+function Set-MemoryLimitsFromMaximums {
+    if ($script:MaxUsedMemoryMB -gt 0) {
+        $physical = Get-CimInstance Win32_OperatingSystem
+        $totalMemoryMB = [int][math]::Round($physical.TotalVisibleMemorySize / 1024, 0)
+        $requiredFreeMemoryMB = [math]::Max(0, $totalMemoryMB - $script:MaxUsedMemoryMB)
+        $script:MinFreeMemoryMB = [math]::Max($script:MinFreeMemoryMB, $requiredFreeMemoryMB)
+        $script:KillBelowFreeMemoryMB = [math]::Max($script:KillBelowFreeMemoryMB, $requiredFreeMemoryMB)
+    }
+    if ($script:MaxCommittedMemoryMB -gt 0) {
+        $commit = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+        $commitLimitMB = [int][math]::Round($commit.CommitLimit / 1MB, 0)
+        $requiredFreeCommitMB = [math]::Max(0, $commitLimitMB - $script:MaxCommittedMemoryMB)
+        $script:MinFreeCommitMB = [math]::Max($script:MinFreeCommitMB, $requiredFreeCommitMB)
+        $script:KillBelowFreeCommitMB = [math]::Max($script:KillBelowFreeCommitMB, $requiredFreeCommitMB)
+    }
+}
+
+Set-MemoryLimitsFromMaximums
 
 function Invoke-LoggedCommand {
     param(
