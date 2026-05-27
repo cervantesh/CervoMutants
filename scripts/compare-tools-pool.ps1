@@ -46,7 +46,8 @@ function Invoke-LoggedCommand {
     if (Test-Path -LiteralPath $stderr) { $parts += Get-Content -LiteralPath $stderr -Raw }
     ($parts -join [Environment]::NewLine) | Set-Content -LiteralPath $LogPath
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
-    return $proc.ExitCode
+    $proc.Refresh()
+    return [int]$proc.ExitCode
 }
 
 function Read-CervoReport($path) {
@@ -124,7 +125,14 @@ function Read-GoMutestingReport($path) {
 $results = @()
 $summaryPath = Join-Path $OutputRoot "summary.json"
 if ($Resume -and (Test-Path -LiteralPath $summaryPath)) {
-    $results = @(Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json)
+    $loaded = @(Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json)
+    foreach ($item in $loaded) {
+        if ($item.PSObject.Properties.Name -contains "value") {
+            $results += @($item.value)
+        } elseif ($item.PSObject.Properties.Name -contains "repo") {
+            $results += $item
+        }
+    }
 }
 
 function Has-Result($results, $repo, $tool) {
