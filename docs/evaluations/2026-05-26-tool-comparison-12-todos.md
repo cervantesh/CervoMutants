@@ -282,3 +282,28 @@ Remaining limitations:
   stronger checkpoint compatibility checks using config/toolchain/source
   fingerprints.
 - macOS remains compile-tested only; no real runtime validation has been done.
+
+The next checkpoint-hardening pass added a compatibility fingerprint to
+`partial-mutation-report.json`:
+
+- The fingerprint includes the selected policy/profile, selection mode,
+  prefilter flag, isolation mode, test command, test timeout, Go version,
+  `GOFLAGS`, and scheduled mutant IDs.
+- `--resume` now rejects missing or mismatched checkpoint fingerprints instead
+  of silently mixing stale partial results.
+- Checkpoint metadata is included in final JSON reports as well.
+
+Windows Job Object validation was expanded with local smoke tests:
+
+- A covered Windows-native run with `--max-process-memory-mb 768` completed and
+  exercised child `go test` execution under the Job Object path.
+- A deliberately tiny `--max-process-memory-mb 16` failed during baseline
+  without hanging the host, confirming the low-limit path degrades early.
+
+Remaining limitations after this pass:
+
+- Checkpoint fingerprints do not yet hash full source/test file contents; they
+  rely on mutant IDs and execution configuration. This is much safer than raw
+  mutant ID reuse, but source fingerprinting would make resume stricter.
+- Windows Job Object validation still needs a larger repo such as Cobra,
+  CervoRetry, or CervoClaw before calling it production-grade.

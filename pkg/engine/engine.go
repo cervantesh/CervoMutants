@@ -27,8 +27,10 @@ import (
 )
 
 type Engine struct {
-	cfg      config.Config
-	timingMu sync.Mutex
+	cfg             config.Config
+	timingMu        sync.Mutex
+	checkpointMu    sync.Mutex
+	checkpointScope []Mutant
 }
 
 func New(cfg config.Config) *Engine {
@@ -52,6 +54,7 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if e.cfg.Limits.MaxMutants > 0 && len(mutants) > e.cfg.Limits.MaxMutants {
 		mutants = mutants[:e.cfg.Limits.MaxMutants]
 	}
+	e.setCheckpointScope(mutants)
 	quarantined, expired, err := e.loadQuarantine()
 	if err != nil {
 		return RunResult{}, err
@@ -59,6 +62,7 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	result := RunResult{
 		SchemaVersion: "1",
 		Environment:   e.environment(len(mutants)),
+		Checkpoint:    e.checkpoint(mutants, "final"),
 		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder},
 		Mutants:       []MutantResult{},
 		Quarantine:    QuarantineStats{Active: len(quarantined), Expired: expired},
@@ -111,7 +115,7 @@ func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined m
 }
 
 func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
-	completed, err := e.loadPartialResults()
+	completed, err := e.loadPartialResults(mutants)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +382,66 @@ func pathMentionsOneDrive(path string) bool {
 	return strings.Contains(strings.ToLower(path), "onedrive")
 }
 
+func (e *Engine) checkpoint(mutants []Mutant, reason string) Checkpoint {
+	ids := make([]string, 0, len(mutants))
+	for _, mutant := range mutants {
+		ids = append(ids, mutant.ID)
+	}
+	sort.Strings(ids)
+	cfg := struct {
+		Policy          string
+		MutatorProfile  string
+		SelectionMode   string
+		SelectionFilter bool
+		Isolation       string
+		TestCommand     []string
+		TestTimeout     string
+		GoVersion       string
+		GOFLAGS         string
+		Mutants         []string
+	}{
+		Policy:          e.cfg.Policy,
+		MutatorProfile:  e.cfg.Mutators.Profile,
+		SelectionMode:   e.cfg.Selection.Mode,
+		SelectionFilter: e.cfg.Selection.Prefilter,
+		Isolation:       e.cfg.Execution.Isolation,
+		TestCommand:     e.cfg.Tests.Command,
+		TestTimeout:     e.cfg.Tests.Timeout.String(),
+		GoVersion:       runtime.Version(),
+		GOFLAGS:         os.Getenv("GOFLAGS"),
+		Mutants:         ids,
+	}
+	data, _ := json.Marshal(cfg)
+	return Checkpoint{Fingerprint: digestBytes(data), Mutants: len(ids), Reason: reason}
+}
+
+func (e *Engine) setCheckpointScope(mutants []Mutant) {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	e.checkpointScope = append([]Mutant{}, mutants...)
+}
+
+func (e *Engine) currentCheckpointScope() []Mutant {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	return append([]Mutant{}, e.checkpointScope...)
+}
+
+func (e *Engine) checkpointFromResults(results []MutantResult, reason string) Checkpoint {
+	mutants := e.currentCheckpointScope()
+	if len(mutants) > 0 {
+		return e.checkpoint(mutants, reason)
+	}
+	mutants = make([]Mutant, 0, len(results))
+	for _, result := range results {
+		if result.Mutant.ID == "" {
+			continue
+		}
+		mutants = append(mutants, result.Mutant)
+	}
+	return e.checkpoint(mutants, reason)
+}
+
 func (e *Engine) recordProgress(start time.Time, completed, total int, result MutantResult) {
 	if total <= 0 || e.cfg.Reports.Output == "" {
 		return
@@ -426,6 +490,7 @@ func (e *Engine) writePartialResults(results []MutantResult) {
 	run := RunResult{
 		SchemaVersion: "1",
 		Environment:   e.environment(len(results)),
+		Checkpoint:    e.checkpointFromResults(results, "partial"),
 		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder, "partial": true},
 		Mutants:       append([]MutantResult{}, results...),
 	}
@@ -450,7 +515,7 @@ func compactedResults(results []MutantResult) []MutantResult {
 	return compacted
 }
 
-func (e *Engine) loadPartialResults() (map[string]MutantResult, error) {
+func (e *Engine) loadPartialResults(mutants []Mutant) (map[string]MutantResult, error) {
 	results := map[string]MutantResult{}
 	if e.cfg.Reports.Output == "" {
 		return results, nil
@@ -466,6 +531,13 @@ func (e *Engine) loadPartialResults() (map[string]MutantResult, error) {
 	var run RunResult
 	if err := json.Unmarshal(data, &run); err != nil {
 		return nil, fmt.Errorf("load partial checkpoint: %w", err)
+	}
+	want := e.checkpoint(mutants, "partial")
+	if run.Checkpoint.Fingerprint == "" {
+		return nil, errors.New("partial checkpoint is missing compatibility fingerprint; rerun without --resume")
+	}
+	if run.Checkpoint.Fingerprint != want.Fingerprint {
+		return nil, fmt.Errorf("partial checkpoint fingerprint mismatch: have %s want %s; rerun without --resume", run.Checkpoint.Fingerprint, want.Fingerprint)
 	}
 	for _, result := range run.Mutants {
 		if result.MutantID == "" {

@@ -160,12 +160,19 @@ type RunResult struct {
 	SchemaVersion string             `json:"schema_version"`
 	Summary       Summary            `json:"summary"`
 	Environment   Environment        `json:"environment"`
+	Checkpoint    Checkpoint         `json:"checkpoint,omitempty"`
 	Thresholds    map[string]any     `json:"thresholds"`
 	Baseline      BaselineComparison `json:"baseline"`
 	Cache         CacheStats         `json:"cache"`
 	Quarantine    QuarantineStats    `json:"quarantine"`
 	History       HistoryStats       `json:"history"`
 	Mutants       []MutantResult     `json:"mutants"`
+}
+
+type Checkpoint struct {
+	Fingerprint string `json:"fingerprint"`
+	Mutants     int    `json:"mutants"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 type Environment struct {
