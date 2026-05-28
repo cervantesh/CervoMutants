@@ -206,3 +206,80 @@ C:\Users\c___h\AppData\Local\Temp\cervomut-gremlins-small-10\summary.json
   - otherwise fixed budget and explicit "not comparable denominator" flag.
 - Re-run the small pool in WSL2 to distinguish Windows-specific Gremlins panic
   behavior from general Gremlins behavior.
+
+## Small-Pool WSL2/Cgroup Run
+
+Second run completed in Ubuntu-24.04 under WSL2 with per-case cgroup limits:
+
+```text
+systemd-run --user --quiet --wait --collect \
+  -p MemoryMax=6G \
+  -p MemorySwapMax=1G \
+  -p CPUQuota=200%
+```
+
+Runtime environment:
+
+```text
+PATH=/tmp/cervomut-wsl-tools/go/bin:/usr/bin:/bin:/tmp/cervomut-wsl-bin
+GOMEMLIMIT=3GiB
+GOMAXPROCS=2
+GOFLAGS=-p=2
+timeout=600s
+```
+
+Artifacts:
+
+```text
+/tmp/cervomut-wsl-results/gremlins-small-10-cgroup-20260528-122948/summary.json
+```
+
+| Repo | Tool | Exit | Seconds | Total | Killed | Survived | Not covered | Timed out | Errors | Score | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `cobra` | `cervomut` | 0 | 12 | 69 | 51 | 18 | 0 | 0 | 0 | 73.91 | Complete metrics. |
+| `cobra` | `gremlins` | 0 | 23 | 0 | 0 | 0 | 5 | 87 | 0 | 0.00 | JSON was written, but the denominator is not comparable: Gremlins reported all observed mutations as timed out or not covered. |
+| `pflag` | `cervomut` | 0 | 119 | 214 | 185 | 27 | 0 | 2 | 0 | 86.45 | Complete metrics. |
+| `pflag` | `gremlins` | 0 | 1 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `logrus` | `cervomut` | 0 | 123 | 103 | 73 | 29 | 0 | 1 | 0 | 70.87 | Complete metrics. |
+| `logrus` | `gremlins` | 0 | 3 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `uuid` | `cervomut` | 0 | 113 | 89 | 70 | 16 | 0 | 3 | 0 | 78.65 | Complete metrics. |
+| `uuid` | `gremlins` | 0 | 2 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `decimal` | `cervomut` | 124 | 600 |  |  |  |  |  |  |  | Timeout before final metrics. |
+| `decimal` | `gremlins` | 0 | 6 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `gjson` | `cervomut` | 124 | 599 |  |  |  |  |  |  |  | Timeout before final metrics. |
+| `gjson` | `gremlins` | 0 | 11 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `sjson` | `cervomut` | 1 | 61 |  |  |  |  |  |  |  | Execution failure; logs were empty, so the runner needs better failure diagnostics. |
+| `sjson` | `gremlins` | 0 | 2 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `jsonparser` | `cervomut` | 124 | 600 |  |  |  |  |  |  |  | Timeout before final metrics. |
+| `jsonparser` | `gremlins` | 0 | 1 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `burntsushi-toml` | `cervomut` | 0 | 518 | 585 | 458 | 125 | 0 | 2 | 0 | 78.29 | Complete metrics near the 10-minute budget. |
+| `burntsushi-toml` | `gremlins` | 0 | 3 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+| `urfave-cli` | `cervomut` | 124 | 600 |  |  |  |  |  |  |  | Timeout before final metrics. |
+| `urfave-cli` | `gremlins` | 0 | 4 |  |  |  |  |  |  |  | No stdout/stderr and no JSON report. |
+
+## WSL2 Findings
+
+1. The cgroup wrapper worked: the run finished without host memory exhaustion,
+   and each case was bounded by Linux cgroups rather than a Windows process-tree
+   watchdog.
+2. WSL2 removed the Windows Gremlins panic mode, but did not produce comparable
+   Gremlins metrics on this pool. Gremlins exited 0 on 9/10 targets while
+   writing no JSON report and no diagnostic output.
+3. Cobra is no longer apples-to-apples in this WSL2 run. Gremlins wrote JSON,
+   but reported `mutants_total=0`, `mutants_not_covered=5`, and
+   `mutants_timed_out=87`, while CervoMutant executed and scored 69 mutants.
+4. CervoMutant ran substantially faster in WSL2 than in Windows/OneDrive for
+   the complete-metric targets:
+   - `cobra`: 28.49s -> 12s
+   - `pflag`: 223.33s -> 119s
+   - `logrus`: 206.62s -> 123s
+   - `uuid`: 182.87s -> 113s
+5. CervoMutant still needs better bounded-run behavior. Full mutation timed out
+   on `decimal`, `gjson`, `jsonparser`, and `urfave-cli`; those runs should
+   preserve partial metrics instead of ending with empty denominators.
+6. `sjson` exposed a separate diagnostic gap: exit 1 with empty stdout, stderr,
+   and time output is not actionable enough for CI or for an AI agent.
+7. The next useful comparison should not use raw full mutation as the default.
+   It should use deterministic sample, budget-aware scheduling, and partial
+   checkpointing so both tools can be compared on observed work rather than
+   only on final reports.
