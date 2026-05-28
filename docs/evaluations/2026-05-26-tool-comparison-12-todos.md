@@ -88,3 +88,66 @@ C:\Users\c___h\AppData\Local\Temp\cervomut-tool-comparison-12\summary.json
 
 6. Update issue #13 with the completed comparison.
 
+## 2026-05-27 Resource-Bounded Retry Findings
+
+Issue #13 later expanded the comparison from the paused 12-repository mixed run
+into separated tool phases over 20 repositories, followed by one-at-a-time
+retries for `hugo` and `grpc-go`.
+
+The retry target was to recover metrics for the two non-CervoMutant reference
+tools that failed to produce usable metrics for `hugo` and `grpc-go`:
+
+```text
+gomu
+go-mutesting
+```
+
+The one-at-a-time retry used process-tree resource controls instead of passive
+global memory waiting:
+
+```text
+MaxProcessTreeMemoryMB: 6144
+GOMEMLIMIT: 3GiB
+GOMAXPROCS: 1
+GOFLAGS: -p=1
+workers: 1
+timeout: 1800s per repo/tool
+```
+
+Results:
+
+| Repo | Tool | Exit | Seconds | Outcome |
+| --- | --- | ---: | ---: | --- |
+| `hugo` | `gomu` | 124 | 1802.67 | Timed out without usable metrics. |
+| `grpc-go` | `gomu` | 126 | 75.81 | Killed by process-tree watchdog at ~6953MB working set / ~6971MB private. |
+| `hugo` | `go-mutesting` | 124 | 1802.12 | Timed out without usable metrics. |
+| `grpc-go` | `go-mutesting` | 126 | 30.51 | Killed by process-tree watchdog at ~8464MB working set / ~8801MB private. |
+
+Finding:
+
+- Both reference tools can fail to degrade gracefully under resource limits on
+  larger Go targets. Even with one repository, one package target, one worker,
+  `GOMAXPROCS=1`, `GOFLAGS=-p=1`, and `GOMEMLIMIT=3GiB`, the `grpc-go` runs
+  exceeded the 6GB process-tree limit through tool and `go test` child-process
+  activity.
+- `GOMEMLIMIT` is useful but insufficient as a hard memory boundary. It does not
+  bound the whole process tree, compiler/linker subprocesses, or all native
+  allocations. A CI-safe mutation tool needs an explicit process-tree watchdog.
+- Timeout-only failure is not enough. A useful tool should write partial,
+  comparable metrics before budget exhaustion or watchdog termination. These
+  retries produced controlled exits but no additional metrics, which limits
+  their value for large-project CI comparison.
+
+CervoMutant design implications:
+
+- Keep process-tree memory accounting in the comparison runner and move the same
+  concept into CervoMutant's own execution model where possible.
+- Prefer incremental result checkpoints after each mutant, not only at the end
+  of a package/tool run.
+- Treat timeout, memory-watchdog, and skipped-for-resources as first-class
+  statuses in JSON reports.
+- Budget-aware scheduling should stop before resource exhaustion and still
+  report `attempted`, `killed`, `survived`, `pending`, and `stopped_reason`.
+- Large-project CI profiles should support smaller package slices, maximum
+  mutants per package, and early partial summaries so a failed run is still
+  diagnostically useful.
