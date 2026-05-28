@@ -170,9 +170,10 @@ type RunResult struct {
 }
 
 type Checkpoint struct {
-	Fingerprint string `json:"fingerprint"`
-	Mutants     int    `json:"mutants"`
-	Reason      string `json:"reason,omitempty"`
+	Fingerprint         string `json:"fingerprint"`
+	Mutants             int    `json:"mutants"`
+	IncludesFileDigests bool   `json:"includes_file_digests"`
+	Reason              string `json:"reason,omitempty"`
 }
 
 type Environment struct {

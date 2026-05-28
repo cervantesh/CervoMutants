@@ -201,6 +201,36 @@ func TestResumeRejectsIncompatiblePartialCheckpoint(t *testing.T) {
 	}
 }
 
+func TestResumeRejectsSourceChangedAfterCheckpoint(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Execution.Workers = 1
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err != nil {
+		t.Fatalf("first Run returned error: %v", err)
+	}
+	path := filepath.Join(dir, "calc_test.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, []byte("\n// checkpoint invalidation\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Execution.Resume = true
+	_, err = New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err == nil {
+		t.Fatal("resume succeeded after source/test file changed")
+	}
+	if !strings.Contains(err.Error(), "fingerprint mismatch") {
+		t.Fatalf("error = %v, want fingerprint mismatch", err)
+	}
+}
+
 func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "OneDrive - Personal", "Documents", "CervoSoft", "cobra doc")
 	writeFixtureFiles(t, dir)

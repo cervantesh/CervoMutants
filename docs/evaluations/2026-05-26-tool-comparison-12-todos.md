@@ -288,7 +288,7 @@ The next checkpoint-hardening pass added a compatibility fingerprint to
 
 - The fingerprint includes the selected policy/profile, selection mode,
   prefilter flag, isolation mode, test command, test timeout, Go version,
-  `GOFLAGS`, and scheduled mutant IDs.
+  `GOFLAGS`, scheduled mutant IDs, and Go source/test/module file digests.
 - `--resume` now rejects missing or mismatched checkpoint fingerprints instead
   of silently mixing stale partial results.
 - Checkpoint metadata is included in final JSON reports as well.
@@ -314,12 +314,26 @@ Windows Job Object validation was expanded with local smoke tests:
   Compile errors: 0
   Mutation score: 75.00%
   ```
+- A CervoSoft module validation on `cervo-retry` with `GOWORK=off`,
+  `--max-process-memory-mb 1024`, `--max-mutants 20`, `--workers 1`, and
+  `policy=ci-fast` completed with exit 0 in about 17 seconds:
+
+  ```text
+  Generated mutants: 20
+  Covered mutants: 12
+  Executed mutants: 12
+  Killed: 5
+  Survived: 7
+  Not covered: 8
+  Timed out: 0
+  Compile errors: 0
+  Mutation score: 41.67%
+  ```
 
 Remaining limitations after this pass:
 
-- Checkpoint fingerprints do not yet hash full source/test file contents; they
-  rely on mutant IDs and execution configuration. This is much safer than raw
-  mutant ID reuse, but source fingerprinting would make resume stricter.
-- Windows Job Object validation now covers a real Cobra package slice, but still
-  needs broader validation on CervoRetry/CervoClaw and a heavier package before
-  calling it production-grade.
+- Checkpoint fingerprints now hash Go source/test/module files, but they do not
+  include non-Go runtime fixtures yet. Projects with important testdata may need
+  a configurable checkpoint include list.
+- Windows Job Object validation now covers Cobra and CervoRetry, but still needs
+  a heavier CervoClaw package before calling it production-grade.

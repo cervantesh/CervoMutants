@@ -399,6 +399,7 @@ func (e *Engine) checkpoint(mutants []Mutant, reason string) Checkpoint {
 		GoVersion       string
 		GOFLAGS         string
 		Mutants         []string
+		Files           []string
 	}{
 		Policy:          e.cfg.Policy,
 		MutatorProfile:  e.cfg.Mutators.Profile,
@@ -410,9 +411,54 @@ func (e *Engine) checkpoint(mutants []Mutant, reason string) Checkpoint {
 		GoVersion:       runtime.Version(),
 		GOFLAGS:         os.Getenv("GOFLAGS"),
 		Mutants:         ids,
+		Files:           e.checkpointFileFingerprints(mutants),
 	}
 	data, _ := json.Marshal(cfg)
-	return Checkpoint{Fingerprint: digestBytes(data), Mutants: len(ids), Reason: reason}
+	return Checkpoint{Fingerprint: digestBytes(data), Mutants: len(ids), IncludesFileDigests: true, Reason: reason}
+}
+
+func (e *Engine) checkpointFileFingerprints(mutants []Mutant) []string {
+	modules := map[string]bool{}
+	for _, mutant := range mutants {
+		if mutant.Module != "" {
+			modules[mutant.Module] = true
+		}
+	}
+	var fingerprints []string
+	for module := range modules {
+		_ = filepath.WalkDir(module, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				if entry != nil && entry.IsDir() && shouldSkipCheckpointDir(entry.Name()) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(entry.Name(), ".go") && entry.Name() != "go.mod" && entry.Name() != "go.sum" {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			rel, err := filepath.Rel(module, path)
+			if err != nil {
+				rel = path
+			}
+			fingerprints = append(fingerprints, filepath.ToSlash(rel)+":"+digestBytes(data))
+			return nil
+		})
+	}
+	sort.Strings(fingerprints)
+	return fingerprints
+}
+
+func shouldSkipCheckpointDir(name string) bool {
+	switch name {
+	case ".git", ".cervomut", "vendor", "node_modules", "dist", "build":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Engine) setCheckpointScope(mutants []Mutant) {
