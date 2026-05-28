@@ -299,11 +299,27 @@ Windows Job Object validation was expanded with local smoke tests:
   exercised child `go test` execution under the Job Object path.
 - A deliberately tiny `--max-process-memory-mb 16` failed during baseline
   without hanging the host, confirming the low-limit path degrades early.
+- A larger Windows-native Cobra smoke with `--max-process-memory-mb 1024`,
+  `--max-mutants 10`, `--workers 1`, and `policy=ci-fast` completed with exit
+  0 in about 94 seconds:
+
+  ```text
+  Generated mutants: 10
+  Covered mutants: 8
+  Executed mutants: 8
+  Killed: 6
+  Survived: 2
+  Not covered: 2
+  Timed out: 0
+  Compile errors: 0
+  Mutation score: 75.00%
+  ```
 
 Remaining limitations after this pass:
 
 - Checkpoint fingerprints do not yet hash full source/test file contents; they
   rely on mutant IDs and execution configuration. This is much safer than raw
   mutant ID reuse, but source fingerprinting would make resume stricter.
-- Windows Job Object validation still needs a larger repo such as Cobra,
-  CervoRetry, or CervoClaw before calling it production-grade.
+- Windows Job Object validation now covers a real Cobra package slice, but still
+  needs broader validation on CervoRetry/CervoClaw and a heavier package before
+  calling it production-grade.
