@@ -329,11 +329,29 @@ Windows Job Object validation was expanded with local smoke tests:
   Compile errors: 0
   Mutation score: 41.67%
   ```
+- A heavier CervoClaw module validation on `CervoWorkers` required a longer
+  timeout than `ci-fast` because its coverage baseline takes about 55 seconds.
+  With `GOWORK=off`, `policy=campaign`, `--max-process-memory-mb 2048`,
+  `--max-mutants 5`, and `--workers 1`, it completed with exit 0 in about
+  194 seconds:
+
+  ```text
+  Generated mutants: 5
+  Covered mutants: 5
+  Executed mutants: 5
+  Killed: 2
+  Survived: 3
+  Not covered: 0
+  Timed out: 0
+  Compile errors: 0
+  Mutation score: 40.00%
+  ```
 
 Remaining limitations after this pass:
 
 - Checkpoint fingerprints now hash Go source/test/module files, but they do not
   include non-Go runtime fixtures yet. Projects with important testdata may need
   a configurable checkpoint include list.
-- Windows Job Object validation now covers Cobra and CervoRetry, but still needs
-  a heavier CervoClaw package before calling it production-grade.
+- Windows Job Object validation now covers Cobra, CervoRetry, and a heavier
+  CervoWorkers slice. It still needs a larger campaign before calling it
+  production-grade for every CervoClaw module.
