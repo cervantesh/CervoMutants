@@ -49,12 +49,13 @@ type Mutators struct {
 }
 
 type Execution struct {
-	Workers   int           `yaml:"workers" json:"workers"`
-	Isolation string        `yaml:"isolation" json:"isolation"`
-	Budget    time.Duration `yaml:"budget" json:"budget"`
-	FailFast  bool          `yaml:"fail_fast" json:"fail_fast"`
-	Resume    bool          `yaml:"resume" json:"resume"`
-	Resources Resources     `yaml:"resources" json:"resources"`
+	Workers            int           `yaml:"workers" json:"workers"`
+	Isolation          string        `yaml:"isolation" json:"isolation"`
+	Budget             time.Duration `yaml:"budget" json:"budget"`
+	FailFast           bool          `yaml:"fail_fast" json:"fail_fast"`
+	Resume             bool          `yaml:"resume" json:"resume"`
+	CheckpointIncludes []string      `yaml:"checkpoint_includes" json:"checkpoint_includes"`
+	Resources          Resources     `yaml:"resources" json:"resources"`
 }
 
 type Resources struct {
@@ -169,7 +170,7 @@ func Defaults() Config {
 			BaselineRequired: true,
 		},
 		Mutators:  Mutators{Profile: "conservative"},
-		Execution: Execution{Workers: workers, Isolation: "temp-workdir"},
+		Execution: Execution{Workers: workers, Isolation: "temp-workdir", CheckpointIncludes: []string{"testdata/**", "fixtures/**"}},
 		Selection: Selection{Mode: "package", UseTimings: true, CoverageProfile: ".cervomut/coverage.out", TimingsPath: ".cervomut/timings.json"},
 		Suppression: Suppression{Enabled: true, Rules: []SuppressionRule{
 			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: "report-only", Reason: "High equivalent-mutant risk must be visible before suppression is allowed.", Evidence: "heuristic"},

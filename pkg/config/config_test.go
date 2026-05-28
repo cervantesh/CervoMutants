@@ -19,6 +19,9 @@ func TestDefaultsAreAdoptionFriendlyAndAllIn(t *testing.T) {
 	if cfg.Execution.Isolation != "temp-workdir" {
 		t.Fatalf("isolation = %q, want temp-workdir", cfg.Execution.Isolation)
 	}
+	if len(cfg.Execution.CheckpointIncludes) == 0 {
+		t.Fatal("checkpoint includes should default to common fixture directories")
+	}
 	if cfg.Selection.Mode != "package" {
 		t.Fatalf("selection mode = %q, want package", cfg.Selection.Mode)
 	}
@@ -54,6 +57,7 @@ mutators:
 execution:
   workers: 2
   budget: 10m
+  checkpoint_includes: ["testdata/**", "golden/**"]
 selection:
   mode: coverage
 ci:
@@ -75,6 +79,9 @@ ci:
 	}
 	if cfg.Mutators.Profile != "aggressive" || cfg.Execution.Workers != 2 || cfg.Selection.Mode != "coverage" || cfg.CI.FailUnder != 80 {
 		t.Fatalf("overrides not loaded: %+v", cfg)
+	}
+	if len(cfg.Execution.CheckpointIncludes) != 2 || cfg.Execution.CheckpointIncludes[1] != "golden/**" {
+		t.Fatalf("checkpoint includes not loaded: %+v", cfg.Execution.CheckpointIncludes)
 	}
 
 	err = os.WriteFile(path, []byte("version: 1\nselection:\n  mode: impossible\n"), 0o600)

@@ -231,6 +231,39 @@ func TestResumeRejectsSourceChangedAfterCheckpoint(t *testing.T) {
 	}
 }
 
+func TestResumeRejectsConfiguredFixtureChangedAfterCheckpoint(t *testing.T) {
+	dir := writeFixture(t)
+	fixtureDir := filepath.Join(dir, "testdata")
+	if err := os.MkdirAll(fixtureDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(fixtureDir, "case.json")
+	if err := os.WriteFile(fixturePath, []byte(`{"case":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Execution.Workers = 1
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err != nil {
+		t.Fatalf("first Run returned error: %v", err)
+	}
+	if err := os.WriteFile(fixturePath, []byte(`{"case":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Execution.Resume = true
+	_, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err == nil {
+		t.Fatal("resume succeeded after configured fixture changed")
+	}
+	if !strings.Contains(err.Error(), "fingerprint mismatch") {
+		t.Fatalf("error = %v, want fingerprint mismatch", err)
+	}
+}
+
 func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "OneDrive - Personal", "Documents", "CervoSoft", "cobra doc")
 	writeFixtureFiles(t, dir)

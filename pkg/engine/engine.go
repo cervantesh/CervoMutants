@@ -433,7 +433,7 @@ func (e *Engine) checkpointFileFingerprints(mutants []Mutant) []string {
 				}
 				return nil
 			}
-			if !strings.HasSuffix(entry.Name(), ".go") && entry.Name() != "go.mod" && entry.Name() != "go.sum" {
+			if !e.checkpointIncludesFile(module, path, entry.Name()) {
 				return nil
 			}
 			data, err := os.ReadFile(path)
@@ -450,6 +450,53 @@ func (e *Engine) checkpointFileFingerprints(mutants []Mutant) []string {
 	}
 	sort.Strings(fingerprints)
 	return fingerprints
+}
+
+func (e *Engine) checkpointIncludesFile(module, path, name string) bool {
+	if strings.HasSuffix(name, ".go") || name == "go.mod" || name == "go.sum" {
+		return true
+	}
+	rel, err := filepath.Rel(module, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, pattern := range e.cfg.Execution.CheckpointIncludes {
+		pattern = filepath.ToSlash(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		if globMatch(pattern, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func globMatch(pattern, rel string) bool {
+	if ok, err := filepath.Match(pattern, rel); err == nil && ok {
+		return true
+	}
+	if strings.Contains(pattern, "**/") {
+		withoutRecursive := strings.ReplaceAll(pattern, "**/", "")
+		if ok, err := filepath.Match(withoutRecursive, rel); err == nil && ok {
+			return true
+		}
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		return rel == prefix || strings.HasPrefix(rel, prefix+"/")
+	}
+	if strings.Contains(pattern, "/**/") {
+		parts := strings.Split(pattern, "/**/")
+		if len(parts) == 2 && strings.HasPrefix(rel, parts[0]+"/") {
+			tail := strings.TrimPrefix(rel, parts[0]+"/")
+			if ok, err := filepath.Match(parts[1], tail); err == nil && ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func shouldSkipCheckpointDir(name string) bool {

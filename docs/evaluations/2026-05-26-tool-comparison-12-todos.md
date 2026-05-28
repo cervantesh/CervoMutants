@@ -346,12 +346,28 @@ Windows Job Object validation was expanded with local smoke tests:
   Compile errors: 0
   Mutation score: 40.00%
   ```
+- A broader Windows Job Object campaign then ran four modules:
+
+  | Module | Policy | Memory cap | Max mutants | Result |
+  | --- | --- | ---: | ---: | --- |
+  | `cervo-retry` | `ci-fast` | 1024MB | 20 | exit 0; 20 generated; 12 executed; 5 killed; 7 survived; 0 timeout/compile errors |
+  | `cervo-config` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated/executed; 14 killed; 1 survived; 0 timeout/compile errors |
+  | `cervo-httpkit` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated; 7 executed; 3 killed; 4 survived; 0 timeout/compile errors |
+  | `CervoWorkers` | `campaign` + `--test-timeout 180s` | 2048MB | 5 | exit 0; 5 generated/executed; 2 killed; 3 survived; 0 timeout/compile errors |
+
+  The first `CervoWorkers` attempt under the default `campaign` 2-minute test
+  timeout failed during baseline. Adding explicit `--test-timeout 180s` made the
+  limit visible and repeatable, which supports keeping timeout override in the
+  CLI for larger Windows-native runs.
 
 Remaining limitations after this pass:
 
 - Checkpoint fingerprints now hash Go source/test/module files, but they do not
-  include non-Go runtime fixtures yet. Projects with important testdata may need
-  a configurable checkpoint include list.
-- Windows Job Object validation now covers Cobra, CervoRetry, and a heavier
-  CervoWorkers slice. It still needs a larger campaign before calling it
-  production-grade for every CervoClaw module.
+  include every possible non-Go runtime fixture by default. `execution.
+  checkpoint_includes` now covers common fixture directories such as
+  `testdata/**` and `fixtures/**`; projects with other fixture layouts should
+  extend that list.
+- Windows Job Object validation now covers Cobra, three CervoSoft modules, and
+  a heavier CervoWorkers slice. It is credible for controlled local runs, but a
+  full production-grade claim still needs a longer campaign across all CervoClaw
+  modules that have clean baselines on the selected Go version.

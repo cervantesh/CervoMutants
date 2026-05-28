@@ -130,6 +130,7 @@ func cmdRun(args []string) error {
 	scope := fs.String("scope", "", "scope mode")
 	since := fs.String("since", "", "git base")
 	budget := fs.Duration("budget", 0, "run budget")
+	testTimeout := fs.Duration("test-timeout", 0, "per-mutant go test timeout")
 	maxMutants := fs.Int("max-mutants", 0, "max mutants")
 	sample := fs.String("sample", "", "sampling mode")
 	reportFormats := fs.String("report", "", "comma-separated report formats")
@@ -142,7 +143,7 @@ func cmdRun(args []string) error {
 	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
 	maxProcessMemory := fs.Int("max-process-memory-mb", 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"scope": true, "since": true, "budget": true, "max-mutants": true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true, "max-process-memory-mb": true,
+		"scope": true, "since": true, "budget": true, "test-timeout": true, "max-mutants": true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true, "max-process-memory-mb": true,
 	})); err != nil {
 		return err
 	}
@@ -169,6 +170,9 @@ func cmdRun(args []string) error {
 	}
 	if *budget > 0 {
 		cfg.Execution.Budget = *budget
+	}
+	if *testTimeout > 0 {
+		cfg.Tests.Timeout = *testTimeout
 	}
 	if *maxMutants > 0 {
 		cfg.Limits.MaxMutants = *maxMutants
@@ -224,6 +228,7 @@ func cmdEval(args []string) error {
 	out := fs.String("out", ".cervomut/evaluation", "evaluation output directory")
 	framework := fs.String("framework", "cervosoft", "evaluation framework")
 	budget := fs.Duration("budget", 0, "run budget")
+	testTimeout := fs.Duration("test-timeout", 0, "per-mutant go test timeout")
 	maxMutants := fs.Int("max-mutants", 0, "max mutants")
 	sample := fs.String("sample", "", "sampling mode")
 	workers := fs.Int("workers", 0, "parallel mutation workers")
@@ -232,7 +237,7 @@ func cmdEval(args []string) error {
 	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
 	maxProcessMemory := fs.Int("max-process-memory-mb", 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"out": true, "framework": true, "budget": true, "max-mutants": true, "sample": true, "workers": true, "isolation": true, "policy": true, "max-process-memory-mb": true,
+		"out": true, "framework": true, "budget": true, "test-timeout": true, "max-mutants": true, "sample": true, "workers": true, "isolation": true, "policy": true, "max-process-memory-mb": true,
 	})); err != nil {
 		return err
 	}
@@ -254,6 +259,9 @@ func cmdEval(args []string) error {
 	cfg.History.Path = filepath.Join(*out, "history.json")
 	if *budget > 0 {
 		cfg.Execution.Budget = *budget
+	}
+	if *testTimeout > 0 {
+		cfg.Tests.Timeout = *testTimeout
 	}
 	if *maxMutants > 0 {
 		cfg.Limits.MaxMutants = *maxMutants
@@ -514,6 +522,7 @@ execution:
   budget: 0s
   fail_fast: false
   resume: false
+  checkpoint_includes: ["testdata/**", "fixtures/**"]
   resources:
     max_process_memory_mb: 0
     max_processes: 0
