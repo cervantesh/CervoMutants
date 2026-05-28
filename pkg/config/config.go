@@ -53,6 +53,13 @@ type Execution struct {
 	Isolation string        `yaml:"isolation" json:"isolation"`
 	Budget    time.Duration `yaml:"budget" json:"budget"`
 	FailFast  bool          `yaml:"fail_fast" json:"fail_fast"`
+	Resume    bool          `yaml:"resume" json:"resume"`
+	Resources Resources     `yaml:"resources" json:"resources"`
+}
+
+type Resources struct {
+	MaxProcessMemoryMB int `yaml:"max_process_memory_mb" json:"max_process_memory_mb"`
+	MaxProcesses       int `yaml:"max_processes" json:"max_processes"`
 }
 
 type Selection struct {

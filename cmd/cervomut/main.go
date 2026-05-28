@@ -139,8 +139,10 @@ func cmdRun(args []string) error {
 	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, nightly, or campaign")
 	profile := fs.String("profile", "", "mutator profile")
 	prefilter := fs.Bool("coverage-prefilter", false, "use coverage profile as a prefilter")
+	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
+	maxProcessMemory := fs.Int("max-process-memory-mb", 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"scope": true, "since": true, "budget": true, "max-mutants": true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true,
+		"scope": true, "since": true, "budget": true, "max-mutants": true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true, "max-process-memory-mb": true,
 	})); err != nil {
 		return err
 	}
@@ -158,6 +160,12 @@ func cmdRun(args []string) error {
 	}
 	if *prefilter {
 		cfg.Selection.Prefilter = true
+	}
+	if *resume {
+		cfg.Execution.Resume = true
+	}
+	if *maxProcessMemory > 0 {
+		cfg.Execution.Resources.MaxProcessMemoryMB = *maxProcessMemory
 	}
 	if *budget > 0 {
 		cfg.Execution.Budget = *budget
@@ -221,8 +229,10 @@ func cmdEval(args []string) error {
 	workers := fs.Int("workers", 0, "parallel mutation workers")
 	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
 	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, nightly, or campaign")
+	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
+	maxProcessMemory := fs.Int("max-process-memory-mb", 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"out": true, "framework": true, "budget": true, "max-mutants": true, "sample": true, "workers": true, "isolation": true, "policy": true,
+		"out": true, "framework": true, "budget": true, "max-mutants": true, "sample": true, "workers": true, "isolation": true, "policy": true, "max-process-memory-mb": true,
 	})); err != nil {
 		return err
 	}
@@ -230,6 +240,12 @@ func cmdEval(args []string) error {
 	if *policy != "" {
 		cfg.Policy = *policy
 		cfg = config.ApplyPolicy(cfg)
+	}
+	if *resume {
+		cfg.Execution.Resume = true
+	}
+	if *maxProcessMemory > 0 {
+		cfg.Execution.Resources.MaxProcessMemoryMB = *maxProcessMemory
 	}
 	cfg.Reports.Output = *out
 	cfg.Cache.Path = filepath.Join(*out, "cache")
@@ -497,6 +513,10 @@ execution:
   isolation: temp-workdir
   budget: 0s
   fail_fast: false
+  resume: false
+  resources:
+    max_process_memory_mb: 0
+    max_processes: 0
 selection:
   mode: package
   prefilter: false

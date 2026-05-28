@@ -24,6 +24,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		Mutants: []engine.MutantResult{{
 			MutantID:        "pkg/foo.go:10:conditionals-negation:eq-to-ne",
 			Status:          engine.StatusSurvived,
+			FailureKind:     "runner_error",
 			Duration:        time.Second,
 			TestCommand:     []string{"go", "test", "./pkg"},
 			StatusReason:    "tests passed with mutant applied",
@@ -80,7 +81,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"environment", "go_version", "isolation", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "isolation", "failure_kind", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}

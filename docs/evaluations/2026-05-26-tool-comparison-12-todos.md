@@ -234,3 +234,51 @@ New CervoMutant design implications:
 - Add a compatibility finding category for external tools that panic before
   mutation starts; do not mix those failures with timeout or mutation-quality
   outcomes.
+
+## 2026-05-28 Follow-Up Implementation Notes
+
+The first hardening batch from these findings landed in `f1f7962`:
+
+- `progress.jsonl` is written during `cervomut run`.
+- `partial-mutation-report.json` is updated incrementally after completed
+  mutants.
+- Reports include environment metadata: OS/arch, Go version, temp/workdir,
+  isolation, workers, timeout, selected Go env, WSL/cgroup hints, and Windows
+  OneDrive detection.
+- `doctor` reports Windows/WSL diagnostics without failing on advisory
+  warnings.
+- CLI panic recovery reports an `internal_error` instead of exposing only a raw
+  panic.
+
+The second hardening batch landed after that:
+
+- `cervomut run --resume` reuses `partial-mutation-report.json` explicitly.
+  Resume is opt-in to avoid accidentally trusting stale checkpoints.
+- Cached/resumed results preserve `previous_status`, so mutation score and
+  executed/covered counters remain meaningful.
+- Progress events include `eta` and `active_mutant`.
+- Mutant results include `failure_kind` for structured operational taxonomy
+  without expanding the primary v1 status enum.
+- `cervomut run` and `cervomut eval` accept `--max-process-memory-mb`.
+- Windows builds use a Job Object best-effort process limit when
+  `--max-process-memory-mb` is set.
+- `cervomut init` now includes `execution.resume` and
+  `execution.resources`.
+
+Verification:
+
+```text
+go test ./...
+GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/cervomut
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/cervomut
+GOOS=windows GOARCH=amd64 go build ./cmd/cervomut
+```
+
+Remaining limitations:
+
+- Windows Job Objects are now wired for memory/process limits, but this is still
+  best-effort and needs larger real-project validation.
+- Resume currently trusts mutant IDs in the partial report. It should later add
+  stronger checkpoint compatibility checks using config/toolchain/source
+  fingerprints.
+- macOS remains compile-tested only; no real runtime validation has been done.

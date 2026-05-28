@@ -61,6 +61,7 @@ type MutantJob struct {
 type MutantResult struct {
 	MutantID           string        `json:"mutant_id"`
 	Status             Status        `json:"status"`
+	FailureKind        string        `json:"failure_kind,omitempty"`
 	Duration           time.Duration `json:"duration"`
 	TestCommand        []string      `json:"selected_tests"`
 	StatusReason       string        `json:"status_reason"`
@@ -197,6 +198,8 @@ type ProgressEvent struct {
 	Status        Status        `json:"status,omitempty"`
 	Elapsed       time.Duration `json:"elapsed"`
 	Remaining     int           `json:"remaining"`
+	ETA           string        `json:"eta,omitempty"`
+	ActiveMutant  string        `json:"active_mutant,omitempty"`
 	Message       string        `json:"message"`
 }
 

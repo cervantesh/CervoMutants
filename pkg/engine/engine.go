@@ -100,11 +100,46 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 }
 
 func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	if e.cfg.Execution.Resume {
+		return e.runMutantsWithResume(ctx, mutants, quarantined)
+	}
 	workers := e.workerCount(len(mutants))
 	if workers <= 1 {
 		return e.runMutantsSerial(ctx, mutants, quarantined)
 	}
 	return e.runMutantsParallel(ctx, mutants, quarantined, workers)
+}
+
+func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	completed, err := e.loadPartialResults()
+	if err != nil {
+		return nil, err
+	}
+	if len(completed) == 0 {
+		workers := e.workerCount(len(mutants))
+		if workers <= 1 {
+			return e.runMutantsSerial(ctx, mutants, quarantined)
+		}
+		return e.runMutantsParallel(ctx, mutants, quarantined, workers)
+	}
+	results := make([]MutantResult, 0, len(mutants))
+	remaining := make([]Mutant, 0, len(mutants))
+	for _, mutant := range mutants {
+		if result, ok := completed[mutant.ID]; ok {
+			result.PreviousStatus = result.Status
+			result.Status = StatusCached
+			result.StatusReason = "result reused from partial checkpoint"
+			results = append(results, result)
+			continue
+		}
+		remaining = append(remaining, mutant)
+	}
+	next, err := e.runMutantsSerial(ctx, remaining, quarantined)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, next...)
+	return orderResults(mutants, results), nil
 }
 
 func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
@@ -299,6 +334,9 @@ func (e *Engine) environment(mutants int) Environment {
 		CGroup:          cgroupSummary(),
 		WindowsOneDrive: runtime.GOOS == "windows" && pathMentionsOneDrive(wd),
 	}
+	if e.cfg.Execution.Resources.MaxProcessMemoryMB > 0 {
+		env.Extra = map[string]string{"max_process_memory_mb": strconv.Itoa(e.cfg.Execution.Resources.MaxProcessMemoryMB)}
+	}
 	if e.cfg.Execution.Budget > 0 {
 		env.Budget = e.cfg.Execution.Budget.String()
 	}
@@ -353,11 +391,16 @@ func (e *Engine) recordProgress(start time.Time, completed, total int, result Mu
 		Status:        result.Status,
 		Elapsed:       time.Since(start),
 		Remaining:     total - completed,
-		Message:       fmt.Sprintf("mutant %d/%d %s %s", completed, total, result.MutantID, result.Status),
 	}
+	if completed > 0 {
+		perMutant := event.Elapsed / time.Duration(completed)
+		event.ETA = (perMutant * time.Duration(event.Remaining)).Round(time.Second).String()
+	}
+	event.ActiveMutant = result.MutantID
+	event.Message = fmt.Sprintf("mutant %d/%d %s %s eta=%s", completed, total, result.MutantID, result.Status, event.ETA)
 	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
 	_ = appendProgressEvent(filepath.Join(e.cfg.Reports.Output, "progress.jsonl"), event)
-	fmt.Fprintf(os.Stderr, "progress %d/%d %s %s\n", completed, total, result.MutantID, result.Status)
+	fmt.Fprintf(os.Stderr, "progress %d/%d %s %s eta=%s\n", completed, total, result.MutantID, result.Status, event.ETA)
 }
 
 func appendProgressEvent(path string, event ProgressEvent) error {
@@ -405,6 +448,46 @@ func compactedResults(results []MutantResult) []MutantResult {
 		compacted = append(compacted, result)
 	}
 	return compacted
+}
+
+func (e *Engine) loadPartialResults() (map[string]MutantResult, error) {
+	results := map[string]MutantResult{}
+	if e.cfg.Reports.Output == "" {
+		return results, nil
+	}
+	path := filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return results, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var run RunResult
+	if err := json.Unmarshal(data, &run); err != nil {
+		return nil, fmt.Errorf("load partial checkpoint: %w", err)
+	}
+	for _, result := range run.Mutants {
+		if result.MutantID == "" {
+			continue
+		}
+		results[result.MutantID] = result
+	}
+	return results, nil
+}
+
+func orderResults(mutants []Mutant, results []MutantResult) []MutantResult {
+	byID := map[string]MutantResult{}
+	for _, result := range results {
+		byID[result.MutantID] = result
+	}
+	ordered := make([]MutantResult, 0, len(results))
+	for _, mutant := range mutants {
+		if result, ok := byID[mutant.ID]; ok {
+			ordered = append(ordered, result)
+		}
+	}
+	return ordered
 }
 
 func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedResult, error) {
@@ -649,6 +732,7 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 	if e.cfg.Cache.Enabled && e.cfg.Cache.Mode != "off" {
 		if cached, ok, err := e.getCached(key); err == nil && ok {
 			result := cached
+			result.PreviousStatus = result.Status
 			result.Status = StatusCached
 			result.StatusReason = "result reused from incremental cache"
 			return result, nil
@@ -787,26 +871,48 @@ func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, erro
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err := cmd.Run()
+	err := cmd.Start()
+	var cleanup func()
+	if err == nil {
+		cleanup, err = applyProcessLimits(cmd, e.cfg.Execution.Resources)
+		if err != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}
+	if err == nil {
+		err = cmd.Wait()
+	}
+	if cleanup != nil {
+		cleanup()
+	}
 	text := output.String()
 	if max := e.cfg.Reports.MaxOutputBytes; max > 0 && len(text) > max {
 		text = text[:max]
 	}
 	status := StatusKilled
+	failureKind := ""
 	reason := "tests failed with mutant applied"
 	if runCtx.Err() == context.DeadlineExceeded {
 		status = StatusTimedOut
+		failureKind = "timeout"
 		reason = "test command timed out"
 	} else if err == nil {
 		status = StatusSurvived
 		reason = "tests passed with mutant applied"
+	} else if errors.Is(err, errProcessLimitUnsupported) {
+		status = StatusCompileError
+		failureKind = "resource_limit_unsupported"
+		reason = err.Error()
 	} else if !strings.Contains(text, "FAIL") {
 		status = StatusCompileError
+		failureKind = classifyFailure(text, err)
 		reason = "test command failed before running assertions"
 	}
 	return MutantResult{
 		MutantID:     job.Mutant.ID,
 		Status:       status,
+		FailureKind:  failureKind,
 		Duration:     time.Since(start),
 		TestCommand:  job.TestCommand,
 		StatusReason: reason,
@@ -830,6 +936,22 @@ func applyDiffReplacement(path string, mutant Mutant) error {
 	replaced := strings.Replace(segment, mutant.Original, mutant.Mutated, 1)
 	text := string(data[:mutant.StartOffset]) + replaced + string(data[mutant.EndOffset:])
 	return os.WriteFile(path, []byte(text), 0o644)
+}
+
+func classifyFailure(output string, err error) string {
+	text := strings.ToLower(output)
+	switch {
+	case strings.Contains(text, "panic:"):
+		return "test_panic"
+	case strings.Contains(text, "build failed"), strings.Contains(text, "compilation failed"), strings.Contains(text, "undefined:"), strings.Contains(text, "syntax error"):
+		return "compile_error"
+	case strings.Contains(text, "no such file or directory"), strings.Contains(text, "cannot find"):
+		return "environment_error"
+	case err != nil:
+		return "runner_error"
+	default:
+		return ""
+	}
 }
 
 func moduleForTargets(targets []string) (string, error) {
@@ -904,6 +1026,34 @@ func summarize(results []MutantResult) Summary {
 		case StatusCached:
 			s.Cached++
 			stat.Cached++
+			switch result.PreviousStatus {
+			case StatusKilled:
+				s.Killed++
+				stat.Killed++
+				s.ExecutedMutants++
+				s.CoveredMutants++
+			case StatusSurvived:
+				s.Survived++
+				stat.Survived++
+				s.ExecutedMutants++
+				s.CoveredMutants++
+				if result.Mutant.EquivalentRisk == "high" {
+					s.HighRiskSurvivors++
+				}
+			case StatusNotCovered:
+				s.NotCovered++
+				stat.NotCovered++
+			case StatusTimedOut:
+				s.TimedOut++
+				stat.TimedOut++
+				s.ExecutedMutants++
+				s.CoveredMutants++
+			case StatusCompileError:
+				s.CompileError++
+				stat.CompileError++
+				s.ExecutedMutants++
+				s.CoveredMutants++
+			}
 		}
 		for _, audit := range result.Mutant.SuppressionAudit {
 			switch audit.Action {

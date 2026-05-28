@@ -135,6 +135,47 @@ func TestRunClassifiesSurvivorAndWritesReports(t *testing.T) {
 	if !strings.Contains(string(progress), `"schema_version":"1"`) || !strings.Contains(string(progress), `"completed"`) {
 		t.Fatalf("progress stream missing expected fields: %s", progress)
 	}
+	if !strings.Contains(string(progress), `"eta"`) || !strings.Contains(string(progress), `"active_mutant"`) {
+		t.Fatalf("progress stream missing eta/active mutant fields: %s", progress)
+	}
+}
+
+func TestRunCanResumeFromPartialCheckpoint(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Execution.Workers = 1
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+
+	first, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err != nil {
+		t.Fatalf("first Run returned error: %v", err)
+	}
+	if len(first.Mutants) != 1 {
+		t.Fatalf("first mutants = %d, want 1", len(first.Mutants))
+	}
+	cfg.Execution.Resume = true
+	second, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err != nil {
+		t.Fatalf("resume Run returned error: %v", err)
+	}
+	if len(second.Mutants) != 1 {
+		t.Fatalf("second mutants = %d, want 1", len(second.Mutants))
+	}
+	if second.Mutants[0].Status != StatusCached {
+		t.Fatalf("resumed status = %q, want cached", second.Mutants[0].Status)
+	}
+	if second.Mutants[0].PreviousStatus == "" {
+		t.Fatal("resumed result did not preserve previous status")
+	}
+	if !strings.Contains(second.Mutants[0].StatusReason, "partial checkpoint") {
+		t.Fatalf("resume reason = %q", second.Mutants[0].StatusReason)
+	}
+	if second.Summary.Cached != 1 || second.Summary.ExecutedMutants == 0 {
+		t.Fatalf("cached result was not counted in summary: %+v", second.Summary)
+	}
 }
 
 func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {
