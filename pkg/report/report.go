@@ -79,6 +79,18 @@ func Summary(result engine.RunResult) string {
 			)
 		}
 	}
+	if result.Environment.OS != "" {
+		fmt.Fprintf(&b, "Environment: os=%s arch=%s go=%s isolation=%s workers=%d timeout=%s wsl=%t onedrive=%t\n",
+			result.Environment.OS,
+			result.Environment.Arch,
+			result.Environment.GoVersion,
+			result.Environment.Isolation,
+			result.Environment.Workers,
+			result.Environment.TestTimeout,
+			result.Environment.WSL,
+			result.Environment.WindowsOneDrive,
+		)
+	}
 	return b.String()
 }
 

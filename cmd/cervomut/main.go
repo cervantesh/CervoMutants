@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/baseline"
@@ -28,7 +29,13 @@ func main() {
 	}
 }
 
-func run(args []string) error {
+func run(args []string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			stack := strings.TrimSpace(string(debug.Stack()))
+			err = fmt.Errorf("internal_error: unexpected panic: %v\n%s", recovered, stack)
+		}
+	}()
 	if len(args) == 0 {
 		usage()
 		return nil
@@ -88,6 +95,8 @@ func cmdDoctor() error {
 		if !check.OK {
 			status = "fail"
 			ok = false
+		} else if check.Severity == "warn" {
+			status = "warn"
 		}
 		fmt.Printf("%s %s %s", status, check.Name, check.Message)
 		if !strings.HasSuffix(check.Message, "\n") {

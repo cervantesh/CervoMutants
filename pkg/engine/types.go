@@ -158,12 +158,46 @@ type HistoryStats struct {
 type RunResult struct {
 	SchemaVersion string             `json:"schema_version"`
 	Summary       Summary            `json:"summary"`
+	Environment   Environment        `json:"environment"`
 	Thresholds    map[string]any     `json:"thresholds"`
 	Baseline      BaselineComparison `json:"baseline"`
 	Cache         CacheStats         `json:"cache"`
 	Quarantine    QuarantineStats    `json:"quarantine"`
 	History       HistoryStats       `json:"history"`
 	Mutants       []MutantResult     `json:"mutants"`
+}
+
+type Environment struct {
+	OS              string            `json:"os"`
+	Arch            string            `json:"arch"`
+	GoVersion       string            `json:"go_version,omitempty"`
+	ToolVersion     string            `json:"tool_version,omitempty"`
+	WorkingDir      string            `json:"working_dir,omitempty"`
+	TempDir         string            `json:"temp_dir,omitempty"`
+	Isolation       string            `json:"isolation,omitempty"`
+	Workers         int               `json:"workers,omitempty"`
+	TestTimeout     string            `json:"test_timeout,omitempty"`
+	Budget          string            `json:"budget,omitempty"`
+	GoFlags         string            `json:"go_flags,omitempty"`
+	GoMaxProcs      string            `json:"go_max_procs,omitempty"`
+	GoMemLimit      string            `json:"go_mem_limit,omitempty"`
+	CI              string            `json:"ci,omitempty"`
+	WSL             bool              `json:"wsl,omitempty"`
+	CGroup          string            `json:"cgroup,omitempty"`
+	WindowsOneDrive bool              `json:"windows_onedrive,omitempty"`
+	Extra           map[string]string `json:"extra,omitempty"`
+}
+
+type ProgressEvent struct {
+	SchemaVersion string        `json:"schema_version"`
+	Time          time.Time     `json:"time"`
+	Completed     int           `json:"completed"`
+	Total         int           `json:"total"`
+	MutantID      string        `json:"mutant_id,omitempty"`
+	Status        Status        `json:"status,omitempty"`
+	Elapsed       time.Duration `json:"elapsed"`
+	Remaining     int           `json:"remaining"`
+	Message       string        `json:"message"`
 }
 
 type RunRequest struct {

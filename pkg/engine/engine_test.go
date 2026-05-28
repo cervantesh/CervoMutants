@@ -122,6 +122,19 @@ func TestRunClassifiesSurvivorAndWritesReports(t *testing.T) {
 	if !strings.Contains(string(data), `"schema_version": "1"`) {
 		t.Fatalf("report missing schema version: %s", data)
 	}
+	if !strings.Contains(string(data), `"environment"`) {
+		t.Fatalf("report missing environment metadata: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Reports.Output, "partial-mutation-report.json")); err != nil {
+		t.Fatalf("partial report was not written: %v", err)
+	}
+	progress, err := os.ReadFile(filepath.Join(cfg.Reports.Output, "progress.jsonl"))
+	if err != nil {
+		t.Fatalf("progress stream was not written: %v", err)
+	}
+	if !strings.Contains(string(progress), `"schema_version":"1"`) || !strings.Contains(string(progress), `"completed"`) {
+		t.Fatalf("progress stream missing expected fields: %s", progress)
+	}
 }
 
 func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 	run := engine.RunResult{
 		SchemaVersion: "1",
+		Environment:   engine.Environment{OS: "linux", Arch: "amd64", GoVersion: "go1.25.6", Isolation: "overlay", Workers: 1, TestTimeout: "30s", WSL: true},
 		Summary: engine.Summary{
 			Total:       1,
 			Survived:    1,
@@ -79,7 +80,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "isolation", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -106,6 +107,7 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 				"logical":               {Total: 1, NotCovered: 1, Recommendation: "conservative"},
 			},
 		},
+		Environment: engine.Environment{OS: "linux", Arch: "amd64", GoVersion: "go1.25.6", Isolation: "overlay", Workers: 1, TestTimeout: "30s"},
 	}
 
 	text := Summary(run)
@@ -122,6 +124,7 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"recommendation=fast-ci",
 		"logical: total=1 killed=0 survived=0 not_covered=1",
 		"recommendation=conservative",
+		"Environment: os=linux arch=amd64 go=go1.25.6 isolation=overlay workers=1 timeout=30s",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

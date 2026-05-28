@@ -58,6 +58,7 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 	result := RunResult{
 		SchemaVersion: "1",
+		Environment:   e.environment(len(mutants)),
 		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder},
 		Mutants:       []MutantResult{},
 		Quarantine:    QuarantineStats{Active: len(quarantined), Expired: expired},
@@ -109,17 +110,25 @@ func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined m
 func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
 	results := make([]MutantResult, 0, len(mutants))
 	start := time.Now()
-	for _, mutant := range mutants {
+	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
-			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant})
+			result := MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
+			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		if result, ok := e.suppressedResult(mutant); ok {
 			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		if e.budgetExhausted(start) {
-			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant})
+			result := MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant}
+			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		mutantResult, err := e.runMutant(ctx, mutant)
@@ -127,6 +136,8 @@ func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarant
 			return nil, err
 		}
 		results = append(results, mutantResult)
+		e.recordProgress(start, i+1, len(mutants), mutantResult)
+		e.writePartialResults(results)
 	}
 	return results, nil
 }
@@ -190,6 +201,7 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 	close(jobs)
 
 	var firstErr error
+	completed := 0
 	for item := range done {
 		dispatched--
 		if item.err != nil && firstErr == nil {
@@ -197,6 +209,9 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 			cancel()
 		}
 		results[item.index] = item.result
+		completed++
+		e.recordProgress(start, completed, len(mutants), item.result)
+		e.writePartialResults(compactedResults(results))
 	}
 	if firstErr != nil {
 		return nil, firstErr
@@ -263,6 +278,133 @@ func (e *Engine) workerCount(mutants int) int {
 		workers = 1
 	}
 	return workers
+}
+
+func (e *Engine) environment(mutants int) Environment {
+	wd, _ := os.Getwd()
+	env := Environment{
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		GoVersion:       runtime.Version(),
+		WorkingDir:      wd,
+		TempDir:         os.TempDir(),
+		Isolation:       e.cfg.Execution.Isolation,
+		Workers:         e.workerCount(mutants),
+		TestTimeout:     e.cfg.Tests.Timeout.String(),
+		GoFlags:         os.Getenv("GOFLAGS"),
+		GoMaxProcs:      os.Getenv("GOMAXPROCS"),
+		GoMemLimit:      os.Getenv("GOMEMLIMIT"),
+		CI:              os.Getenv("CI"),
+		WSL:             isWSL(),
+		CGroup:          cgroupSummary(),
+		WindowsOneDrive: runtime.GOOS == "windows" && pathMentionsOneDrive(wd),
+	}
+	if e.cfg.Execution.Budget > 0 {
+		env.Budget = e.cfg.Execution.Budget.String()
+	}
+	return env
+}
+
+func isWSL() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return false
+	}
+	text := strings.ToLower(string(data))
+	return strings.Contains(text, "microsoft") || strings.Contains(text, "wsl")
+}
+
+func cgroupSummary() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	line := lines[0]
+	if len(line) > 160 {
+		line = line[:160]
+	}
+	return line
+}
+
+func pathMentionsOneDrive(path string) bool {
+	return strings.Contains(strings.ToLower(path), "onedrive")
+}
+
+func (e *Engine) recordProgress(start time.Time, completed, total int, result MutantResult) {
+	if total <= 0 || e.cfg.Reports.Output == "" {
+		return
+	}
+	event := ProgressEvent{
+		SchemaVersion: "1",
+		Time:          time.Now().UTC(),
+		Completed:     completed,
+		Total:         total,
+		MutantID:      result.MutantID,
+		Status:        result.Status,
+		Elapsed:       time.Since(start),
+		Remaining:     total - completed,
+		Message:       fmt.Sprintf("mutant %d/%d %s %s", completed, total, result.MutantID, result.Status),
+	}
+	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
+	_ = appendProgressEvent(filepath.Join(e.cfg.Reports.Output, "progress.jsonl"), event)
+	fmt.Fprintf(os.Stderr, "progress %d/%d %s %s\n", completed, total, result.MutantID, result.Status)
+}
+
+func appendProgressEvent(path string, event ProgressEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) writePartialResults(results []MutantResult) {
+	if e.cfg.Reports.Output == "" {
+		return
+	}
+	run := RunResult{
+		SchemaVersion: "1",
+		Environment:   e.environment(len(results)),
+		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder, "partial": true},
+		Mutants:       append([]MutantResult{}, results...),
+	}
+	rankSurvivors(run.Mutants)
+	run.Summary = summarize(run.Mutants)
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
+	_ = os.WriteFile(filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json"), data, 0o644)
+}
+
+func compactedResults(results []MutantResult) []MutantResult {
+	compacted := make([]MutantResult, 0, len(results))
+	for _, result := range results {
+		if result.MutantID == "" {
+			continue
+		}
+		compacted = append(compacted, result)
+	}
+	return compacted
 }
 
 func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedResult, error) {
