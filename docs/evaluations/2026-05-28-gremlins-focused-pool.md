@@ -283,3 +283,82 @@ Artifacts:
    It should use deterministic sample, budget-aware scheduling, and partial
    checkpointing so both tools can be compared on observed work rather than
    only on final reports.
+
+## Gremlins Actionable Re-Run
+
+Follow-up run completed on 2026-05-29 to separate Gremlins behavior from a bad
+comparison setup. The earlier WSL2 run passed `./...` to Gremlins for most
+repos. This re-run used:
+
+```text
+effective target: . when manifest target was ./...
+--timeout-coefficient 4
+--workers 2
+timeout=600s
+MemoryMax=6G
+MemorySwapMax=1G
+CPUQuota=200%
+GOMEMLIMIT=3GiB
+GOMAXPROCS=2
+GOFLAGS=-p=2
+```
+
+Artifacts:
+
+```text
+/tmp/cervomut-wsl-results/gremlins-actionable-small-10-20260529-132757/summary.json
+```
+
+| Repo | Manifest target | Effective Gremlins target | Exit | Seconds | Total | Killed | Survived | Not covered | Timed out | Score | Status | Notes |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `cobra` | `./doc` | `./doc` | 0 | 24 | 87 | 58 | 29 | 5 | 0 | 66.67 | `ok` | Matches the known package-level anchor. |
+| `pflag` | `./...` | `.` | 0 | 257 | 36 | 36 | 0 | 18 | 335 | 100.00 | `ok` | Useful report, but many timed-out mutations are outside the score denominator. |
+| `logrus` | `./...` | `.` | 0 | 99 | 119 | 85 | 34 | 31 | 0 | 71.43 | `ok` | Clean comparable Gremlins signal. |
+| `uuid` | `./...` | `.` | 0 | 41 | 54 | 54 | 0 | 26 | 43 | 100.00 | `ok` | Score is inflated if timed-out mutations are ignored. |
+| `decimal` | `./...` | `.` | 0 | 317 | 9 | 9 | 0 | 93 | 691 | 100.00 | `ok` | Very small effective denominator relative to timeout/not-covered count. |
+| `gjson` | `./...` | `.` | 0 | 506 | 3 | 3 | 0 | 37 | 1244 | 100.00 | `ok` | Extreme timeout pressure; raw score is not enough. |
+| `sjson` | `./...` | `.` | 0 | 48 | 34 | 34 | 0 | 33 | 134 | 100.00 | `ok` | Useful operator coverage, but timeout count must be first-class. |
+| `jsonparser` | `./...` | `.` | 0 | 239 | 8 | 7 | 1 | 848 | 593 | 87.50 | `ok` | Very large not-covered pool; coverage semantics dominate. |
+| `burntsushi-toml` | `./...` | `.` | 0 | 422 | 548 | 483 | 65 | 218 | 4 | 88.14 | `ok` | Best broad parser signal in this run. |
+| `urfave-cli` | `./...` | `.` | 124 | 608 |  |  |  |  |  |  | `timeout` | Timed out before final JSON. |
+
+## Actionable Conclusions
+
+1. Gremlins should be compared as a package-root tool, not as a `go test ./...`
+   equivalent. Passing `./...` produced misleading no-report/no-results cases.
+   CervoMutant can still support `./...`, but the comparison harness must
+   normalize Gremlins targets differently.
+2. CervoMutant should expose the same distinction Gremlins makes between:
+   - effective executed mutants: killed + survived;
+   - not covered mutants;
+   - timed-out mutations;
+   - test efficacy over killed + survived.
+3. Gremlins' raw score can be misleading when timeout/not-covered counts dwarf
+   the effective denominator. For example, `gjson` scored 100% over only 3
+   effective mutants while recording 1,244 timed-out mutations. CervoMutant
+   reports should make this impossible to miss with a top-level denominator
+   health section.
+4. CervoMutant's next comparison mode should have a `gremlins-package-root`
+   strategy:
+   - use package-root target normalization for external Gremlins runs;
+   - carry original manifest target and effective external target separately;
+   - mark `not_comparable` when target semantics differ.
+5. CervoMutant needs partial checkpoint reports for timeout cases. Gremlins gave
+   useful completed reports for 9/10 in this corrected run; CervoMutant's
+   timeout runs in the earlier WSL2 comparison still lost denominators.
+6. Budget-aware scheduling should account for operator/repo timeout risk.
+   `gjson`, `decimal`, `jsonparser`, and `pflag` show high timeout counts under
+   Gremlins; these are good targets for CervoMutant's timeout-risk ranking and
+   deterministic sampling.
+7. The comparison harness now needs to classify:
+   - `ok`
+   - `no_report`
+   - `no_results`
+   - `panic`
+   - `all_timed_out`
+   - `not_covered_only`
+   - `timeout`
+   - `watchdog_kill`
+
+These statuses are more actionable than empty metric cells and should be used
+in future multi-repo calibration summaries.

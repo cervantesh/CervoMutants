@@ -5,6 +5,9 @@ param(
     [string[]]$Names = @("cobra", "pflag", "moby", "hugo", "prometheus", "terraform", "grpc-go", "echo", "logrus", "validator", "decimal", "gjson"),
     [string[]]$Tools = @("cervomut", "gremlins", "gomu", "go-mutesting"),
     [int]$Workers = 2,
+    [ValidateSet("manifest", "package-root")]
+    [string]$GremlinsTargetMode = "manifest",
+    [int]$GremlinsTimeoutCoefficient = 1,
     [int]$GomuWorkers = 1,
     [int]$GoMutestingWorkers = 1,
     [int]$TimeoutSeconds = 600,
@@ -226,15 +229,34 @@ function Read-CervoReport($path) {
 function Read-GremlinsReport($path) {
     if (!(Test-Path -LiteralPath $path)) { return @{} }
     $j = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $timedOut = (($j.files | ForEach-Object { $_.mutations } | Where-Object { $_.status -eq "TIMED OUT" }).Count)
+    $status = "ok"
+    if ($j.mutants_total -eq 0 -and $j.mutants_killed -eq 0 -and $j.mutants_lived -eq 0) {
+        if ($timedOut -gt 0) {
+            $status = "all_timed_out"
+        } elseif ($j.mutants_not_covered -gt 0) {
+            $status = "not_covered_only"
+        } else {
+            $status = "no_results"
+        }
+    }
     return @{
         total = $j.mutants_total
         killed = $j.mutants_killed
         survived = $j.mutants_lived
         not_covered = $j.mutants_not_covered
         errors = 0
-        timed_out = (($j.files | ForEach-Object { $_.mutations } | Where-Object { $_.status -eq "TIMED OUT" }).Count)
+        timed_out = $timedOut
         score = [math]::Round([double]$j.test_efficacy, 2)
+        status = $status
     }
+}
+
+function Get-GremlinsTarget($repoTarget) {
+    if ($GremlinsTargetMode -eq "package-root" -and $repoTarget -eq "./...") {
+        return "."
+    }
+    return $repoTarget
 }
 
 function Read-GomuReport($path) {
@@ -307,10 +329,15 @@ foreach ($repo in $repos) {
     $repoOut = Join-Path $OutputRoot $repo.name
     New-Item -ItemType Directory -Path $repoOut -Force | Out-Null
     $toolDefs = New-Object System.Collections.Generic.List[object]
-    $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = @("unleash", $repo.target, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json")); report = Join-Path $repoOut "gremlins.json"; parser = "gremlins" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$GomuWorkers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu" }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$GoMutestingWorkers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting" }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo"; effectiveTarget = $repo.target }) | Out-Null
+    $gremlinsTarget = Get-GremlinsTarget $repo.target
+    $gremlinsArgs = @("unleash", $gremlinsTarget, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json"))
+    if ($GremlinsTimeoutCoefficient -gt 1) {
+        $gremlinsArgs += @("--timeout-coefficient", "$GremlinsTimeoutCoefficient")
+    }
+    $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = $gremlinsArgs; report = Join-Path $repoOut "gremlins.json"; parser = "gremlins"; effectiveTarget = $gremlinsTarget }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$GomuWorkers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu"; effectiveTarget = $repo.target }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$GoMutestingWorkers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting"; effectiveTarget = $repo.target }) | Out-Null
     $selectedTools = @()
     foreach ($candidateTool in $toolDefs) {
         if ($wantedTools.ContainsKey($candidateTool.name)) {
@@ -343,9 +370,42 @@ foreach ($repo in $repos) {
                 }
             }
         }
+        $status = "ok"
+        $note = ""
+        if ($exit -eq 124) { $status = "timeout"; $note = "timeout" }
+        if ($exit -eq 125) { $status = "skipped"; $note = "skipped before start" }
+        if ($exit -eq 126) { $status = "watchdog_kill"; $note = "memory watchdog kill" }
+        if ($tool.parser -eq "gremlins") {
+            $logText = ""
+            if (Test-Path -LiteralPath $log) {
+                $logText = Get-Content -LiteralPath $log -Raw
+            }
+            if ($logText -match "panic:") {
+                $status = "panic"
+                $note = "panic after coverage or mutation execution"
+            } elseif (!(Test-Path -LiteralPath $tool.report)) {
+                if ($logText -match "No results to report") {
+                    $status = "no_results"
+                    $note = "Gremlins found no covered/reportable mutants"
+                } elseif ($exit -eq 0) {
+                    $status = "no_report"
+                    $note = "exit 0 but no JSON report"
+                }
+            } elseif ($metrics.status) {
+                $status = $metrics.status
+                if ($status -eq "all_timed_out") {
+                    $note = "report exists but all observed mutations timed out"
+                } elseif ($status -eq "not_covered_only") {
+                    $note = "report exists but only not-covered mutants were counted"
+                } elseif ($status -eq "no_results") {
+                    $note = "report exists but has no effective mutants"
+                }
+            }
+        }
         $results += [pscustomobject]([ordered]@{
             repo = $repo.name
             target = $repo.target
+            effective_target = $tool.effectiveTarget
             lane = $repo.lane
             domain = $repo.domain
             tool = $tool.name
@@ -359,6 +419,8 @@ foreach ($repo in $repos) {
             errors = $metrics.errors
             timed_out = $metrics.timed_out
             score = $metrics.score
+            status = $status
+            note = $note
             log = $log
         })
         $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath
