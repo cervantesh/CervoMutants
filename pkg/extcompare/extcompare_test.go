@@ -3,6 +3,7 @@ package extcompare
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,52 @@ func TestParseGremlinsReportNormalizesMetrics(t *testing.T) {
 	}
 	if result.Tool != "gremlins" || result.Total != 4 || result.Killed != 2 || result.Survived != 1 || result.NotCovered != 1 {
 		t.Fatalf("unexpected normalized result: %+v", result)
+	}
+	if result.Status != "ok" || result.TestEfficacy == 0 || result.DenominatorHealth.Effective != 3 {
+		t.Fatalf("expected status, efficacy, and denominator health: %+v", result)
+	}
+}
+
+func TestParseGremlinsReportClassifiesAllTimedOutAndPoorDenominatorHealth(t *testing.T) {
+	path := writeJSON(t, `{
+  "mutants_total": 0,
+  "mutants_killed": 0,
+  "mutants_lived": 0,
+  "mutants_not_covered": 5,
+  "test_efficacy": 0,
+  "files": [
+    {"mutations": [{"status": "TIMED OUT"}, {"status": "TIMED OUT"}]}
+  ]
+}`)
+
+	result, err := ParseGremlins(path)
+	if err != nil {
+		t.Fatalf("ParseGremlins returned error: %v", err)
+	}
+	if result.Status != "all_timed_out" || result.TimedOut != 2 {
+		t.Fatalf("unexpected Gremlins status: %+v", result)
+	}
+}
+
+func TestNormalizeGremlinsPackageRootTargetMarksNotComparable(t *testing.T) {
+	effective, notComparable := NormalizeGremlinsTarget("./...", "gremlins-package-root")
+	if effective != "." || !notComparable {
+		t.Fatalf("effective=%q notComparable=%t, want . true", effective, notComparable)
+	}
+	result := ApplyTarget(ToolResult{Tool: "gremlins", Status: "ok"}, "./...", effective, notComparable)
+	if result.Target != "./..." || result.EffectiveTarget != "." || !result.NotComparable || len(result.Notes) == 0 {
+		t.Fatalf("target metadata not applied: %+v", result)
+	}
+}
+
+func TestDenominatorHealthWarnsWhenScoreHidesTimeouts(t *testing.T) {
+	result := ToolResult{Tool: "gremlins", Status: "ok", Total: 3, Killed: 3, TimedOut: 1244, NotCovered: 37, Score: 100}
+	result.DenominatorHealth = denominatorHealth(result)
+	warnings := strings.Join(result.DenominatorHealth.Warnings, ",")
+	for _, want := range []string{"timed_out_exceeds_effective", "not_covered_exceeds_effective", "high_score_poor_denominator_health"} {
+		if !strings.Contains(warnings, want) {
+			t.Fatalf("warnings missing %q: %+v", want, result.DenominatorHealth)
+		}
 	}
 }
 

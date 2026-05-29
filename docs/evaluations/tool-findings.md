@@ -154,6 +154,20 @@ The Gremlins findings imply these CervoMutant improvements:
 - Improve budget-aware scheduling by using operator/repo timeout risk.
 - Add deterministic sampling for high-timeout subjects before full campaigns.
 
+Implementation status:
+
+- Implemented denominator health in CervoMutant run summaries and reports.
+- Implemented `effective_mutants`, `score_denominator`, and Gremlins-style
+  `test_efficacy` over `killed + survived`.
+- Implemented external comparison status classification fields for normalized
+  tool results.
+- Implemented Gremlins target normalization helpers for `gremlins-package-root`
+  comparisons.
+- Implemented `effective_target` and `not_comparable` metadata for comparison
+  output.
+- Implemented budget scheduling tie-breaks that prioritize lower timeout-risk
+  operators within the same recommendation class.
+
 ### What Not To Copy
 
 Do not copy Gremlins behavior where it hurts CI/agent reliability:

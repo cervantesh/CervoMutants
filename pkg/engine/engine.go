@@ -747,6 +747,11 @@ func (e *Engine) scheduleMutants(mutants []Mutant) {
 			if left != right {
 				return left < right
 			}
+			left = timeoutRiskPriority(mutants[i])
+			right = timeoutRiskPriority(mutants[j])
+			if left != right {
+				return left < right
+			}
 		}
 		return mutants[i].ID < mutants[j].ID
 	})
@@ -764,6 +769,21 @@ func recommendationPriority(recommendation string) int {
 		return 3
 	default:
 		return 4
+	}
+}
+
+func timeoutRiskPriority(mutant Mutant) int {
+	switch mutant.Operator {
+	case "conditionals-negation", "conditionals-boundary", "boolean-literals", "logical":
+		return 0
+	case "arithmetic-basic", "string-empty-literals", "nil-checks", "numeric-literals", "return-bool-literals", "assignment-arithmetic", "inc-dec":
+		return 1
+	case "error-returns":
+		return 2
+	case "literals", "returns", "loop-control", "slice-map-len-boundary":
+		return 3
+	default:
+		return 2
 	}
 }
 
@@ -1235,16 +1255,57 @@ func summarize(results []MutantResult) Summary {
 		s.MutatorStats[operator] = stat
 	}
 	eligible := s.Total - s.Ignored - s.Quarantined - s.Skipped - s.NotCovered
+	s.EffectiveMutants = s.Killed + s.Survived
+	s.ScoreDenominator = eligible
 	if eligible > 0 {
 		s.Score = float64(s.Killed) / float64(eligible) * 100
-		s.EffectiveScore = s.Score
-		s.TestEfficacy = s.Score
+	}
+	if s.EffectiveMutants > 0 {
+		s.EffectiveScore = float64(s.Killed) / float64(s.EffectiveMutants) * 100
+		s.TestEfficacy = s.EffectiveScore
 	}
 	coverable := s.Total - s.Ignored - s.Quarantined - s.Skipped
 	if coverable > 0 {
 		s.MutationCoverage = float64(coverable-s.NotCovered) / float64(coverable) * 100
 	}
+	s.DenominatorHealth = denominatorHealth(s)
 	return s
+}
+
+func denominatorHealth(s Summary) DenominatorHealth {
+	health := DenominatorHealth{
+		Generated:        s.GeneratedMutants,
+		Covered:          s.CoveredMutants,
+		Executed:         s.ExecutedMutants,
+		Effective:        s.EffectiveMutants,
+		ScoreDenominator: s.ScoreDenominator,
+		Killed:           s.Killed,
+		Survived:         s.Survived,
+		NotCovered:       s.NotCovered,
+		TimedOut:         s.TimedOut,
+		CompileError:     s.CompileError,
+		Skipped:          s.Skipped,
+		Ignored:          s.Ignored,
+		Quarantined:      s.Quarantined,
+		Healthy:          true,
+	}
+	if health.Generated > 0 && health.Effective == 0 {
+		health.Warnings = append(health.Warnings, "no_effective_mutants")
+	}
+	if health.Effective > 0 && health.TimedOut > health.Effective {
+		health.Warnings = append(health.Warnings, "timed_out_exceeds_effective")
+	}
+	if health.Effective > 0 && health.NotCovered > health.Effective {
+		health.Warnings = append(health.Warnings, "not_covered_exceeds_effective")
+	}
+	if health.Effective > 0 && health.ScoreDenominator > health.Effective*2 {
+		health.Warnings = append(health.Warnings, "score_denominator_dwarfs_effective")
+	}
+	if health.Effective > 0 && s.TestEfficacy >= 90 && (health.TimedOut > health.Effective || health.NotCovered > health.Effective) {
+		health.Warnings = append(health.Warnings, "high_score_poor_denominator_health")
+	}
+	health.Healthy = len(health.Warnings) == 0
+	return health
 }
 
 type historyFile struct {

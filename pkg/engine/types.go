@@ -98,10 +98,13 @@ type Summary struct {
 	GeneratedMutants              int                    `json:"generated_mutants"`
 	CoveredMutants                int                    `json:"covered_mutants"`
 	ExecutedMutants               int                    `json:"executed_mutants"`
+	EffectiveMutants              int                    `json:"effective_mutants"`
+	ScoreDenominator              int                    `json:"score_denominator"`
 	Score                         float64                `json:"score"`
 	EffectiveScore                float64                `json:"effective_score"`
 	TestEfficacy                  float64                `json:"test_efficacy"`
 	MutationCoverage              float64                `json:"mutation_coverage"`
+	DenominatorHealth             DenominatorHealth      `json:"denominator_health"`
 	HighRiskSurvivors             int                    `json:"high_risk_survivors"`
 	SuppressionReportOnly         int                    `json:"suppression_report_only"`
 	SuppressionLowerPriority      int                    `json:"suppression_lower_priority"`
@@ -111,6 +114,24 @@ type Summary struct {
 	LongStandingSurvivors         int                    `json:"long_standing_survivors"`
 	EquivalentRiskStats           map[string]int         `json:"equivalent_risk_statistics,omitempty"`
 	MutatorStats                  map[string]MutatorStat `json:"mutator_statistics,omitempty"`
+}
+
+type DenominatorHealth struct {
+	Generated        int      `json:"generated"`
+	Covered          int      `json:"covered"`
+	Executed         int      `json:"executed"`
+	Effective        int      `json:"effective"`
+	ScoreDenominator int      `json:"score_denominator"`
+	Killed           int      `json:"killed"`
+	Survived         int      `json:"survived"`
+	NotCovered       int      `json:"not_covered"`
+	TimedOut         int      `json:"timed_out"`
+	CompileError     int      `json:"compile_error"`
+	Skipped          int      `json:"skipped"`
+	Ignored          int      `json:"ignored"`
+	Quarantined      int      `json:"quarantined"`
+	Healthy          bool     `json:"healthy"`
+	Warnings         []string `json:"warnings,omitempty"`
 }
 
 type MutatorStat struct {

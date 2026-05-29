@@ -306,11 +306,14 @@ func cmdCompare(args []string) error {
 	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
 	cervo := fs.String("cervomut", "", "cervo-mutant mutation-report.json")
 	gremlins := fs.String("gremlins", "", "Gremlins report JSON")
+	gremlinsTarget := fs.String("gremlins-target", "", "original manifest target used for Gremlins comparison")
+	gremlinsEffectiveTarget := fs.String("gremlins-effective-target", "", "effective target passed to Gremlins")
+	gremlinsTargetMode := fs.String("gremlins-target-mode", "manifest", "Gremlins target normalization mode: manifest or gremlins-package-root")
 	gomu := fs.String("gomu", "", "gomu text or JSON summary")
 	goMutesting := fs.String("go-mutesting", "", "go-mutesting text summary")
 	out := fs.String("out", ".cervomut/evaluation/tool-comparison.json", "normalized comparison output")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"cervomut": true, "gremlins": true, "gomu": true, "go-mutesting": true, "out": true,
+		"cervomut": true, "gremlins": true, "gremlins-target": true, "gremlins-effective-target": true, "gremlins-target-mode": true, "gomu": true, "go-mutesting": true, "out": true,
 	})); err != nil {
 		return err
 	}
@@ -326,6 +329,17 @@ func cmdCompare(args []string) error {
 		result, err := extcompare.ParseGremlins(*gremlins)
 		if err != nil {
 			return err
+		}
+		target := *gremlinsTarget
+		effective := *gremlinsEffectiveTarget
+		notComparable := false
+		if target != "" && effective == "" {
+			effective, notComparable = extcompare.NormalizeGremlinsTarget(target, *gremlinsTargetMode)
+		} else if target != "" && effective != "" && target != effective {
+			notComparable = true
+		}
+		if target != "" || effective != "" {
+			result = extcompare.ApplyTarget(result, target, effective, notComparable)
 		}
 		results = append(results, result)
 	}

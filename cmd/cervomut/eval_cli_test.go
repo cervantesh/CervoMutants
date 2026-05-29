@@ -95,6 +95,28 @@ func TestCompareCommandNormalizesExternalToolReports(t *testing.T) {
 	}
 }
 
+func TestCompareCommandRecordsGremlinsEffectiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	gremlins := filepath.Join(dir, "gremlins.json")
+	out := filepath.Join(dir, "compare.json")
+	if err := os.WriteFile(gremlins, []byte(`{"mutants_total":1,"mutants_killed":1,"mutants_lived":0,"test_efficacy":100}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := run([]string{"compare", "--gremlins", gremlins, "--gremlins-target", "./...", "--gremlins-target-mode", "gremlins-package-root", "--out", out}); err != nil {
+		t.Fatalf("compare returned error: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("comparison output missing: %v", err)
+	}
+	for _, want := range []string{`"target": "./..."`, `"effective_target": "."`, `"not_comparable": true`, `"status": "ok"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("comparison output missing %q: %s", want, data)
+		}
+	}
+}
+
 func writeCLIFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

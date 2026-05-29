@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
@@ -431,6 +432,9 @@ func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
 	if result.GeneratedMutants != 4 || result.CoveredMutants != 2 || result.ExecutedMutants != 2 {
 		t.Fatalf("decomposed counts not populated: %+v", result)
 	}
+	if result.EffectiveMutants != 2 || result.ScoreDenominator != 2 {
+		t.Fatalf("effective denominator not populated: %+v", result)
+	}
 	if result.Score != 50 {
 		t.Fatalf("score = %.2f, want 50", result.Score)
 	}
@@ -445,6 +449,35 @@ func TestSummarizeReportsCoverageEfficacyAndMutatorStats(t *testing.T) {
 	}
 	if result.MutatorStats["logical"].NotCovered != 1 {
 		t.Fatalf("logical not-covered stats not populated: %+v", result.MutatorStats["logical"])
+	}
+}
+
+func TestSummarizeSeparatesTestEfficacyFromDenominatorHealth(t *testing.T) {
+	result := summarize([]MutantResult{
+		{Status: StatusKilled, Mutant: Mutant{Operator: "conditionals-negation"}},
+		{Status: StatusTimedOut, Mutant: Mutant{Operator: "arithmetic-basic"}},
+		{Status: StatusTimedOut, Mutant: Mutant{Operator: "arithmetic-basic"}},
+		{Status: StatusNotCovered, Mutant: Mutant{Operator: "logical"}},
+		{Status: StatusNotCovered, Mutant: Mutant{Operator: "logical"}},
+	})
+
+	if result.Score < 33.3333 || result.Score > 33.3334 {
+		t.Fatalf("score = %.4f, want %.4f", result.Score, 100.0/3.0)
+	}
+	if result.TestEfficacy != 100 {
+		t.Fatalf("test efficacy = %.2f, want 100 over killed+survived", result.TestEfficacy)
+	}
+	if result.EffectiveMutants != 1 || result.ScoreDenominator != 3 {
+		t.Fatalf("unexpected denominators: %+v", result)
+	}
+	warnings := strings.Join(result.DenominatorHealth.Warnings, ",")
+	for _, want := range []string{"timed_out_exceeds_effective", "not_covered_exceeds_effective", "high_score_poor_denominator_health"} {
+		if !strings.Contains(warnings, want) {
+			t.Fatalf("denominator warnings missing %q: %+v", want, result.DenominatorHealth)
+		}
+	}
+	if result.DenominatorHealth.Healthy {
+		t.Fatalf("denominator health should not be healthy: %+v", result.DenominatorHealth)
 	}
 }
 
@@ -628,6 +661,25 @@ func TestBudgetSchedulingPrioritizesFastOperators(t *testing.T) {
 
 	got := []string{mutants[0].ID, mutants[1].ID, mutants[2].ID}
 	want := []string{"b", "a", "z"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("scheduled IDs = %v, want %v", got, want)
+	}
+}
+
+func TestBudgetSchedulingUsesTimeoutRiskWithinSameRecommendation(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Execution.Budget = time.Minute
+	e := New(cfg)
+	mutants := []Mutant{
+		{ID: "slow", Recommendation: "default", Operator: "loop-control"},
+		{ID: "fast", Recommendation: "default", Operator: "conditionals-negation"},
+		{ID: "medium", Recommendation: "default", Operator: "arithmetic-basic"},
+	}
+
+	e.scheduleMutants(mutants)
+
+	got := []string{mutants[0].ID, mutants[1].ID, mutants[2].ID}
+	want := []string{"fast", "medium", "slow"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("scheduled IDs = %v, want %v", got, want)
 	}
