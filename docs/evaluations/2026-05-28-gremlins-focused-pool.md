@@ -4,6 +4,9 @@ Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/
 
 Date: 2026-05-28
 
+Reusable tool-specific lessons from this campaign are maintained in
+[External tool findings ledger](tool-findings.md).
+
 This campaign narrows external comparison to:
 
 ```text
