@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -16,6 +17,16 @@ func TestKeySeparatesParts(t *testing.T) {
 	second := Key("same", "parts")
 	if first != second {
 		t.Fatal("key should be deterministic")
+	}
+}
+
+func TestStoreGetRejectsMalformedJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := (Store{Path: dir}).Get(context.Background(), "bad"); err == nil {
+		t.Fatal("Get accepted malformed cache JSON")
 	}
 }
 

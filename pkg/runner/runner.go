@@ -35,23 +35,7 @@ func (r GoTestRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 	cmd.Stderr = &output
 	err := cmd.Run()
 	text := trim(output.String(), r.MaxOutputBytes)
-	status := engine.StatusKilled
-	reason := "tests failed with mutant applied"
-	if runCtx.Err() == context.DeadlineExceeded {
-		status = engine.StatusTimedOut
-		reason = "test command timed out"
-	} else if err == nil {
-		status = engine.StatusSurvived
-		reason = "tests passed with mutant applied"
-	} else if strings.Contains(text, "[build failed]") || strings.Contains(text, "setup failed") {
-		status = engine.StatusCompileError
-		reason = "test command failed before running assertions"
-	} else if strings.Contains(text, "FAIL") {
-		status = engine.StatusKilled
-	} else {
-		status = engine.StatusCompileError
-		reason = "test command failed before running assertions"
-	}
+	status, reason := classifyTestResult(text, err, runCtx.Err() == context.DeadlineExceeded)
 	return engine.MutantResult{
 		MutantID:     job.Mutant.ID,
 		Status:       status,
@@ -61,6 +45,26 @@ func (r GoTestRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 		Output:       text,
 		Mutant:       job.Mutant,
 	}, nil
+}
+
+func classifyTestResult(text string, err error, timedOut bool) (engine.Status, string) {
+	if timedOut {
+		return engine.StatusTimedOut, "test command timed out"
+	}
+	if err == nil {
+		return engine.StatusSurvived, "tests passed with mutant applied"
+	}
+	if failedBeforeAssertions(text) {
+		return engine.StatusCompileError, "test command failed before running assertions"
+	}
+	if strings.Contains(text, "FAIL") {
+		return engine.StatusKilled, "tests failed with mutant applied"
+	}
+	return engine.StatusCompileError, "test command failed before running assertions"
+}
+
+func failedBeforeAssertions(text string) bool {
+	return strings.Contains(text, "[build failed]") || strings.Contains(text, "setup failed")
 }
 
 func trim(s string, max int) string {

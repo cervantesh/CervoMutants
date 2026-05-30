@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,15 @@ import (
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
 )
+
+type stubRunner struct {
+	result engine.MutantResult
+	err    error
+}
+
+func (r stubRunner) Run(context.Context, engine.MutantJob) (engine.MutantResult, error) {
+	return r.result, r.err
+}
 
 func TestWorkerRunnerAppliesMutantInIsolatedWorkdir(t *testing.T) {
 	dir := t.TempDir()
@@ -105,5 +115,46 @@ func TestWorkerRunnerRejectsMutantFileOutsideModule(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("WorkerRunner accepted mutant file outside module")
+	}
+}
+
+func TestServeJSONLinesReportsMalformedUnsupportedAndRunnerErrors(t *testing.T) {
+	input := strings.Join([]string{
+		`{bad json}`,
+		`{"type":"ping"}`,
+		`{"type":"job","job":{"id":"j1"}}`,
+	}, "\n")
+	var out bytes.Buffer
+	err := ServeJSONLines(context.Background(), strings.NewReader(input), &out, stubRunner{err: errors.New("runner failed")})
+	if err != nil {
+		t.Fatalf("ServeJSONLines returned error: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("output lines = %d: %s", len(lines), out.String())
+	}
+	for _, line := range lines {
+		var msg Message
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			t.Fatalf("invalid JSON line %q: %v", line, err)
+		}
+		if msg.Type != "error" || msg.Error == "" {
+			t.Fatalf("expected error message, got %+v", msg)
+		}
+	}
+}
+
+func TestApplyPatchRejectsInvalidOffsetsAndOriginalMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file.go")
+	if err := os.WriteFile(path, []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutant := range []engine.Mutant{
+		{StartOffset: -1, EndOffset: 1, Original: "p", Mutated: "q"},
+		{StartOffset: 0, EndOffset: 7, Original: "missing", Mutated: "q"},
+	} {
+		if err := applyPatch(path, mutant); err == nil {
+			t.Fatalf("applyPatch accepted invalid mutant: %+v", mutant)
+		}
 	}
 }

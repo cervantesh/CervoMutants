@@ -1,6 +1,7 @@
 package baseline
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,6 +15,16 @@ func TestLoadMissingBaseline(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("Load ok = true for missing file: %+v", result)
+	}
+}
+
+func TestLoadRejectsMalformedBaseline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(path, []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Load(path); err == nil {
+		t.Fatal("Load accepted malformed baseline JSON")
 	}
 }
 

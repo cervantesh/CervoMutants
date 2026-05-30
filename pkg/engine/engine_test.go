@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,9 @@ func isolateArtifacts(cfg *config.Config, dir string) {
 	cfg.Cache.Path = filepath.Join(dir, ".cervomut", "cache")
 	cfg.Selection.CoverageProfile = filepath.Join(dir, ".cervomut", "coverage.out")
 	cfg.Selection.TimingsPath = filepath.Join(dir, ".cervomut", "timings.json")
+	cfg.Baseline.Path = filepath.Join(dir, ".cervomut", "baseline.json")
+	cfg.Quarantine.Path = filepath.Join(dir, ".cervomut", "quarantine.json")
+	cfg.History.Path = filepath.Join(dir, ".cervomut", "history.json")
 }
 
 func TestRunDryRunDiscoversMutantsWithoutChangingWorkspace(t *testing.T) {
@@ -141,6 +145,29 @@ func TestRunClassifiesSurvivorAndWritesReports(t *testing.T) {
 	}
 	if !strings.Contains(string(progress), `"eta"`) || !strings.Contains(string(progress), `"active_mutant"`) {
 		t.Fatalf("progress stream missing eta/active mutant fields: %s", progress)
+	}
+}
+
+func TestRunUsesParallelWorkers(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10_000_000_000
+	cfg.Execution.Workers = 2
+	cfg.Limits.MaxMutants = 2
+	isolateArtifacts(&cfg, dir)
+
+	result, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}})
+	if err != nil {
+		t.Fatalf("parallel Run returned error: %v", err)
+	}
+	if len(result.Mutants) != 2 {
+		t.Fatalf("mutants = %d, want 2", len(result.Mutants))
+	}
+	for _, mutant := range result.Mutants {
+		if mutant.Status == "" || mutant.MutantID == "" {
+			t.Fatalf("parallel result missing status/id: %+v", mutant)
+		}
 	}
 }
 
@@ -661,6 +688,300 @@ func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestSerialRunnerHandlesQuarantineAndBudgetBranches(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Execution.Budget = time.Nanosecond
+	e := New(cfg)
+	start := time.Now()
+	for time.Since(start) < time.Nanosecond {
+	}
+	mutants := []Mutant{
+		{ID: "q", Operator: "conditionals-negation"},
+		{ID: "budget", Operator: "conditionals-negation"},
+	}
+	results, err := e.runMutantsSerial(context.Background(), mutants, map[string]bool{"q": true})
+	if err != nil {
+		t.Fatalf("runMutantsSerial returned error: %v", err)
+	}
+	if results[0].Status != StatusQuarantined || results[1].Status != StatusSkipped {
+		t.Fatalf("unexpected serial statuses: %+v", results)
+	}
+}
+
+func TestRunTestClassifiesPassFailureAndTimeout(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Timeout = 10 * time.Second
+	e := New(cfg)
+	pass, err := e.runTest(context.Background(), MutantJob{Mutant: Mutant{ID: "pass"}, WorkDir: dir, TestCommand: []string{"go", "test", "."}})
+	if err != nil {
+		t.Fatalf("pass runTest returned error: %v", err)
+	}
+	if pass.Status != StatusSurvived {
+		t.Fatalf("pass status = %q", pass.Status)
+	}
+
+	fail, err := e.runTest(context.Background(), MutantJob{Mutant: Mutant{ID: "fail"}, WorkDir: dir, TestCommand: []string{"go", "test", "./missing"}})
+	if err != nil {
+		t.Fatalf("fail runTest returned error: %v", err)
+	}
+	if fail.Status != StatusKilled || !strings.Contains(fail.Output, "missing") {
+		t.Fatalf("fail result = %+v", fail)
+	}
+
+	cfg.Tests.Timeout = time.Nanosecond
+	timeout, err := New(cfg).runTest(context.Background(), MutantJob{Mutant: Mutant{ID: "timeout"}, WorkDir: dir, TestCommand: []string{"go", "test", "."}})
+	if err != nil {
+		t.Fatalf("timeout runTest returned error: %v", err)
+	}
+	if timeout.Status != StatusTimedOut {
+		t.Fatalf("timeout status = %q", timeout.Status)
+	}
+}
+
+func TestPrepareMutationTempWorkdirAndOverlayBranches(t *testing.T) {
+	dir := writeFixture(t)
+	source := filepath.Join(dir, "calc.go")
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(data), ">=")
+	mutant := Mutant{
+		ID:          "m-prepare",
+		Module:      dir,
+		Package:     ".",
+		File:        source,
+		Original:    ">=",
+		Mutated:     ">",
+		StartOffset: start,
+		EndOffset:   start + len(">="),
+	}
+	cfg := config.Defaults()
+	cfg.Execution.Isolation = "temp-workdir"
+	workdir, command, cleanup, err := New(cfg).prepareMutation(mutant, []string{"go", "test", "."})
+	if err != nil {
+		t.Fatalf("prepareMutation temp-workdir returned error: %v", err)
+	}
+	defer cleanup()
+	if workdir == dir || strings.Join(command, " ") != "go test ." {
+		t.Fatalf("unexpected temp workdir/command: %s %#v", workdir, command)
+	}
+	mutated, err := os.ReadFile(filepath.Join(workdir, "calc.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mutated), "n > 0") {
+		t.Fatalf("mutant was not applied in temp workdir: %s", mutated)
+	}
+
+	cfg.Execution.Isolation = "overlay"
+	workdir, command, cleanup, err = New(cfg).prepareMutation(mutant, []string{"go", "test", "."})
+	if err != nil {
+		t.Fatalf("prepareMutation overlay returned error: %v", err)
+	}
+	defer cleanup()
+	if workdir != dir || !containsArg(command, "-overlay") {
+		t.Fatalf("unexpected overlay workdir/command: %s %#v", workdir, command)
+	}
+
+	bad := mutant
+	bad.File = filepath.Join(t.TempDir(), "outside.go")
+	if _, _, cleanup, err := New(cfg).prepareMutation(bad, []string{"go", "test", "."}); err == nil {
+		cleanup()
+		t.Fatal("prepareMutation accepted outside file")
+	}
+}
+
+func TestRunHandlesBaselineOptionalAndDiscoveryErrors(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./missing"}
+	cfg.Tests.BaselineRequired = false
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err != nil {
+		t.Fatalf("run with optional broken baseline returned error: %v", err)
+	}
+
+	badDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(badDir, "go.mod"), []byte("module bad\n\ngo 1.25.6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "bad.go"), []byte("package bad\nfunc broken("), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(config.Defaults()).Run(context.Background(), RunRequest{Targets: []string{badDir}, DryRun: true}); err == nil {
+		t.Fatal("Run accepted invalid Go source")
+	}
+}
+
+func TestRunErrorBranchesForQuarantineBaselineAndReports(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "."}
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+	if err := os.MkdirAll(filepath.Dir(cfg.Quarantine.Path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Quarantine.Path, []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err == nil {
+		t.Fatal("Run accepted malformed quarantine file")
+	}
+
+	cfg = config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./missing"}
+	cfg.Tests.BaselineRequired = true
+	isolateArtifacts(&cfg, dir)
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err == nil {
+		t.Fatal("Run accepted required failing baseline")
+	}
+
+	cfg = config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "."}
+	cfg.Limits.MaxMutants = 1
+	isolateArtifacts(&cfg, dir)
+	cfg.Reports.Output = filepath.Join(dir, "calc.go")
+	if _, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{dir}}); err == nil {
+		t.Fatal("Run accepted report output path that is a file")
+	}
+}
+
+func TestPartialCheckpointErrorBranches(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, dir)
+	e := New(cfg)
+	if completed, err := e.loadPartialResults(nil); err != nil || len(completed) != 0 {
+		t.Fatalf("missing partial results = %+v err=%v", completed, err)
+	}
+	if err := os.MkdirAll(cfg.Reports.Output, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	partial := filepath.Join(cfg.Reports.Output, "partial-mutation-report.json")
+	if err := os.WriteFile(partial, []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.loadPartialResults(nil); err == nil {
+		t.Fatal("loadPartialResults accepted malformed JSON")
+	}
+	if err := os.WriteFile(partial, []byte(`{"schema_version":"1","checkpoint":{},"mutants":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.loadPartialResults(nil); err == nil {
+		t.Fatal("loadPartialResults accepted missing fingerprint")
+	}
+}
+
+func TestResumeWithoutCheckpointUsesConfiguredWorkerPath(t *testing.T) {
+	mutants := []Mutant{{ID: "q1"}, {ID: "q2"}}
+	quarantined := map[string]bool{"q1": true, "q2": true}
+
+	cfg := config.Defaults()
+	cfg.Execution.Resume = true
+	cfg.Execution.Workers = 1
+	cfg.Reports.Output = t.TempDir()
+	results, err := New(cfg).runMutantsWithResume(context.Background(), mutants, quarantined)
+	if err != nil {
+		t.Fatalf("serial resume without checkpoint returned error: %v", err)
+	}
+	if len(results) != 2 || results[0].Status != StatusQuarantined {
+		t.Fatalf("serial resume results: %+v", results)
+	}
+
+	cfg.Execution.Workers = 2
+	cfg.Reports.Output = t.TempDir()
+	results, err = New(cfg).runMutantsWithResume(context.Background(), mutants, quarantined)
+	if err != nil {
+		t.Fatalf("parallel resume without checkpoint returned error: %v", err)
+	}
+	if len(results) != 2 || results[1].Status != StatusQuarantined {
+		t.Fatalf("parallel resume results: %+v", results)
+	}
+}
+
+func TestRunMutantCacheAndErrorBranches(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "."}
+	cfg.Cache.Path = filepath.Join(dir, ".cervomut", "cache")
+	cfg.Selection.Mode = "package"
+	cfg.Reports.Output = filepath.Join(dir, ".cervomut", "reports")
+	mutant := Mutant{
+		ID:          "m-cache",
+		Module:      dir,
+		Package:     ".",
+		File:        filepath.Join(dir, "calc.go"),
+		Line:        3,
+		Operator:    "conditionals-boundary",
+		Original:    ">=",
+		Mutated:     ">",
+		StartOffset: 0,
+		EndOffset:   1,
+		Fingerprint: "fp",
+	}
+	e := New(cfg)
+	key, err := e.cacheKey(mutant, e.selectTests(mutant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.putCached(key, MutantResult{MutantID: mutant.ID, Status: StatusKilled, Mutant: mutant}); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := e.runMutant(context.Background(), mutant)
+	if err != nil {
+		t.Fatalf("runMutant cached returned error: %v", err)
+	}
+	if cached.Status != StatusCached || cached.PreviousStatus != StatusKilled {
+		t.Fatalf("cached result not reused: %+v", cached)
+	}
+
+	missing := mutant
+	missing.File = filepath.Join(dir, "missing.go")
+	if _, err := e.runMutant(context.Background(), missing); err == nil {
+		t.Fatal("runMutant accepted missing source file")
+	}
+}
+
+func TestLoadCorruptCacheAndBaselineBranches(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Cache.Path = filepath.Join(dir, "cache")
+	cfg.Baseline.Path = filepath.Join(dir, "baseline.json")
+	e := New(cfg)
+	if err := os.MkdirAll(cfg.Cache.Path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.Cache.Path, "bad.json"), []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.getCached("bad"); err == nil {
+		t.Fatal("getCached accepted malformed JSON")
+	}
+	if err := os.WriteFile(cfg.Baseline.Path, []byte("{bad json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.loadBaseline(); err == nil {
+		t.Fatal("loadBaseline accepted malformed JSON")
+	}
+}
+
+func TestWriteReportsAndTimingNoopBranches(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Reports.Output = ""
+	if err := New(cfg).writeReports(RunResult{}); err != nil {
+		t.Fatalf("writeReports with empty output returned error: %v", err)
+	}
+	cfg.Selection.UseTimings = false
+	New(cfg).recordTiming("m", time.Millisecond)
+	cfg.Selection.UseTimings = true
+	cfg.Selection.TimingsPath = ""
+	New(cfg).recordTiming("m", time.Millisecond)
+}
+
 func TestHistoryTracksNewAndLongStandingSurvivors(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Defaults()
@@ -691,6 +1012,35 @@ func TestHistoryTracksNewAndLongStandingSurvivors(t *testing.T) {
 	}
 	if second[0].PreviousStatus != StatusSurvived || second[0].HistoryStatus != "long_standing_survivor" || second[0].SurvivorAgeRuns != 2 {
 		t.Fatalf("second run history not populated: %+v", second[0])
+	}
+}
+
+func TestHistoryDisabledAndMixedStatuses(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.History.Enabled = false
+	stats := New(cfg).applyHistory([]MutantResult{{MutantID: "m-disabled", Status: StatusSurvived}})
+	if stats.Enabled {
+		t.Fatalf("history should be disabled: %+v", stats)
+	}
+
+	cfg = config.Defaults()
+	cfg.History.Path = filepath.Join(dir, "history.json")
+	e := New(cfg)
+	results := []MutantResult{
+		{MutantID: "k", Status: StatusKilled, Mutant: Mutant{Operator: "op"}},
+		{MutantID: "n", Status: StatusNotCovered, Mutant: Mutant{Operator: "op"}},
+		{MutantID: "c", Status: StatusCompileError, Mutant: Mutant{Operator: "op"}},
+		{MutantID: "t", Status: StatusTimedOut, Mutant: Mutant{Operator: "op"}},
+	}
+	stats = e.applyHistory(results)
+	if stats.UpdatedMutants != len(results) || stats.OperatorUsefulSurvivor["op"] != 0 {
+		t.Fatalf("mixed history stats not populated: %+v", stats)
+	}
+	for _, result := range results {
+		if result.HistoryStatus != "seen" || result.FirstSeen == "" || result.LastSeen == "" {
+			t.Fatalf("history fields not populated: %+v", result)
+		}
 	}
 }
 
@@ -742,6 +1092,30 @@ func TestSummarizeIncludesTimeoutRiskStats(t *testing.T) {
 	}
 }
 
+func TestSummarizeCoversCachedAndSuppressionStatusBranches(t *testing.T) {
+	result := summarize([]MutantResult{
+		{Status: StatusCached, PreviousStatus: StatusKilled, Mutant: Mutant{Operator: "cached-killed"}},
+		{Status: StatusCached, PreviousStatus: StatusSurvived, Mutant: Mutant{Operator: "cached-survived", EquivalentRisk: "high"}},
+		{Status: StatusCached, PreviousStatus: StatusNotCovered, Mutant: Mutant{Operator: "cached-not-covered"}},
+		{Status: StatusCached, PreviousStatus: StatusCompileError, Mutant: Mutant{Operator: "cached-compile"}},
+		{Status: StatusCached, PreviousStatus: StatusTimedOut, Mutant: Mutant{Operator: "cached-timeout"}},
+		{Status: StatusCompileError, Mutant: Mutant{Operator: "compile"}},
+		{Status: StatusIgnored, Mutant: Mutant{Operator: "ignored"}},
+		{Status: StatusQuarantined, Mutant: Mutant{Operator: "quarantined", SuppressionAudit: []SuppressionAudit{
+			{Action: config.SuppressionReportOnly},
+			{Action: config.SuppressionLowerPriority},
+			{Action: "suppress"},
+			{Action: "quarantine-required"},
+		}}},
+	})
+	if result.Cached != 5 || result.Killed != 1 || result.Survived != 1 || result.NotCovered != 1 || result.CompileError != 2 || result.TimedOut != 1 {
+		t.Fatalf("cached/status branches not summarized: %+v", result)
+	}
+	if result.SuppressionReportOnly != 1 || result.SuppressionLowerPriority != 1 || result.SuppressionSuppressed != 1 || result.SuppressionQuarantineRequired != 1 {
+		t.Fatalf("suppression audit branches not summarized: %+v", result)
+	}
+}
+
 func TestRankSurvivorsPrioritizesLowerEquivalentRisk(t *testing.T) {
 	results := []MutantResult{
 		{MutantID: "high", Status: StatusSurvived, Mutant: Mutant{EquivalentRisk: "high", Recommendation: "fast-ci"}},
@@ -757,4 +1131,376 @@ func TestRankSurvivorsPrioritizesLowerEquivalentRisk(t *testing.T) {
 	if results[2].SurvivorRank != 0 {
 		t.Fatalf("killed mutant should not be ranked: %+v", results[2])
 	}
+}
+
+func TestAffectedAndExplainPublicAPIs(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, dir)
+	e := New(cfg)
+
+	affected, err := e.Affected(context.Background(), AffectedRequest{Targets: []string{dir}})
+	if err != nil {
+		t.Fatalf("Affected returned error: %v", err)
+	}
+	if len(affected.Modules) != 1 || len(affected.Files) == 0 || affected.EstimatedMutants == 0 {
+		t.Fatalf("unexpected affected result: %+v", affected)
+	}
+
+	explained, err := e.Explain(context.Background(), ExplainRequest{MutantID: "m1", Format: "text"})
+	if err != nil {
+		t.Fatalf("Explain returned error: %v", err)
+	}
+	if explained.MutantID != "m1" || explained.Explanation == "" || explained.Suggestion == "" {
+		t.Fatalf("unexpected explanation: %+v", explained)
+	}
+	if _, err := e.Explain(context.Background(), ExplainRequest{}); err == nil {
+		t.Fatal("Explain accepted empty mutant id")
+	}
+}
+
+func TestEngineHelperBranches(t *testing.T) {
+	assertGlobBranches(t)
+	assertClassificationBranches(t)
+	assertEnvironmentBranches(t)
+	assertEngineTargetBranches(t)
+}
+
+func assertGlobBranches(t *testing.T) {
+	t.Helper()
+	if !globMatch("testdata/**", "testdata/case.json") {
+		t.Fatal("globMatch should match recursive suffix pattern")
+	}
+	if !globMatch("testdata/**", "testdata") {
+		t.Fatal("globMatch should match recursive suffix root")
+	}
+	if !globMatch("pkg/**/*.go", "pkg/deep/calc.go") {
+		t.Fatal("globMatch should match middle recursive pattern")
+	}
+	if globMatch("pkg/**/case.go", "cmd/case.go") {
+		t.Fatal("globMatch middle pattern matched wrong prefix")
+	}
+	if globMatch("pkg/**/case.go", "pkg/deep/case.go/extra") {
+		t.Fatal("globMatch middle pattern matched wrong tail")
+	}
+	if !globMatch("**/*.go", "calc.go") {
+		t.Fatal("globMatch should match recursive prefix pattern")
+	}
+	if globMatch("pkg/*.go", "cmd/main.go") {
+		t.Fatal("globMatch matched unrelated path")
+	}
+	if !suppressionFileMatches("pkg/*.go", "pkg/calc.go") || !suppressionFileMatches("calc.go", "pkg/calc.go") {
+		t.Fatal("suppressionFileMatches should support glob and suffix matches")
+	}
+}
+
+func assertClassificationBranches(t *testing.T) {
+	t.Helper()
+	if classifyFailure("panic: boom", nil) != "test_panic" {
+		t.Fatal("panic output should classify as test_panic")
+	}
+	if classifyFailure("undefined: Symbol", nil) != "compile_error" {
+		t.Fatal("undefined output should classify as compile_error")
+	}
+	if classifyFailure("cannot find go", nil) != "environment_error" {
+		t.Fatal("missing binary output should classify as environment_error")
+	}
+	if classifyFailure("", errors.New("runner failed")) != "runner_error" {
+		t.Fatal("plain runner error should classify as runner_error")
+	}
+	noopCleanup()
+	noopProcessLimitCleanup()
+	if !fallbackCoverageMentions("calc.go:1.1,2.1 1 1", "calc.go", "calc.go") {
+		t.Fatal("fallbackCoverageMentions should detect raw coverage line")
+	}
+	if compacted := compactedResults([]MutantResult{{}, {MutantID: "m1"}}); len(compacted) != 1 || compacted[0].MutantID != "m1" {
+		t.Fatalf("compactedResults = %+v", compacted)
+	}
+}
+
+func assertEnvironmentBranches(t *testing.T) {
+	t.Helper()
+	cfg := config.Defaults()
+	cfg.Execution.Resources.MaxProcessMemoryMB = 64
+	cfg.Execution.Budget = time.Minute
+	env := New(cfg).environment(2)
+	if env.Extra["max_process_memory_mb"] != "64" || env.Budget != "1m0s" {
+		t.Fatalf("environment did not expose limits: %+v", env)
+	}
+	if New(config.Defaults()).workerCount(1) != 1 {
+		t.Fatal("workerCount should cap workers to mutant count")
+	}
+}
+
+func assertEngineTargetBranches(t *testing.T) {
+	t.Helper()
+	if targets := New(config.Defaults()).runTargets(nil); len(targets) == 0 {
+		t.Fatal("runTargets should fall back to configured scope")
+	}
+	if _, err := New(config.Defaults()).discoverMutants([]string{filepath.Join(t.TempDir(), "missing")}); err == nil {
+		t.Fatal("discoverMutants accepted missing target")
+	}
+	wd, err := moduleForTargets(nil)
+	if err != nil || wd == "" {
+		t.Fatalf("moduleForTargets(nil) = %q err=%v", wd, err)
+	}
+}
+
+func TestSelectionPatchAndRunTestErrorBranches(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Tests.Command = nil
+	e := New(cfg)
+	plan := e.selectTests(Mutant{ID: "m1"})
+	if len(plan.Command) != 3 || plan.Command[0] != "go" || plan.Reason != "all tests selected" {
+		t.Fatalf("default selectTests plan = %+v", plan)
+	}
+	if _, err := e.runTest(context.Background(), MutantJob{}); err == nil {
+		t.Fatal("runTest accepted empty command")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "calc.go")
+	if err := os.WriteFile(path, []byte("package p\nconst n = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mutant := Mutant{File: path, StartOffset: -1, EndOffset: 2, Original: "1", Mutated: "2"}
+	if err := applyDiffReplacement(path, mutant); err == nil {
+		t.Fatal("applyDiffReplacement accepted invalid offsets")
+	}
+	mutant = Mutant{File: path, StartOffset: 0, EndOffset: len("package p"), Original: "missing", Mutated: "2"}
+	if err := applyDiffReplacement(path, mutant); err == nil {
+		t.Fatal("applyDiffReplacement accepted missing original token")
+	}
+	if err := applyDiffReplacement(filepath.Join(dir, "missing.go"), mutant); err == nil {
+		t.Fatal("applyDiffReplacement accepted missing file")
+	}
+	if got := withOverlayFlag([]string{"echo", "ok"}, "overlay.json"); strings.Join(got, " ") != "echo ok" {
+		t.Fatalf("withOverlayFlag changed non-go command: %v", got)
+	}
+}
+
+func TestCheckpointHelperBranches(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Execution.CheckpointIncludes = []string{"", "fixtures/*.txt", "data/**"}
+	e := New(cfg)
+	textPath := filepath.Join(dir, "fixtures", "case.txt")
+	if err := os.MkdirAll(filepath.Dir(textPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(textPath, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if fingerprint, ok := e.checkpointFileFingerprint(dir, textPath, "case.txt"); !ok || !strings.Contains(fingerprint, "fixtures/case.txt:") {
+		t.Fatalf("checkpointFileFingerprint = %q ok=%t", fingerprint, ok)
+	}
+	if _, ok := e.checkpointFileFingerprint(dir, filepath.Join(dir, "missing.txt"), "missing.txt"); ok {
+		t.Fatal("missing file should not fingerprint")
+	}
+	if e.checkpointIncludesFile(dir, filepath.Join(dir, "ignored.bin"), "ignored.bin") {
+		t.Fatal("unexpected checkpoint include for ignored file")
+	}
+	if action := checkpointDirAction(fakeDirEntry{name: "vendor", dir: true}); action != filepath.SkipDir {
+		t.Fatalf("vendor checkpoint action = %v, want SkipDir", action)
+	}
+	if !skipCheckpointWalkEntry(nil, errors.New("walk failed")) || !skipCheckpointWalkEntry(fakeDirEntry{name: "dir", dir: true}, nil) {
+		t.Fatal("skipCheckpointWalkEntry should skip errors and directories")
+	}
+	results := []MutantResult{{MutantID: "empty"}, {MutantID: "m1", Mutant: Mutant{ID: "m1", File: textPath}}}
+	if checkpoint := e.checkpointFromResults(results, "partial"); checkpoint.Reason != "partial" || checkpoint.Mutants != 1 {
+		t.Fatalf("checkpointFromResults = %+v", checkpoint)
+	}
+	e.setCheckpointScope([]Mutant{{ID: "scoped", File: textPath}})
+	if checkpoint := e.checkpointFromResults(nil, "scoped"); checkpoint.Mutants != 1 {
+		t.Fatalf("checkpointFromResults scoped = %+v", checkpoint)
+	}
+}
+
+type fakeDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (f fakeDirEntry) Name() string               { return f.name }
+func (f fakeDirEntry) IsDir() bool                { return f.dir }
+func (f fakeDirEntry) Type() os.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (os.FileInfo, error) { return nil, errors.New("no info") }
+
+func TestParallelWorkerAndCollectorErrorBranches(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	jobs := make(chan indexedMutant, 1)
+	done := make(chan indexedResult, 1)
+	startParallelWorkers(ctx, 1, jobs, done, func(context.Context, Mutant) (MutantResult, error) {
+		return MutantResult{MutantID: "unexpected"}, nil
+	})
+	jobs <- indexedMutant{index: 0, mutant: Mutant{ID: "m1"}}
+	close(jobs)
+	item := <-done
+	if !errors.Is(item.err, context.Canceled) {
+		t.Fatalf("worker err = %v, want canceled", item.err)
+	}
+
+	cfg := config.Defaults()
+	cfg.Reports.Output = t.TempDir()
+	e := New(cfg)
+	failed := make(chan indexedResult, 1)
+	failed <- indexedResult{index: 0, err: errors.New("boom")}
+	close(failed)
+	_, err := e.collectParallelResults(failed, []MutantResult{{MutantID: "m1"}}, 1, time.Now(), func() {})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("collectParallelResults err = %v, want boom", err)
+	}
+}
+
+func TestCompareBaselineDetectsRegressionAndNewSurvivors(t *testing.T) {
+	previous := RunResult{
+		Summary: Summary{Score: 80},
+		Mutants: []MutantResult{
+			{MutantID: "old", Status: StatusSurvived},
+			{MutantID: "killed-before", Status: StatusKilled},
+		},
+	}
+	current := RunResult{
+		Summary: Summary{Score: 70},
+		Mutants: []MutantResult{
+			{MutantID: "old", Status: StatusSurvived},
+			{MutantID: "killed-before", Status: StatusSurvived},
+			{MutantID: "brand-new", Status: StatusSurvived},
+		},
+	}
+
+	comparison := compareBaseline(previous, current)
+	if !comparison.Enabled || !comparison.Regression {
+		t.Fatalf("expected enabled regression comparison: %+v", comparison)
+	}
+	if strings.Join(comparison.NewSurvivors, ",") != "killed-before,brand-new" {
+		t.Fatalf("new survivors = %+v", comparison.NewSurvivors)
+	}
+}
+
+func TestParallelRunnerHandlesPreExecutionOutcomes(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Suppression.Rules = []config.SuppressionRule{{
+		Name:      "confirmed-equivalent",
+		Operator:  "logical",
+		Action:    "suppress",
+		Reason:    "confirmed equivalent",
+		Evidence:  "confirmed",
+		Reviewers: 1,
+	}}
+	e := New(cfg)
+	mutants := []Mutant{
+		{ID: "quarantined"},
+		{ID: "suppressed", Operator: "logical", SuppressionAudit: []SuppressionAudit{{Name: "confirmed-equivalent", Action: "suppress", Reason: "confirmed equivalent"}}},
+		{ID: "also-quarantined"},
+	}
+
+	results, err := e.runMutantsParallel(context.Background(), mutants, map[string]bool{"quarantined": true, "also-quarantined": true}, 2)
+	if err != nil {
+		t.Fatalf("runMutantsParallel returned error: %v", err)
+	}
+	statuses := []Status{results[0].Status, results[1].Status, results[2].Status}
+	want := []Status{StatusQuarantined, StatusIgnored, StatusQuarantined}
+	if strings.Join(statusStrings(statuses), ",") != strings.Join(statusStrings(want), ",") {
+		t.Fatalf("statuses = %+v, want %+v", statuses, want)
+	}
+}
+
+func TestLoadStoresAndPriorityHelpers(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Cache.Path = filepath.Join(dir, "cache")
+	cfg.Baseline.Path = filepath.Join(dir, "baseline.json")
+	cfg.Quarantine.Path = filepath.Join(dir, "quarantine.json")
+	cfg.Quarantine.FailOnExpired = false
+	e := New(cfg)
+
+	assertCacheStore(t, e)
+	assertBaselineStore(t, e, cfg.Baseline.Path)
+	assertQuarantineLoad(t, e, cfg.Quarantine.Path)
+	assertPriorityHelpers(t)
+}
+
+func assertCacheStore(t *testing.T, e *Engine) {
+	t.Helper()
+	if _, ok, err := e.getCached("missing"); err != nil || ok {
+		t.Fatalf("missing cache = ok %t err %v", ok, err)
+	}
+	if err := e.putCached("hit", MutantResult{MutantID: "m1", Status: StatusKilled}); err != nil {
+		t.Fatalf("putCached returned error: %v", err)
+	}
+	if cached, ok, err := e.getCached("hit"); err != nil || !ok || cached.MutantID != "m1" {
+		t.Fatalf("cached = %+v ok=%t err=%v", cached, ok, err)
+	}
+}
+
+func assertBaselineStore(t *testing.T, e *Engine, path string) {
+	t.Helper()
+	if _, ok, err := e.loadBaseline(); err != nil || ok {
+		t.Fatalf("missing baseline = ok %t err %v", ok, err)
+	}
+	baseline := RunResult{SchemaVersion: "1", Summary: Summary{Score: 90}}
+	data, _ := json.Marshal(baseline)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if loaded, ok, err := e.loadBaseline(); err != nil || !ok || loaded.Summary.Score != 90 {
+		t.Fatalf("loaded baseline = %+v ok=%t err=%v", loaded, ok, err)
+	}
+}
+
+func assertQuarantineLoad(t *testing.T, e *Engine, path string) {
+	t.Helper()
+	entries := []map[string]any{{
+		"mutant_id":  "m-active",
+		"reason":     "temporary",
+		"owner":      "qa",
+		"issue":      "CervoSoft/cervo-mutant#31",
+		"created_at": time.Now().Add(-time.Hour).Format(time.RFC3339),
+		"expires_at": time.Now().Add(time.Hour).Format(time.RFC3339),
+	}}
+	quarantineData, _ := json.Marshal(entries)
+	if err := os.WriteFile(path, quarantineData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	active, expired, err := e.loadQuarantine()
+	if err != nil {
+		t.Fatalf("loadQuarantine returned error: %v", err)
+	}
+	if !active["m-active"] || expired != 0 {
+		t.Fatalf("unexpected quarantine state active=%+v expired=%d", active, expired)
+	}
+}
+
+func assertPriorityHelpers(t *testing.T) {
+	t.Helper()
+	for risk, want := range map[string]int{"low": 0, "medium": 1, "high": 2, "other": 3} {
+		if got := riskPriority(risk); got != want {
+			t.Fatalf("riskPriority(%q) = %d, want %d", risk, got, want)
+		}
+	}
+	for action, want := range map[string]int{"report-only": 0, "lower-priority": 1, "quarantine-required": 2, "suppress": 3, "none": -1} {
+		if got := suppressionPriority(action); got != want {
+			t.Fatalf("suppressionPriority(%q) = %d, want %d", action, got, want)
+		}
+	}
+	if hasProcessLimits(config.Resources{}) {
+		t.Fatal("empty resource limits should not enable process limits")
+	}
+	if !hasProcessLimits(config.Resources{MaxProcessMemoryMB: 1}) || !hasProcessLimits(config.Resources{MaxProcesses: 1}) {
+		t.Fatal("configured memory or process cap should enable process limits")
+	}
+	noopProcessLimitCleanup()
+}
+
+func statusStrings(statuses []Status) []string {
+	values := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		values = append(values, string(status))
+	}
+	return values
 }

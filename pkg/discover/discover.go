@@ -25,62 +25,91 @@ func Discover(targets []string) (Result, error) {
 	var result Result
 	seenModules := map[string]bool{}
 	for _, target := range targets {
-		root := strings.TrimSuffix(target, "/...")
-		if root == "." || root == "./..." {
-			root = "."
-		}
-		abs, err := filepath.Abs(root)
+		walkRoot, err := walkRootForTarget(target)
 		if err != nil {
 			return Result{}, err
 		}
-		walkRoot := abs
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			walkRoot = resolved
-		}
-		if info, err := os.Stat(walkRoot); err == nil && info.IsDir() && !strings.HasSuffix(walkRoot, string(os.PathSeparator)) {
-			walkRoot += string(os.PathSeparator)
-		}
-		moduleDir := findModule(walkRoot)
-		if moduleDir == "" {
-			moduleDir = walkRoot
-		}
-		moduleDir = filepath.Clean(moduleDir)
+		moduleDir := moduleDirForWalkRoot(walkRoot)
 		if !seenModules[moduleDir] {
 			seenModules[moduleDir] = true
 			result.Modules = append(result.Modules, moduleDir)
 		}
-		err = filepath.WalkDir(walkRoot, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() && excludedDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			if d.IsDir() || !strings.HasSuffix(path, ".go") {
-				return nil
-			}
-			name := filepath.Base(path)
-			if strings.HasSuffix(name, "_generated.go") || strings.HasSuffix(name, ".pb.go") {
-				return nil
-			}
-			rel, _ := filepath.Rel(moduleDir, filepath.Dir(path))
-			pkg := "./" + filepath.ToSlash(rel)
-			if rel == "." {
-				pkg = "."
-			}
-			result.Files = append(result.Files, File{
-				ModuleDir: moduleDir,
-				Package:   pkg,
-				Path:      path,
-				IsTest:    strings.HasSuffix(name, "_test.go"),
-			})
-			return nil
-		})
-		if err != nil {
+		if err := appendWalkFiles(&result, walkRoot, moduleDir); err != nil {
 			return Result{}, err
 		}
 	}
 	return result, nil
+}
+
+func walkRootForTarget(target string) (string, error) {
+	root := strings.TrimSuffix(target, "/...")
+	if root == "." || root == "./..." {
+		root = "."
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	walkRoot := abs
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		walkRoot = resolved
+	}
+	if info, err := os.Stat(walkRoot); err == nil && info.IsDir() && !strings.HasSuffix(walkRoot, string(os.PathSeparator)) {
+		walkRoot += string(os.PathSeparator)
+	}
+	return walkRoot, nil
+}
+
+func moduleDirForWalkRoot(walkRoot string) string {
+	moduleDir := findModule(walkRoot)
+	if moduleDir == "" {
+		moduleDir = walkRoot
+	}
+	return filepath.Clean(moduleDir)
+}
+
+func appendWalkFiles(result *Result, walkRoot, moduleDir string) error {
+	return filepath.WalkDir(walkRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return handleDir(d)
+		}
+		file, ok := discoveredGoFile(moduleDir, path)
+		if !ok {
+			return nil
+		}
+		result.Files = append(result.Files, file)
+		return nil
+	})
+}
+
+func handleDir(d os.DirEntry) error {
+	if excludedDir(d.Name()) {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func discoveredGoFile(moduleDir, path string) (File, bool) {
+	if !strings.HasSuffix(path, ".go") {
+		return File{}, false
+	}
+	name := filepath.Base(path)
+	if generatedFile(name) {
+		return File{}, false
+	}
+	rel, _ := filepath.Rel(moduleDir, filepath.Dir(path))
+	pkg := "./" + filepath.ToSlash(rel)
+	if rel == "." {
+		pkg = "."
+	}
+	return File{ModuleDir: moduleDir, Package: pkg, Path: path, IsTest: strings.HasSuffix(name, "_test.go")}, true
+}
+
+func generatedFile(name string) bool {
+	return strings.HasSuffix(name, "_generated.go") || strings.HasSuffix(name, ".pb.go")
 }
 
 func findModule(start string) string {

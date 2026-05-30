@@ -180,3 +180,55 @@ func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 		t.Fatalf("index.html should not be written for summary/json formats: %v", err)
 	}
 }
+
+func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
+	dir := t.TempDir()
+	run := engine.RunResult{Summary: engine.Summary{Total: 1}}
+	if err := WriteFormats(dir, run, nil); err != nil {
+		t.Fatalf("WriteFormats default formats returned error: %v", err)
+	}
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json"} {
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Fatalf("default formats missing %s: %v", want, err)
+		}
+	}
+	filePath := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFormats(filePath, run, []string{"summary"}); err == nil {
+		t.Fatal("WriteFormats accepted a file as output directory")
+	}
+}
+
+func TestJUnitHTMLAndWriteAll(t *testing.T) {
+	dir := t.TempDir()
+	run := engine.RunResult{
+		SchemaVersion: "1",
+		Summary:       engine.Summary{Total: 2, Killed: 1, Survived: 1, Score: 50},
+		Mutants: []engine.MutantResult{
+			{MutantID: "killed", Status: engine.StatusKilled, Mutant: engine.Mutant{Diff: "-a\n+b\n"}},
+			{MutantID: "survived", Status: engine.StatusSurvived, StatusReason: "tests passed", Mutant: engine.Mutant{Diff: "<unsafe>"}},
+		},
+	}
+
+	junit, err := JUnit(run)
+	if err != nil {
+		t.Fatalf("JUnit returned error: %v", err)
+	}
+	if !strings.Contains(string(junit), `tests="2"`) || !strings.Contains(string(junit), `failures="1"`) {
+		t.Fatalf("unexpected junit: %s", junit)
+	}
+	html := HTML(run)
+	if !strings.Contains(html, "cervomut mutation report") || strings.Contains(html, "<unsafe>") {
+		t.Fatalf("html should include report title and escape diffs: %s", html)
+	}
+	if err := WriteAll(dir, run); err != nil {
+		t.Fatalf("WriteAll returned error: %v", err)
+	}
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "junit.xml", "index.html"} {
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Fatalf("missing %s: %v", want, err)
+		}
+	}
+}

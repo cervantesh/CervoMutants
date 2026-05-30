@@ -24,6 +24,18 @@ func TestSafePathTokenRejectsWindowsInvalidFilenameCharacters(t *testing.T) {
 	}
 }
 
+func TestSafePathTokenHandlesEmptyUnsafeAndLongNames(t *testing.T) {
+	for _, input := range []string{"", "   ", "///", "!!!", strings.Repeat("a", 80)} {
+		token := safePathToken(input)
+		if token == "" || strings.HasPrefix(token, "-") || strings.HasSuffix(token, "-") {
+			t.Fatalf("unsafe token for %q: %q", input, token)
+		}
+		if len(token) > 70 {
+			t.Fatalf("token not bounded for %q: %q", input, token)
+		}
+	}
+}
+
 func TestCopyModuleUsesSafeWorkdirNameForWindowsStylePaths(t *testing.T) {
 	module := t.TempDir()
 	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o600); err != nil {
@@ -56,6 +68,38 @@ func TestCopyModuleUsesSafeWorkdirNameForWindowsStylePaths(t *testing.T) {
 	}
 }
 
+func TestCopyModuleExcludesHeavyDirectoriesAndCopiesNestedFiles(t *testing.T) {
+	module := t.TempDir()
+	for _, path := range []string{
+		"go.mod",
+		filepath.Join("pkg", "calc.go"),
+		filepath.Join("vendor", "ignored.go"),
+		filepath.Join(".git", "ignored"),
+		filepath.Join("node_modules", "ignored.js"),
+	} {
+		full := filepath.Join(module, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("content"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workdir, err := CopyModule(module)
+	if err != nil {
+		t.Fatalf("CopyModule returned error: %v", err)
+	}
+	defer Cleanup(workdir)
+	if _, err := os.Stat(filepath.Join(workdir, "pkg", "calc.go")); err != nil {
+		t.Fatalf("nested file was not copied: %v", err)
+	}
+	for _, path := range []string{filepath.Join("vendor", "ignored.go"), filepath.Join(".git", "ignored"), filepath.Join("node_modules", "ignored.js")} {
+		if _, err := os.Stat(filepath.Join(workdir, path)); !os.IsNotExist(err) {
+			t.Fatalf("excluded path %s copied or returned unexpected err: %v", path, err)
+		}
+	}
+}
+
 func TestCleanupRefusesUnmarkedPath(t *testing.T) {
 	dir := t.TempDir()
 	if err := Cleanup(dir); err == nil {
@@ -63,6 +107,22 @@ func TestCleanupRefusesUnmarkedPath(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("unmarked path was removed or changed: %v", err)
+	}
+}
+
+func TestCleanupAcceptsMarkedPathAndEmptyPath(t *testing.T) {
+	if err := Cleanup(""); err != nil {
+		t.Fatalf("empty cleanup returned error: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, markerFile), []byte("marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Cleanup(dir); err != nil {
+		t.Fatalf("Cleanup marked path returned error: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("marked path still exists or unexpected err: %v", err)
 	}
 }
 
@@ -102,5 +162,16 @@ func TestContainedTargetPathMapsModuleFileIntoWorkdir(t *testing.T) {
 	want := filepath.Join(workdir, "pkg", "calc.go")
 	if target != want {
 		t.Fatalf("target = %q, want %q", target, want)
+	}
+}
+
+func TestExcludedDirMatchesHeavyOrGeneratedTrees(t *testing.T) {
+	for _, name := range []string{".git", ".cervomut", "vendor", "node_modules", "dist", "build", "coverage"} {
+		if !excludedDir(name) {
+			t.Fatalf("excludedDir(%q) = false, want true", name)
+		}
+	}
+	if excludedDir("pkg") {
+		t.Fatal("ordinary package directory should not be excluded")
 	}
 }

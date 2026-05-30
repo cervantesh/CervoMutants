@@ -64,6 +64,17 @@ func TestParseGremlinsReportClassifiesAllTimedOutAndPoorDenominatorHealth(t *tes
 	}
 }
 
+func TestParseGremlinsReportClassifiesNotCoveredOnly(t *testing.T) {
+	path := writeJSON(t, `{"mutants_total":0,"mutants_killed":0,"mutants_lived":0,"mutants_not_covered":3}`)
+	result, err := ParseGremlins(path)
+	if err != nil {
+		t.Fatalf("ParseGremlins returned error: %v", err)
+	}
+	if result.Status != "not_covered_only" || len(result.Notes) == 0 {
+		t.Fatalf("unexpected Gremlins not-covered status: %+v", result)
+	}
+}
+
 func TestNormalizeGremlinsPackageRootTargetMarksNotComparable(t *testing.T) {
 	effective, notComparable := NormalizeGremlinsTarget("./...", "gremlins-package-root")
 	if effective != "." || !notComparable {
@@ -104,6 +115,13 @@ func TestBuildComparabilityDetectsEffectiveTargetMismatch(t *testing.T) {
 		if !strings.Contains(warnings, want) {
 			t.Fatalf("missing warning %q: %+v", want, comp)
 		}
+	}
+}
+
+func TestBuildComparabilityDetectsMissingTargetMetadataAndDedupesWarnings(t *testing.T) {
+	comp := BuildComparability([]ToolResult{{Tool: "a"}, {Tool: "b"}})
+	if comp.ApplesToApples || comp.ManifestEquivalent || strings.Count(strings.Join(comp.Warnings, ","), "target_metadata_missing") != 1 {
+		t.Fatalf("unexpected missing-target comparability: %+v", comp)
 	}
 }
 
@@ -159,6 +177,72 @@ func TestParseGoMutestingReportAcceptsJSONStats(t *testing.T) {
 	}
 	if result.Tool != "go-mutesting" || result.Total != 4 || result.Killed != 3 || result.Survived != 1 || result.Score != 75 {
 		t.Fatalf("unexpected normalized result: %+v", result)
+	}
+}
+
+func TestTextParsersAndTargetApplication(t *testing.T) {
+	gomu := writeText(t, "mutants: 6\nkilled: 3\nsurvived: 1\nnot_covered: 2\ntimed_out: 4\nscore: 75\n")
+	gomuResult, err := ParseGomu(gomu)
+	if err != nil {
+		t.Fatalf("ParseGomu text returned error: %v", err)
+	}
+	if gomuResult.Total != 6 || gomuResult.Killed != 3 || gomuResult.Survived != 1 || gomuResult.NotCovered != 2 || gomuResult.TimedOut != 4 || gomuResult.Score != 75 {
+		t.Fatalf("unexpected gomu text metrics: %+v", gomuResult)
+	}
+
+	goMutesting := writeText(t, "The mutation score is 66.67%: 2 killed, 1 survived, 3 total, 5 timed out")
+	goMutestingResult, err := ParseGoMutesting(goMutesting)
+	if err != nil {
+		t.Fatalf("ParseGoMutesting text returned error: %v", err)
+	}
+	if goMutestingResult.Total != 3 || goMutestingResult.Killed != 2 || goMutestingResult.Survived != 1 || goMutestingResult.TimedOut != 5 {
+		t.Fatalf("unexpected go-mutesting text metrics: %+v", goMutestingResult)
+	}
+
+	applied := ApplyTarget(ToolResult{Tool: "x"}, "./...", ".", true)
+	if applied.Target != "./..." || applied.EffectiveTarget != "." || applied.TargetMode != "manifest" || !applied.NotComparable {
+		t.Fatalf("target not applied: %+v", applied)
+	}
+}
+
+func TestGremlinsNoResultsAndIntFloatFields(t *testing.T) {
+	path := writeJSON(t, `{"total":"0","killed":"0","survived":"0","score":"0"}`)
+	result, err := ParseGremlins(path)
+	if err != nil {
+		t.Fatalf("ParseGremlins returned error: %v", err)
+	}
+	if result.Status != "no_results" {
+		t.Fatalf("status = %q, want no_results", result.Status)
+	}
+}
+
+func TestParserErrorAndFallbackBranches(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	if _, err := ParseCervo(missing); err == nil {
+		t.Fatal("ParseCervo accepted missing file")
+	}
+	bad := writeText(t, "{bad json")
+	if _, err := ParseGremlins(bad); err == nil {
+		t.Fatal("ParseGremlins accepted malformed JSON")
+	}
+	gomu := writeText(t, "killed: 2\nsurvived: 2\n")
+	gomuResult, err := ParseGomu(gomu)
+	if err != nil {
+		t.Fatalf("ParseGomu fallback returned error: %v", err)
+	}
+	if gomuResult.Score != 50 || gomuResult.MutationCoverage != 100 {
+		t.Fatalf("unexpected gomu fallback metrics: %+v", gomuResult)
+	}
+	goMutesting := writeText(t, "2 killed, 2 survived, 4 total")
+	goMutestingResult, err := ParseGoMutesting(goMutesting)
+	if err != nil {
+		t.Fatalf("ParseGoMutesting fallback returned error: %v", err)
+	}
+	if goMutestingResult.Score != 50 {
+		t.Fatalf("go-mutesting fallback score = %.2f, want 50", goMutestingResult.Score)
+	}
+	if regexpMatch(`missing (\d+)`, "none") != "" {
+		t.Fatal("regexpMatch should return empty string for no match")
 	}
 }
 
