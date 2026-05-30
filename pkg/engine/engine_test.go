@@ -616,6 +616,54 @@ func TestCoverageSelectionUsesLineRangesNotOnlyFilePresence(t *testing.T) {
 	}
 }
 
+func TestCoverageSelectionFallsBackToPackageWhenFileCoveredButLineMissing(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "-run", "Test", "./pkg/a", "./pkg/b"}
+	cfg.Selection.Mode = "coverage"
+	isolateArtifacts(&cfg, dir)
+	if err := os.MkdirAll(filepath.Dir(cfg.Selection.CoverageProfile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Selection.CoverageProfile, []byte("mode: set\ncalc.go:1.1,2.1 1 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := New(cfg).selectTests(Mutant{Module: dir, Package: "./target", File: filepath.Join(dir, "calc.go"), Line: 4})
+	if !plan.CoversMutant {
+		t.Fatalf("covered file fallback should run package tests: %+v", plan)
+	}
+	if plan.CoverageSource != "coverage-mode-file-fallback" || !strings.Contains(plan.Reason, "package fallback") {
+		t.Fatalf("unexpected fallback metadata: %+v", plan)
+	}
+	if got := strings.Join(plan.Command, " "); got != "go test -run Test ./target" {
+		t.Fatalf("package scoped command = %q", got)
+	}
+}
+
+func TestPackagePrefilterUsesFileCoverageBeforeReportingNotCovered(t *testing.T) {
+	dir := writeFixture(t)
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./pkg/a", "./pkg/b"}
+	cfg.Selection.Mode = "package"
+	cfg.Selection.Prefilter = true
+	isolateArtifacts(&cfg, dir)
+	if err := os.MkdirAll(filepath.Dir(cfg.Selection.CoverageProfile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Selection.CoverageProfile, []byte("mode: set\ncalc.go:1.1,2.1 1 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := New(cfg).selectTests(Mutant{Module: dir, Package: "./target", File: filepath.Join(dir, "calc.go"), Line: 4})
+	if !plan.CoversMutant {
+		t.Fatalf("package prefilter should not reject a covered file: %+v", plan)
+	}
+	if got := strings.Join(plan.Command, " "); got != "go test ./target" {
+		t.Fatalf("package scoped command = %q", got)
+	}
+}
+
 func TestPackageSelectionCanPrefilterUncoveredMutants(t *testing.T) {
 	dir := writeFixture(t)
 	cfg := config.Defaults()
