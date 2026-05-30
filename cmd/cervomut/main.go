@@ -305,15 +305,18 @@ func cmdEval(args []string) error {
 func cmdCompare(args []string) error {
 	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
 	cervo := fs.String("cervomut", "", "cervo-mutant mutation-report.json")
+	cervoTarget := fs.String("cervomut-target", "", "original manifest target used for CervoMutant comparison")
+	cervoEffectiveTarget := fs.String("cervomut-effective-target", "", "effective target passed to CervoMutant")
+	cervoTargetMode := fs.String("cervomut-target-mode", "manifest", "CervoMutant target normalization mode: manifest or package-root")
 	gremlins := fs.String("gremlins", "", "Gremlins report JSON")
 	gremlinsTarget := fs.String("gremlins-target", "", "original manifest target used for Gremlins comparison")
 	gremlinsEffectiveTarget := fs.String("gremlins-effective-target", "", "effective target passed to Gremlins")
-	gremlinsTargetMode := fs.String("gremlins-target-mode", "manifest", "Gremlins target normalization mode: manifest or gremlins-package-root")
+	gremlinsTargetMode := fs.String("gremlins-target-mode", "manifest", "Gremlins target normalization mode: manifest, package-root, or gremlins-package-root")
 	gomu := fs.String("gomu", "", "gomu text or JSON summary")
 	goMutesting := fs.String("go-mutesting", "", "go-mutesting text summary")
 	out := fs.String("out", ".cervomut/evaluation/tool-comparison.json", "normalized comparison output")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"cervomut": true, "gremlins": true, "gremlins-target": true, "gremlins-effective-target": true, "gremlins-target-mode": true, "gomu": true, "go-mutesting": true, "out": true,
+		"cervomut": true, "cervomut-target": true, "cervomut-effective-target": true, "cervomut-target-mode": true, "gremlins": true, "gremlins-target": true, "gremlins-effective-target": true, "gremlins-target-mode": true, "gomu": true, "go-mutesting": true, "out": true,
 	})); err != nil {
 		return err
 	}
@@ -322,6 +325,17 @@ func cmdCompare(args []string) error {
 		result, err := extcompare.ParseCervo(*cervo)
 		if err != nil {
 			return err
+		}
+		target := *cervoTarget
+		effective := *cervoEffectiveTarget
+		notComparable := false
+		if target != "" && effective == "" {
+			effective, notComparable = extcompare.NormalizeTarget(target, *cervoTargetMode)
+		} else if target != "" && effective != "" && target != effective {
+			notComparable = true
+		}
+		if target != "" || effective != "" {
+			result = extcompare.ApplyTargetMode(result, target, effective, *cervoTargetMode, notComparable)
 		}
 		results = append(results, result)
 	}
@@ -339,7 +353,7 @@ func cmdCompare(args []string) error {
 			notComparable = true
 		}
 		if target != "" || effective != "" {
-			result = extcompare.ApplyTarget(result, target, effective, notComparable)
+			result = extcompare.ApplyTargetMode(result, target, effective, *gremlinsTargetMode, notComparable)
 		}
 		results = append(results, result)
 	}

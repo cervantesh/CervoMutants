@@ -69,9 +69,41 @@ func TestNormalizeGremlinsPackageRootTargetMarksNotComparable(t *testing.T) {
 	if effective != "." || !notComparable {
 		t.Fatalf("effective=%q notComparable=%t, want . true", effective, notComparable)
 	}
-	result := ApplyTarget(ToolResult{Tool: "gremlins", Status: "ok"}, "./...", effective, notComparable)
-	if result.Target != "./..." || result.EffectiveTarget != "." || !result.NotComparable || len(result.Notes) == 0 {
+	result := ApplyTargetMode(ToolResult{Tool: "gremlins", Status: "ok"}, "./...", effective, "gremlins-package-root", notComparable)
+	if result.Target != "./..." || result.EffectiveTarget != "." || result.TargetMode != "gremlins-package-root" || !result.NotComparable || len(result.Notes) == 0 {
 		t.Fatalf("target metadata not applied: %+v", result)
+	}
+}
+
+func TestBuildComparabilitySeparatesToolApplesFromManifestEquivalence(t *testing.T) {
+	cervo := ApplyTargetMode(ToolResult{Tool: "cervo-mutant"}, "./...", ".", "package-root", true)
+	gremlins := ApplyTargetMode(ToolResult{Tool: "gremlins"}, "./...", ".", "package-root", true)
+
+	comp := BuildComparability([]ToolResult{cervo, gremlins})
+	if !comp.ApplesToApples {
+		t.Fatalf("expected package-root run to be apples-to-apples between tools: %+v", comp)
+	}
+	if comp.ManifestEquivalent {
+		t.Fatalf("expected package-root run to be marked different from manifest: %+v", comp)
+	}
+	if strings.Join(comp.Warnings, ",") != "effective_target_differs_from_manifest" {
+		t.Fatalf("unexpected warnings: %+v", comp)
+	}
+}
+
+func TestBuildComparabilityDetectsEffectiveTargetMismatch(t *testing.T) {
+	cervo := ApplyTargetMode(ToolResult{Tool: "cervo-mutant"}, "./...", "./...", "manifest", false)
+	gremlins := ApplyTargetMode(ToolResult{Tool: "gremlins"}, "./...", ".", "gremlins-package-root", true)
+
+	comp := BuildComparability([]ToolResult{cervo, gremlins})
+	if comp.ApplesToApples {
+		t.Fatalf("expected mismatched targets to be non-comparable: %+v", comp)
+	}
+	warnings := strings.Join(comp.Warnings, ",")
+	for _, want := range []string{"effective_target_mismatch", "target_mode_mismatch", "effective_target_differs_from_manifest"} {
+		if !strings.Contains(warnings, want) {
+			t.Fatalf("missing warning %q: %+v", want, comp)
+		}
 	}
 }
 

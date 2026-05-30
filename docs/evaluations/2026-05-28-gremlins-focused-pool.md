@@ -444,6 +444,51 @@ Implementation response:
 - CervoMutant now writes partial mutation reports through an atomic
   temp-file-and-rename path so a watchdog kill during JSON serialization cannot
   replace the last valid checkpoint with an empty file.
-- The comparison harness still needs to parse partial reports when final reports
-  are absent, otherwise timeout rows lose denominators even when CervoMutant
-  preserved useful checkpoint data.
+- The comparison harness can now parse CervoMutant partial reports when final
+  reports are absent, so timeout rows can retain observed denominators.
+
+## Apples-To-Apples Protocol Update
+
+The post-implementation run still mixed two different questions:
+
+1. Can CervoMutant run the manifest target such as `./...`?
+2. How does CervoMutant compare to Gremlins when both are constrained to the
+   same package-root target?
+
+Those are both useful, but they must not be summarized as the same comparison.
+The harness and normalized comparison JSON now encode the distinction:
+
+```json
+{
+  "comparability": {
+    "apples_to_apples": true,
+    "manifest_equivalent": false,
+    "effective_targets": ["."],
+    "target_modes": ["package-root"],
+    "warnings": ["effective_target_differs_from_manifest"]
+  }
+}
+```
+
+Interpretation:
+
+- `apples_to_apples=true` means the compared tools received the same effective
+  target under the same target mode.
+- `manifest_equivalent=false` means the comparison is fair between tools, but it
+  does not represent the original manifest target such as full `./...`.
+- `not_comparable` or `apples_to_apples=false` means the row is diagnostic only.
+
+Future Gremlins-focused small-pool runs should use:
+
+```powershell
+.\scripts\compare-tools-pool.ps1 `
+  -Tools cervomut,gremlins `
+  -CompareTargetMode package-root `
+  -GremlinsTargetMode package-root `
+  -Workers 2 `
+  -TimeoutSeconds 600
+```
+
+For all-tool studies, use the same `CompareTargetMode` for CervoMutant, gomu,
+and go-mutesting too. Normalizing only Gremlins makes the run useful for
+diagnosis, but not for a fairness claim.

@@ -6,6 +6,8 @@ param(
     [string[]]$Tools = @("cervomut", "gremlins", "gomu", "go-mutesting"),
     [int]$Workers = 2,
     [ValidateSet("manifest", "package-root")]
+    [string]$CompareTargetMode = "manifest",
+    [ValidateSet("manifest", "package-root")]
     [string]$GremlinsTargetMode = "manifest",
     [int]$GremlinsTimeoutCoefficient = 1,
     [int]$GomuWorkers = 1,
@@ -212,9 +214,15 @@ function Invoke-LoggedCommand {
     return [int]$proc.ExitCode
 }
 
-function Read-CervoReport($path) {
-    if (!(Test-Path -LiteralPath $path)) { return @{} }
-    $j = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+function Read-CervoReport($path, $partialPath) {
+    $usedPartial = $false
+    $readPath = $path
+    if (!(Test-Path -LiteralPath $readPath) -and $partialPath -and (Test-Path -LiteralPath $partialPath)) {
+        $readPath = $partialPath
+        $usedPartial = $true
+    }
+    if (!(Test-Path -LiteralPath $readPath)) { return @{} }
+    $j = Get-Content -LiteralPath $readPath -Raw | ConvertFrom-Json
     return @{
         total = $j.summary.total
         killed = $j.summary.killed
@@ -223,6 +231,7 @@ function Read-CervoReport($path) {
         errors = $j.summary.compile_error
         timed_out = $j.summary.timed_out
         score = [math]::Round([double]$j.summary.score, 2)
+        partial_report_used = $usedPartial
     }
 }
 
@@ -253,10 +262,24 @@ function Read-GremlinsReport($path) {
 }
 
 function Get-GremlinsTarget($repoTarget) {
-    if ($GremlinsTargetMode -eq "package-root" -and $repoTarget -eq "./...") {
+    if (($CompareTargetMode -eq "package-root" -or $GremlinsTargetMode -eq "package-root") -and $repoTarget -eq "./...") {
         return "."
     }
     return $repoTarget
+}
+
+function Get-ComparisonTarget($repoTarget) {
+    if ($CompareTargetMode -eq "package-root" -and $repoTarget -eq "./...") {
+        return "."
+    }
+    return $repoTarget
+}
+
+function Get-TargetMode($toolName) {
+    if ($toolName -eq "gremlins" -and $GremlinsTargetMode -eq "package-root") {
+        return "package-root"
+    }
+    return $CompareTargetMode
 }
 
 function Read-GomuReport($path) {
@@ -329,15 +352,17 @@ foreach ($repo in $repos) {
     $repoOut = Join-Path $OutputRoot $repo.name
     New-Item -ItemType Directory -Path $repoOut -Force | Out-Null
     $toolDefs = New-Object System.Collections.Generic.List[object]
-    $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $repo.target, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; parser = "cervo"; effectiveTarget = $repo.target }) | Out-Null
+    $cervoTarget = Get-ComparisonTarget $repo.target
+    $toolDefs.Add([pscustomobject]@{ name = "cervomut"; exe = $CervoMutant; args = @("run", $cervoTarget, "--profile", "gremlins-compatible", "--isolation", "overlay", "--workers", "$Workers", "--out", (Join-Path $repoOut "cervomut")); report = Join-Path $repoOut "cervomut/mutation-report.json"; partialReport = Join-Path $repoOut "cervomut/partial-mutation-report.json"; parser = "cervo"; effectiveTarget = $cervoTarget; targetMode = (Get-TargetMode "cervomut") }) | Out-Null
     $gremlinsTarget = Get-GremlinsTarget $repo.target
     $gremlinsArgs = @("unleash", $gremlinsTarget, "--workers", "$Workers", "--threshold-efficacy", "0", "--threshold-mcover", "0", "--output", (Join-Path $repoOut "gremlins.json"))
     if ($GremlinsTimeoutCoefficient -gt 1) {
         $gremlinsArgs += @("--timeout-coefficient", "$GremlinsTimeoutCoefficient")
     }
-    $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = $gremlinsArgs; report = Join-Path $repoOut "gremlins.json"; parser = "gremlins"; effectiveTarget = $gremlinsTarget }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $repo.target, "--workers", "$GomuWorkers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; parser = "gomu"; effectiveTarget = $repo.target }) | Out-Null
-    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$GoMutestingWorkers", $repo.target); report = Join-Path $repoDir "report.json"; parser = "go-mutesting"; effectiveTarget = $repo.target }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "gremlins"; exe = $Gremlins; args = $gremlinsArgs; report = Join-Path $repoOut "gremlins.json"; partialReport = ""; parser = "gremlins"; effectiveTarget = $gremlinsTarget; targetMode = (Get-TargetMode "gremlins") }) | Out-Null
+    $otherToolTarget = Get-ComparisonTarget $repo.target
+    $toolDefs.Add([pscustomobject]@{ name = "gomu"; exe = $Gomu; args = @("run", $otherToolTarget, "--workers", "$GomuWorkers", "--timeout", "$TimeoutSeconds", "--threshold", "0", "--fail-on-gate=false", "--output", "json"); report = Join-Path $repoDir "mutation-report.json"; partialReport = ""; parser = "gomu"; effectiveTarget = $otherToolTarget; targetMode = (Get-TargetMode "gomu") }) | Out-Null
+    $toolDefs.Add([pscustomobject]@{ name = "go-mutesting"; exe = $GoMutesting; args = @("/noop", "/quiet", "/no-diffs", "/logger-summary-json", "/logger-agentic-json", "/exec-timeout:$TimeoutSeconds", "/workers:$GoMutestingWorkers", $otherToolTarget); report = Join-Path $repoDir "report.json"; partialReport = ""; parser = "go-mutesting"; effectiveTarget = $otherToolTarget; targetMode = (Get-TargetMode "go-mutesting") }) | Out-Null
     $selectedTools = @()
     foreach ($candidateTool in $toolDefs) {
         if ($wantedTools.ContainsKey($candidateTool.name)) {
@@ -355,7 +380,7 @@ foreach ($repo in $repos) {
         $sw.Stop()
         $metrics = @{}
         switch ($tool.parser) {
-            "cervo" { $metrics = Read-CervoReport $tool.report }
+            "cervo" { $metrics = Read-CervoReport $tool.report $tool.partialReport }
             "gremlins" { $metrics = Read-GremlinsReport $tool.report }
             "gomu" {
                 if (Test-Path -LiteralPath $tool.report) {
@@ -375,6 +400,12 @@ foreach ($repo in $repos) {
         if ($exit -eq 124) { $status = "timeout"; $note = "timeout" }
         if ($exit -eq 125) { $status = "skipped"; $note = "skipped before start" }
         if ($exit -eq 126) { $status = "watchdog_kill"; $note = "memory watchdog kill" }
+        if ($tool.parser -eq "cervo" -and $metrics.partial_report_used) {
+            if ($status -eq "timeout" -or $status -eq "watchdog_kill") {
+                $status = "partial_$status"
+            }
+            $note = (($note, "partial CervoMutant report used") | Where-Object { $_ -ne "" }) -join "; "
+        }
         if ($tool.parser -eq "gremlins") {
             $logText = ""
             if (Test-Path -LiteralPath $log) {
@@ -406,6 +437,9 @@ foreach ($repo in $repos) {
             repo = $repo.name
             target = $repo.target
             effective_target = $tool.effectiveTarget
+            target_mode = $tool.targetMode
+            manifest_equivalent = ($repo.target -eq $tool.effectiveTarget)
+            apples_to_apples_key = "$($tool.targetMode):$($tool.effectiveTarget)"
             lane = $repo.lane
             domain = $repo.domain
             tool = $tool.name
@@ -419,6 +453,7 @@ foreach ($repo in $repos) {
             errors = $metrics.errors
             timed_out = $metrics.timed_out
             score = $metrics.score
+            partial_report_used = $metrics.partial_report_used
             status = $status
             note = $note
             log = $log

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 )
 
@@ -15,6 +16,7 @@ type ToolResult struct {
 	Status            string            `json:"status"`
 	Target            string            `json:"target,omitempty"`
 	EffectiveTarget   string            `json:"effective_target,omitempty"`
+	TargetMode        string            `json:"target_mode,omitempty"`
 	NotComparable     bool              `json:"not_comparable,omitempty"`
 	Total             int               `json:"total"`
 	Killed            int               `json:"killed"`
@@ -44,8 +46,17 @@ type DenominatorHealth struct {
 }
 
 type Study struct {
-	SchemaVersion string       `json:"schema_version"`
-	Results       []ToolResult `json:"results"`
+	SchemaVersion string        `json:"schema_version"`
+	Comparability Comparability `json:"comparability"`
+	Results       []ToolResult  `json:"results"`
+}
+
+type Comparability struct {
+	ApplesToApples     bool     `json:"apples_to_apples"`
+	ManifestEquivalent bool     `json:"manifest_equivalent"`
+	EffectiveTargets   []string `json:"effective_targets,omitempty"`
+	TargetModes        []string `json:"target_modes,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
 }
 
 func ParseCervo(path string) (ToolResult, error) {
@@ -229,8 +240,12 @@ func ParseGoMutesting(path string) (ToolResult, error) {
 }
 
 func NormalizeGremlinsTarget(target, mode string) (effective string, notComparable bool) {
+	return NormalizeTarget(target, mode)
+}
+
+func NormalizeTarget(target, mode string) (effective string, notComparable bool) {
 	effective = target
-	if mode == "gremlins-package-root" && target == "./..." {
+	if (mode == "gremlins-package-root" || mode == "package-root") && target == "./..." {
 		effective = "."
 		notComparable = true
 	}
@@ -238,11 +253,16 @@ func NormalizeGremlinsTarget(target, mode string) (effective string, notComparab
 }
 
 func ApplyTarget(result ToolResult, target, effective string, notComparable bool) ToolResult {
+	return ApplyTargetMode(result, target, effective, "manifest", notComparable)
+}
+
+func ApplyTargetMode(result ToolResult, target, effective, mode string, notComparable bool) ToolResult {
 	result.Target = target
 	result.EffectiveTarget = effective
+	result.TargetMode = mode
 	result.NotComparable = notComparable
 	if notComparable {
-		result.Notes = append(result.Notes, "manifest target differs from effective external-tool target")
+		result.Notes = append(result.Notes, "manifest target differs from effective tool target")
 	}
 	return result
 }
@@ -251,11 +271,71 @@ func Write(path string, results []ToolResult) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(Study{SchemaVersion: "1", Results: results}, "", "  ")
+	data, err := json.MarshalIndent(Study{SchemaVersion: "1", Comparability: BuildComparability(results), Results: results}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+func BuildComparability(results []ToolResult) Comparability {
+	comp := Comparability{ApplesToApples: true, ManifestEquivalent: true}
+	effectiveTargets := map[string]bool{}
+	targetModes := map[string]bool{}
+	for _, result := range results {
+		target := result.Target
+		effective := result.EffectiveTarget
+		mode := result.TargetMode
+		if mode == "" {
+			mode = "manifest"
+		}
+		if target == "" && effective == "" {
+			comp.ApplesToApples = false
+			comp.ManifestEquivalent = false
+			comp.Warnings = appendUnique(comp.Warnings, "target_metadata_missing")
+			continue
+		}
+		if effective == "" {
+			effective = target
+		}
+		effectiveTargets[effective] = true
+		targetModes[mode] = true
+		if target != effective || result.NotComparable {
+			comp.ManifestEquivalent = false
+		}
+	}
+	comp.EffectiveTargets = sortedKeys(effectiveTargets)
+	comp.TargetModes = sortedKeys(targetModes)
+	if len(comp.EffectiveTargets) > 1 {
+		comp.ApplesToApples = false
+		comp.Warnings = appendUnique(comp.Warnings, "effective_target_mismatch")
+	}
+	if len(comp.TargetModes) > 1 {
+		comp.ApplesToApples = false
+		comp.Warnings = appendUnique(comp.Warnings, "target_mode_mismatch")
+	}
+	if !comp.ManifestEquivalent {
+		comp.Warnings = appendUnique(comp.Warnings, "effective_target_differs_from_manifest")
+	}
+	return comp
+}
+
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func readJSON(path string, out any) error {

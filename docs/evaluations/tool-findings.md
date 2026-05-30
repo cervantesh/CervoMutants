@@ -15,6 +15,11 @@ Each tool section should answer:
 - concrete CervoMutant improvements derived from the finding;
 - comparison harness rules needed for fair future runs.
 
+All future tool runs must follow the
+[mutation tool comparison protocol](tool-comparison-protocol.md). Do not
+summarize speed or score as a fairness claim unless the compared rows share the
+same `effective_target` and `target_mode`.
+
 ## Gremlins
 
 Primary references in this repo:
@@ -165,6 +170,15 @@ Implementation status:
   comparisons.
 - Implemented `effective_target` and `not_comparable` metadata for comparison
   output.
+- Implemented study-level `comparability` metadata with `apples_to_apples`,
+  `manifest_equivalent`, `effective_targets`, `target_modes`, and warnings.
+- Implemented CervoMutant target metadata in `cervomut compare` so CervoMutant
+  and external tools can be normalized together instead of normalizing only
+  Gremlins.
+- Updated the pool comparison harness with `CompareTargetMode package-root` so
+  CervoMutant, Gremlins, gomu, and go-mutesting can all receive the same
+  package-root effective target when the study is meant to be fair.
+- Added agent-facing comparison protocol instructions to `AGENTS.md`.
 - Implemented budget scheduling tie-breaks that prioritize lower timeout-risk
   operators within the same recommendation class.
 - Re-ran the small 10-repo pool in WSL2 after these changes. Denominator health
@@ -175,8 +189,6 @@ Implementation status:
 
 Remaining implementation gap:
 
-- Parse `partial-mutation-report.json` in the comparison harness when
-  `mutation-report.json` is absent so timeout rows retain observed denominators.
 - Cap or segment very large partial reports; `jsonparser` produced a useful but
   large checkpoint around 75 MB.
 

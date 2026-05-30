@@ -117,6 +117,42 @@ func TestCompareCommandRecordsGremlinsEffectiveTarget(t *testing.T) {
 	}
 }
 
+func TestCompareCommandRecordsApplesToApplesPackageRootMode(t *testing.T) {
+	dir := t.TempDir()
+	cervo := filepath.Join(dir, "cervo.json")
+	gremlins := filepath.Join(dir, "gremlins.json")
+	out := filepath.Join(dir, "compare.json")
+	if err := os.WriteFile(cervo, []byte(`{"summary":{"total":1,"killed":1,"score":100}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gremlins, []byte(`{"mutants_total":1,"mutants_killed":1,"mutants_lived":0,"test_efficacy":100}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{
+		"compare",
+		"--cervomut", cervo,
+		"--cervomut-target", "./...",
+		"--cervomut-target-mode", "package-root",
+		"--gremlins", gremlins,
+		"--gremlins-target", "./...",
+		"--gremlins-target-mode", "package-root",
+		"--out", out,
+	})
+	if err != nil {
+		t.Fatalf("compare returned error: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("comparison output missing: %v", err)
+	}
+	for _, want := range []string{`"apples_to_apples": true`, `"manifest_equivalent": false`, `"target_modes": [`, `"package-root"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("comparison output missing %q: %s", want, data)
+		}
+	}
+}
+
 func writeCLIFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
