@@ -75,7 +75,7 @@ SonarQube Community Build 26.5.0.122743
 SonarScanner CLI 8.0.1.6346
 ```
 
-Result after issue #31 changes:
+Initial result before the issue #31 quality work:
 
 | Metric | Value |
 | --- | ---: |
@@ -97,9 +97,20 @@ Implemented in this pass:
 - Documented intentional no-op cleanup paths for process limits and mutation
   preparation.
 
-Remaining Sonar work is mostly larger refactoring:
+Final verified result after the issue #31 quality work:
 
-- reduce cognitive complexity in CLI, discovery, engine, mutator, and
-  quarantine flows;
-- replace repeated mutator/operator string literals with constants;
-- reduce long parameter lists in mutator helpers.
+| Metric | Value |
+| --- | ---: |
+| Bugs | 0 |
+| Vulnerabilities | 0 |
+| Coverage | 90.7% |
+| Duplicated lines density | 0.0% |
+| Open code smells | 0 |
+
+The final pass also ran:
+
+```powershell
+go test ./... -coverprofile=coverage.out
+go vet ./...
+staticcheck ./...
+```
