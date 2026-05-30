@@ -12,4 +12,6 @@ func hasProcessLimits(resources config.Resources) bool {
 	return resources.MaxProcessMemoryMB > 0 || resources.MaxProcesses > 0
 }
 
-func noopProcessLimitCleanup() {}
+func noopProcessLimitCleanup() {
+	// No process resources were acquired on platforms without process-limit support.
+}

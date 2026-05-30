@@ -43,6 +43,9 @@ func (r GoTestRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 	} else if err == nil {
 		status = engine.StatusSurvived
 		reason = "tests passed with mutant applied"
+	} else if strings.Contains(text, "[build failed]") || strings.Contains(text, "setup failed") {
+		status = engine.StatusCompileError
+		reason = "test command failed before running assertions"
 	} else if strings.Contains(text, "FAIL") {
 		status = engine.StatusKilled
 	} else {

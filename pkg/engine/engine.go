@@ -994,17 +994,17 @@ func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []str
 	}
 	workdir, err := isolate.CopyModule(mutant.Module)
 	if err != nil {
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	cleanup := func() { _ = isolate.Cleanup(workdir) }
 	targetFile, err := isolate.ContainedTargetPath(mutant.Module, workdir, mutant.File)
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := applyDiffReplacement(targetFile, mutant); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	return workdir, command, cleanup, nil
 }
@@ -1012,31 +1012,31 @@ func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []str
 func prepareOverlayMutation(mutant Mutant, command []string) (string, []string, func(), error) {
 	tmp, err := os.MkdirTemp("", "cervomut-overlay-*")
 	if err != nil {
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 	rel, err := filepath.Rel(mutant.Module, mutant.File)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		cleanup()
-		return "", nil, func() {}, errors.New("mutant file is outside module")
+		return "", nil, noopCleanup, errors.New("mutant file is outside module")
 	}
 	mutatedPath := filepath.Join(tmp, rel)
 	if err := os.MkdirAll(filepath.Dir(mutatedPath), 0o755); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	data, err := os.ReadFile(mutant.File)
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := os.WriteFile(mutatedPath, data, 0o644); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := applyDiffReplacement(mutatedPath, mutant); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	overlayPath := filepath.Join(tmp, "overlay.json")
 	overlay := struct {
@@ -1045,13 +1045,17 @@ func prepareOverlayMutation(mutant Mutant, command []string) (string, []string, 
 	overlayData, err := json.MarshalIndent(overlay, "", "  ")
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := os.WriteFile(overlayPath, overlayData, 0o644); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	return mutant.Module, withOverlayFlag(command, overlayPath), cleanup, nil
+}
+
+func noopCleanup() {
+	// No temporary resources were allocated before the failure.
 }
 
 func withOverlayFlag(command []string, overlayPath string) []string {
