@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/baseline"
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
@@ -21,6 +23,15 @@ import (
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/report"
 )
 
+const (
+	configFileName           = "cervomut.yaml"
+	mutationReportFileName   = "mutation-report.json"
+	flagTestTimeout          = "test-timeout"
+	flagMaxMutants           = "max-mutants"
+	flagMaxProcessMemoryMB   = "max-process-memory-mb"
+	reportOutputDirectoryDoc = "report output directory"
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -28,7 +39,13 @@ func main() {
 	}
 }
 
-func run(args []string) error {
+func run(args []string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			stack := strings.TrimSpace(string(debug.Stack()))
+			err = fmt.Errorf("internal_error: unexpected panic: %v\n%s", recovered, stack)
+		}
+	}()
 	if len(args) == 0 {
 		usage()
 		return nil
@@ -74,10 +91,10 @@ func usage() {
 }
 
 func cmdInit() error {
-	if _, err := os.Stat("cervomut.yaml"); err == nil {
-		return fmt.Errorf("cervomut.yaml already exists")
+	if _, err := os.Stat(configFileName); err == nil {
+		return fmt.Errorf("%s already exists", configFileName)
 	}
-	return os.WriteFile("cervomut.yaml", []byte(defaultConfigYAML()), 0o644)
+	return os.WriteFile(configFileName, []byte(defaultConfigYAML()), 0o644)
 }
 
 func cmdDoctor() error {
@@ -88,6 +105,8 @@ func cmdDoctor() error {
 		if !check.OK {
 			status = "fail"
 			ok = false
+		} else if check.Severity == "warn" {
+			status = "warn"
 		}
 		fmt.Printf("%s %s %s", status, check.Name, check.Message)
 		if !strings.HasSuffix(check.Message, "\n") {
@@ -116,73 +135,146 @@ func cmdAffected(args []string) error {
 }
 
 func cmdRun(args []string) error {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	dryRun := fs.Bool("dry-run", false, "only discover mutants")
-	scope := fs.String("scope", "", "scope mode")
-	since := fs.String("since", "", "git base")
-	budget := fs.Duration("budget", 0, "run budget")
-	maxMutants := fs.Int("max-mutants", 0, "max mutants")
-	sample := fs.String("sample", "", "sampling mode")
-	reportFormats := fs.String("report", "", "comma-separated report formats")
-	out := fs.String("out", "", "report output directory")
-	workers := fs.Int("workers", 0, "parallel mutation workers")
-	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
-	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, nightly, or campaign")
-	profile := fs.String("profile", "", "mutator profile")
-	prefilter := fs.Bool("coverage-prefilter", false, "use coverage profile as a prefilter")
-	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"scope": true, "since": true, "budget": true, "max-mutants": true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true,
-	})); err != nil {
-		return err
-	}
-	_ = since
-	cfg := loadConfigIfPresent()
-	if *policy != "" {
-		cfg.Policy = *policy
-		cfg = config.ApplyPolicy(cfg)
-	}
-	if *scope != "" {
-		cfg.Scope.Mode = *scope
-	}
-	if *profile != "" {
-		cfg.Mutators.Profile = *profile
-	}
-	if *prefilter {
-		cfg.Selection.Prefilter = true
-	}
-	if *budget > 0 {
-		cfg.Execution.Budget = *budget
-	}
-	if *maxMutants > 0 {
-		cfg.Limits.MaxMutants = *maxMutants
-	}
-	if *sample != "" {
-		cfg.Limits.Sample = *sample
-	}
-	if *workers > 0 {
-		cfg.Execution.Workers = *workers
-	}
-	if *isolation != "" {
-		cfg.Execution.Isolation = *isolation
-	}
-	if *reportFormats != "" {
-		cfg.Reports.Formats = strings.Split(*reportFormats, ",")
-	}
-	if *out != "" {
-		cfg.Reports.Output = *out
-		cfg.Cache.Path = filepath.Join(*out, "cache")
-		cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
-		cfg.Selection.TimingsPath = filepath.Join(*out, "timings.json")
-		cfg.History.Path = filepath.Join(*out, "history.json")
-	}
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-	result, err := engine.New(cfg).Run(context.Background(), engine.RunRequest{Targets: fs.Args(), DryRun: *dryRun})
+	opts, targets, err := parseRunOptions(args)
 	if err != nil {
 		return err
 	}
-	if *dryRun {
+	cfg := loadConfigIfPresent()
+	applyRunOptions(&cfg, opts)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	result, err := engine.New(cfg).Run(context.Background(), engine.RunRequest{Targets: targets, DryRun: opts.dryRun})
+	if err != nil {
+		return err
+	}
+	return writeRunResult(cfg, result, opts.dryRun)
+}
+
+type runOptions struct {
+	dryRun           bool
+	scope            string
+	budget           flagDuration
+	testTimeout      flagDuration
+	maxMutants       int
+	sample           string
+	reportFormats    string
+	out              string
+	workers          int
+	isolation        string
+	policy           string
+	profile          string
+	prefilter        bool
+	resume           bool
+	maxProcessMemory int
+}
+
+type flagDuration struct {
+	value time.Duration
+	set   bool
+}
+
+func parseRunOptions(args []string) (runOptions, []string, error) {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	opts := runOptions{}
+	fs.BoolVar(&opts.dryRun, "dry-run", false, "only discover mutants")
+	scope := fs.String("scope", "", "scope mode")
+	since := fs.String("since", "", "git base")
+	budget := fs.Duration("budget", 0, "run budget")
+	testTimeout := fs.Duration(flagTestTimeout, 0, "per-mutant go test timeout")
+	maxMutants := fs.Int(flagMaxMutants, 0, "max mutants")
+	sample := fs.String("sample", "", "sampling mode")
+	reportFormats := fs.String("report", "", "comma-separated report formats")
+	out := fs.String("out", "", reportOutputDirectoryDoc)
+	workers := fs.Int("workers", 0, "parallel mutation workers")
+	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
+	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, comparison-safe, nightly, or campaign")
+	profile := fs.String("profile", "", "mutator profile")
+	prefilter := fs.Bool("coverage-prefilter", false, "use coverage profile as a prefilter")
+	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
+	maxProcessMemory := fs.Int(flagMaxProcessMemoryMB, 0, "best-effort process-tree memory cap in MB")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"scope": true, "since": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true, flagMaxProcessMemoryMB: true,
+	})); err != nil {
+		return runOptions{}, nil, err
+	}
+	opts.scope = *scope
+	_ = since
+	opts.budget = flagDuration{value: *budget, set: *budget > 0}
+	opts.testTimeout = flagDuration{value: *testTimeout, set: *testTimeout > 0}
+	opts.maxMutants = *maxMutants
+	opts.sample = *sample
+	opts.reportFormats = *reportFormats
+	opts.out = *out
+	opts.workers = *workers
+	opts.isolation = *isolation
+	opts.policy = *policy
+	opts.profile = *profile
+	opts.prefilter = *prefilter
+	opts.resume = *resume
+	opts.maxProcessMemory = *maxProcessMemory
+	return opts, fs.Args(), nil
+}
+
+func applyRunOptions(cfg *config.Config, opts runOptions) {
+	if opts.policy != "" {
+		cfg.Policy = opts.policy
+		*cfg = config.ApplyPolicy(*cfg)
+	}
+	applyRunOverrides(cfg, opts)
+	applyRunOutput(cfg, opts.out)
+}
+
+func applyRunOverrides(cfg *config.Config, opts runOptions) {
+	setString(&cfg.Scope.Mode, opts.scope)
+	setString(&cfg.Mutators.Profile, opts.profile)
+	setString(&cfg.Limits.Sample, opts.sample)
+	setString(&cfg.Execution.Isolation, opts.isolation)
+	if opts.prefilter {
+		cfg.Selection.Prefilter = true
+	}
+	if opts.resume {
+		cfg.Execution.Resume = true
+	}
+	if opts.maxProcessMemory > 0 {
+		cfg.Execution.Resources.MaxProcessMemoryMB = opts.maxProcessMemory
+	}
+	if opts.budget.set {
+		cfg.Execution.Budget = opts.budget.value
+	}
+	if opts.testTimeout.set {
+		cfg.Tests.Timeout = opts.testTimeout.value
+	}
+	if opts.maxMutants > 0 {
+		cfg.Limits.MaxMutants = opts.maxMutants
+	}
+	if opts.workers > 0 {
+		cfg.Execution.Workers = opts.workers
+	}
+	if opts.reportFormats != "" {
+		cfg.Reports.Formats = strings.Split(opts.reportFormats, ",")
+	}
+}
+
+func applyRunOutput(cfg *config.Config, out string) {
+	if out == "" {
+		return
+	}
+	cfg.Reports.Output = out
+	cfg.Cache.Path = filepath.Join(out, "cache")
+	cfg.Selection.CoverageProfile = filepath.Join(out, "coverage.out")
+	cfg.Selection.TimingsPath = filepath.Join(out, "timings.json")
+	cfg.History.Path = filepath.Join(out, "history.json")
+}
+
+func setString(target *string, value string) {
+	if value != "" {
+		*target = value
+	}
+}
+
+func writeRunResult(cfg config.Config, result engine.RunResult, dryRun bool) error {
+	if dryRun {
 		data, _ := report.JSON(result)
 		fmt.Println(string(data))
 		return nil
@@ -207,13 +299,16 @@ func cmdEval(args []string) error {
 	out := fs.String("out", ".cervomut/evaluation", "evaluation output directory")
 	framework := fs.String("framework", "cervosoft", "evaluation framework")
 	budget := fs.Duration("budget", 0, "run budget")
-	maxMutants := fs.Int("max-mutants", 0, "max mutants")
+	testTimeout := fs.Duration(flagTestTimeout, 0, "per-mutant go test timeout")
+	maxMutants := fs.Int(flagMaxMutants, 0, "max mutants")
 	sample := fs.String("sample", "", "sampling mode")
 	workers := fs.Int("workers", 0, "parallel mutation workers")
 	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
-	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, nightly, or campaign")
+	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, comparison-safe, nightly, or campaign")
+	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
+	maxProcessMemory := fs.Int(flagMaxProcessMemoryMB, 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"out": true, "framework": true, "budget": true, "max-mutants": true, "sample": true, "workers": true, "isolation": true, "policy": true,
+		"out": true, "framework": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "workers": true, "isolation": true, "policy": true, flagMaxProcessMemoryMB: true,
 	})); err != nil {
 		return err
 	}
@@ -222,6 +317,12 @@ func cmdEval(args []string) error {
 		cfg.Policy = *policy
 		cfg = config.ApplyPolicy(cfg)
 	}
+	if *resume {
+		cfg.Execution.Resume = true
+	}
+	if *maxProcessMemory > 0 {
+		cfg.Execution.Resources.MaxProcessMemoryMB = *maxProcessMemory
+	}
 	cfg.Reports.Output = *out
 	cfg.Cache.Path = filepath.Join(*out, "cache")
 	cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
@@ -229,6 +330,9 @@ func cmdEval(args []string) error {
 	cfg.History.Path = filepath.Join(*out, "history.json")
 	if *budget > 0 {
 		cfg.Execution.Budget = *budget
+	}
+	if *testTimeout > 0 {
+		cfg.Tests.Timeout = *testTimeout
 	}
 	if *maxMutants > 0 {
 		cfg.Limits.MaxMutants = *maxMutants
@@ -270,54 +374,118 @@ func cmdEval(args []string) error {
 }
 
 func cmdCompare(args []string) error {
-	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
-	cervo := fs.String("cervomut", "", "cervo-mutant mutation-report.json")
-	gremlins := fs.String("gremlins", "", "Gremlins report JSON")
-	gomu := fs.String("gomu", "", "gomu text or JSON summary")
-	goMutesting := fs.String("go-mutesting", "", "go-mutesting text summary")
-	out := fs.String("out", ".cervomut/evaluation/tool-comparison.json", "normalized comparison output")
-	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"cervomut": true, "gremlins": true, "gomu": true, "go-mutesting": true, "out": true,
-	})); err != nil {
+	opts, err := parseCompareOptions(args)
+	if err != nil {
 		return err
 	}
-	var results []extcompare.ToolResult
-	if *cervo != "" {
-		result, err := extcompare.ParseCervo(*cervo)
-		if err != nil {
-			return err
-		}
-		results = append(results, result)
-	}
-	if *gremlins != "" {
-		result, err := extcompare.ParseGremlins(*gremlins)
-		if err != nil {
-			return err
-		}
-		results = append(results, result)
-	}
-	if *gomu != "" {
-		result, err := extcompare.ParseGomu(*gomu)
-		if err != nil {
-			return err
-		}
-		results = append(results, result)
-	}
-	if *goMutesting != "" {
-		result, err := extcompare.ParseGoMutesting(*goMutesting)
-		if err != nil {
-			return err
-		}
-		results = append(results, result)
+	results, err := loadComparisonResults(opts)
+	if err != nil {
+		return err
 	}
 	if len(results) == 0 {
 		return fmt.Errorf("compare requires at least one tool report")
 	}
-	if err := extcompare.Write(*out, results); err != nil {
+	if err := extcompare.Write(opts.out, results); err != nil {
 		return err
 	}
-	fmt.Printf("Tool comparison written to %s\n", *out)
+	fmt.Printf("Tool comparison written to %s\n", opts.out)
 	return nil
+}
+
+type compareOptions struct {
+	cervo                   string
+	cervoTarget             string
+	cervoEffectiveTarget    string
+	cervoTargetMode         string
+	gremlins                string
+	gremlinsTarget          string
+	gremlinsEffectiveTarget string
+	gremlinsTargetMode      string
+	gomu                    string
+	goMutesting             string
+	out                     string
+}
+
+func parseCompareOptions(args []string) (compareOptions, error) {
+	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
+	opts := compareOptions{}
+	cervo := fs.String("cervomut", "", "cervo-mutant "+mutationReportFileName)
+	cervoTarget := fs.String("cervomut-target", "", "original manifest target used for CervoMutant comparison")
+	cervoEffectiveTarget := fs.String("cervomut-effective-target", "", "effective target passed to CervoMutant")
+	cervoTargetMode := fs.String("cervomut-target-mode", "manifest", "CervoMutant target normalization mode: manifest or package-root")
+	gremlins := fs.String("gremlins", "", "Gremlins report JSON")
+	gremlinsTarget := fs.String("gremlins-target", "", "original manifest target used for Gremlins comparison")
+	gremlinsEffectiveTarget := fs.String("gremlins-effective-target", "", "effective target passed to Gremlins")
+	gremlinsTargetMode := fs.String("gremlins-target-mode", "manifest", "Gremlins target normalization mode: manifest, package-root, or gremlins-package-root")
+	gomu := fs.String("gomu", "", "gomu text or JSON summary")
+	goMutesting := fs.String("go-mutesting", "", "go-mutesting text summary")
+	out := fs.String("out", ".cervomut/evaluation/tool-comparison.json", "normalized comparison output")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"cervomut": true, "cervomut-target": true, "cervomut-effective-target": true, "cervomut-target-mode": true, "gremlins": true, "gremlins-target": true, "gremlins-effective-target": true, "gremlins-target-mode": true, "gomu": true, "go-mutesting": true, "out": true,
+	})); err != nil {
+		return compareOptions{}, err
+	}
+	opts.cervo = *cervo
+	opts.cervoTarget = *cervoTarget
+	opts.cervoEffectiveTarget = *cervoEffectiveTarget
+	opts.cervoTargetMode = *cervoTargetMode
+	opts.gremlins = *gremlins
+	opts.gremlinsTarget = *gremlinsTarget
+	opts.gremlinsEffectiveTarget = *gremlinsEffectiveTarget
+	opts.gremlinsTargetMode = *gremlinsTargetMode
+	opts.gomu = *gomu
+	opts.goMutesting = *goMutesting
+	opts.out = *out
+	return opts, nil
+}
+
+func loadComparisonResults(opts compareOptions) ([]extcompare.ToolResult, error) {
+	var results []extcompare.ToolResult
+	if opts.cervo != "" {
+		result, err := parseTargetedReport(opts.cervo, opts.cervoTarget, opts.cervoEffectiveTarget, opts.cervoTargetMode, extcompare.ParseCervo, extcompare.NormalizeTarget)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	if opts.gremlins != "" {
+		result, err := parseTargetedReport(opts.gremlins, opts.gremlinsTarget, opts.gremlinsEffectiveTarget, opts.gremlinsTargetMode, extcompare.ParseGremlins, extcompare.NormalizeGremlinsTarget)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	for _, external := range []struct {
+		path  string
+		parse func(string) (extcompare.ToolResult, error)
+	}{{opts.gomu, extcompare.ParseGomu}, {opts.goMutesting, extcompare.ParseGoMutesting}} {
+		if external.path == "" {
+			continue
+		}
+		result, err := external.parse(external.path)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func parseTargetedReport(path, target, effective, mode string, parse func(string) (extcompare.ToolResult, error), normalize func(string, string) (string, bool)) (extcompare.ToolResult, error) {
+	result, err := parse(path)
+	if err != nil {
+		return extcompare.ToolResult{}, err
+	}
+	notComparable := false
+	if target != "" && effective == "" {
+		effective, notComparable = normalize(target, mode)
+	} else if target != "" && effective != "" && target != effective {
+		notComparable = true
+	}
+	if target != "" || effective != "" {
+		result = extcompare.ApplyTargetMode(result, target, effective, mode, notComparable)
+	}
+	return result, nil
 }
 
 func cmdBaseline(args []string) error {
@@ -327,43 +495,52 @@ func cmdBaseline(args []string) error {
 	cfg := loadConfigIfPresent()
 	switch args[0] {
 	case "update":
-		data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, "mutation-report.json"))
-		if err != nil {
-			return err
-		}
-		var result engine.RunResult
-		if err := json.Unmarshal(data, &result); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(cfg.Baseline.Path), 0o755); err != nil {
-			return err
-		}
-		return baseline.Save(cfg.Baseline.Path, result)
+		return updateBaseline(cfg)
 	case "compare":
-		prev, ok, err := baseline.Load(cfg.Baseline.Path)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("baseline not found")
-		}
-		data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, "mutation-report.json"))
-		if err != nil {
-			return err
-		}
-		var current engine.RunResult
-		if err := json.Unmarshal(data, &current); err != nil {
-			return err
-		}
-		return json.NewEncoder(os.Stdout).Encode(baseline.Compare(prev, current))
+		return compareBaselineCommand(cfg)
 	default:
 		return fmt.Errorf("unknown baseline command %q", args[0])
 	}
 }
 
+func updateBaseline(cfg config.Config) error {
+	result, err := readRunReport(filepath.Join(cfg.Reports.Output, mutationReportFileName))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Baseline.Path), 0o755); err != nil {
+		return err
+	}
+	return baseline.Save(cfg.Baseline.Path, result)
+}
+
+func compareBaselineCommand(cfg config.Config) error {
+	prev, ok, err := baseline.Load(cfg.Baseline.Path)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("baseline not found")
+	}
+	current, err := readRunReport(filepath.Join(cfg.Reports.Output, mutationReportFileName))
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(baseline.Compare(prev, current))
+}
+
+func readRunReport(path string) (engine.RunResult, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return engine.RunResult{}, err
+	}
+	var result engine.RunResult
+	return result, json.Unmarshal(data, &result)
+}
+
 func cmdReport(args []string) error {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
-	out := fs.String("out", "", "report output directory")
+	out := fs.String("out", "", reportOutputDirectoryDoc)
 	if err := fs.Parse(reorderFlags(args, map[string]bool{"out": true})); err != nil {
 		return err
 	}
@@ -374,7 +551,7 @@ func cmdReport(args []string) error {
 	if *out != "" {
 		cfg.Reports.Output = *out
 	}
-	data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, "mutation-report.json"))
+	data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, mutationReportFileName))
 	if err != nil {
 		return err
 	}
@@ -399,7 +576,7 @@ func cmdReport(args []string) error {
 
 func cmdShow(args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
-	out := fs.String("out", "", "report output directory")
+	out := fs.String("out", "", reportOutputDirectoryDoc)
 	if err := fs.Parse(reorderFlags(args, map[string]bool{"out": true})); err != nil {
 		return err
 	}
@@ -451,8 +628,8 @@ func cmdListMutators() error {
 }
 
 func loadConfigIfPresent() config.Config {
-	if _, err := os.Stat("cervomut.yaml"); err == nil {
-		if cfg, err := config.Load("cervomut.yaml"); err == nil {
+	if _, err := os.Stat(configFileName); err == nil {
+		if cfg, err := config.Load(configFileName); err == nil {
 			return cfg
 		}
 	}
@@ -460,7 +637,7 @@ func loadConfigIfPresent() config.Config {
 }
 
 func loadLastRun(cfg config.Config) (engine.RunResult, error) {
-	data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, "mutation-report.json"))
+	data, err := os.ReadFile(filepath.Join(cfg.Reports.Output, mutationReportFileName))
 	if err != nil {
 		return engine.RunResult{}, err
 	}
@@ -488,6 +665,11 @@ execution:
   isolation: temp-workdir
   budget: 0s
   fail_fast: false
+  resume: false
+  checkpoint_includes: ["testdata/**", "fixtures/**"]
+  resources:
+    max_process_memory_mb: 0
+    max_processes: 0
 selection:
   mode: package
   prefilter: false

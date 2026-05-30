@@ -27,8 +27,10 @@ import (
 )
 
 type Engine struct {
-	cfg      config.Config
-	timingMu sync.Mutex
+	cfg             config.Config
+	timingMu        sync.Mutex
+	checkpointMu    sync.Mutex
+	checkpointScope []Mutant
 }
 
 func New(cfg config.Config) *Engine {
@@ -36,15 +38,8 @@ func New(cfg config.Config) *Engine {
 }
 
 func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
-	targets := req.Targets
-	if len(targets) == 0 {
-		targets = e.cfg.Scope.Include
-	}
-	discovered, err := discover.Discover(targets)
-	if err != nil {
-		return RunResult{}, err
-	}
-	mutants, err := e.generateMutants(discovered)
+	targets := e.runTargets(req.Targets)
+	mutants, err := e.discoverMutants(targets)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -52,23 +47,21 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if e.cfg.Limits.MaxMutants > 0 && len(mutants) > e.cfg.Limits.MaxMutants {
 		mutants = mutants[:e.cfg.Limits.MaxMutants]
 	}
+	e.setCheckpointScope(mutants)
 	quarantined, expired, err := e.loadQuarantine()
 	if err != nil {
 		return RunResult{}, err
 	}
 	result := RunResult{
 		SchemaVersion: "1",
+		Environment:   e.environment(len(mutants)),
+		Checkpoint:    e.checkpoint(mutants, "final"),
 		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder},
 		Mutants:       []MutantResult{},
 		Quarantine:    QuarantineStats{Active: len(quarantined), Expired: expired},
 	}
 	if req.DryRun {
-		for _, mutant := range mutants {
-			result.Mutants = append(result.Mutants, MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "dry-run", Mutant: mutant})
-		}
-		rankSurvivors(result.Mutants)
-		result.Summary = summarize(result.Mutants)
-		return result, nil
+		return dryRunResult(result, mutants), nil
 	}
 	baselineResult, err := e.runBaseline(ctx, targets)
 	if err != nil && e.cfg.Tests.BaselineRequired {
@@ -98,7 +91,34 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	return result, nil
 }
 
+func (e *Engine) runTargets(targets []string) []string {
+	if len(targets) == 0 {
+		return e.cfg.Scope.Include
+	}
+	return targets
+}
+
+func (e *Engine) discoverMutants(targets []string) ([]Mutant, error) {
+	discovered, err := discover.Discover(targets)
+	if err != nil {
+		return nil, err
+	}
+	return e.generateMutants(discovered)
+}
+
+func dryRunResult(result RunResult, mutants []Mutant) RunResult {
+	for _, mutant := range mutants {
+		result.Mutants = append(result.Mutants, MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "dry-run", Mutant: mutant})
+	}
+	rankSurvivors(result.Mutants)
+	result.Summary = summarize(result.Mutants)
+	return result
+}
+
 func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	if e.cfg.Execution.Resume {
+		return e.runMutantsWithResume(ctx, mutants, quarantined)
+	}
 	workers := e.workerCount(len(mutants))
 	if workers <= 1 {
 		return e.runMutantsSerial(ctx, mutants, quarantined)
@@ -106,20 +126,60 @@ func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined m
 	return e.runMutantsParallel(ctx, mutants, quarantined, workers)
 }
 
+func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	completed, err := e.loadPartialResults(mutants)
+	if err != nil {
+		return nil, err
+	}
+	if len(completed) == 0 {
+		workers := e.workerCount(len(mutants))
+		if workers <= 1 {
+			return e.runMutantsSerial(ctx, mutants, quarantined)
+		}
+		return e.runMutantsParallel(ctx, mutants, quarantined, workers)
+	}
+	results := make([]MutantResult, 0, len(mutants))
+	remaining := make([]Mutant, 0, len(mutants))
+	for _, mutant := range mutants {
+		if result, ok := completed[mutant.ID]; ok {
+			result.PreviousStatus = result.Status
+			result.Status = StatusCached
+			result.StatusReason = "result reused from partial checkpoint"
+			results = append(results, result)
+			continue
+		}
+		remaining = append(remaining, mutant)
+	}
+	next, err := e.runMutantsSerial(ctx, remaining, quarantined)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, next...)
+	return orderResults(mutants, results), nil
+}
+
 func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
 	results := make([]MutantResult, 0, len(mutants))
 	start := time.Now()
-	for _, mutant := range mutants {
+	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
-			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant})
+			result := MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
+			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		if result, ok := e.suppressedResult(mutant); ok {
 			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		if e.budgetExhausted(start) {
-			results = append(results, MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant})
+			result := MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant}
+			results = append(results, result)
+			e.recordProgress(start, i+1, len(mutants), result)
+			e.writePartialResults(results)
 			continue
 		}
 		mutantResult, err := e.runMutant(ctx, mutant)
@@ -127,6 +187,8 @@ func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarant
 			return nil, err
 		}
 		results = append(results, mutantResult)
+		e.recordProgress(start, i+1, len(mutants), mutantResult)
+		e.writePartialResults(results)
 	}
 	return results, nil
 }
@@ -149,6 +211,13 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	startParallelWorkers(ctx, workers, jobs, done, e.runMutant)
+	start := time.Now()
+	dispatchParallelJobs(e, mutants, quarantined, results, jobs, start)
+	return e.collectParallelResults(done, results, len(mutants), start, cancel)
+}
+
+func startParallelWorkers(ctx context.Context, workers int, jobs <-chan indexedMutant, done chan<- indexedResult, run func(context.Context, Mutant) (MutantResult, error)) {
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -159,7 +228,7 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 					done <- indexedResult{index: job.index, err: ctx.Err()}
 					continue
 				}
-				result, err := e.runMutant(ctx, job.mutant)
+				result, err := run(ctx, job.mutant)
 				done <- indexedResult{index: job.index, result: result, err: err}
 			}
 		}()
@@ -168,9 +237,9 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 		wg.Wait()
 		close(done)
 	}()
+}
 
-	dispatched := 0
-	start := time.Now()
+func dispatchParallelJobs(e *Engine, mutants []Mutant, quarantined map[string]bool, results []MutantResult, jobs chan<- indexedMutant, start time.Time) {
 	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
@@ -184,19 +253,23 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusSkipped, StatusReason: "budget exhausted", Mutant: mutant}
 			continue
 		}
-		dispatched++
 		jobs <- indexedMutant{index: i, mutant: mutant}
 	}
 	close(jobs)
+}
 
+func (e *Engine) collectParallelResults(done <-chan indexedResult, results []MutantResult, total int, start time.Time, cancel context.CancelFunc) ([]MutantResult, error) {
 	var firstErr error
+	completed := 0
 	for item := range done {
-		dispatched--
 		if item.err != nil && firstErr == nil {
 			firstErr = item.err
 			cancel()
 		}
 		results[item.index] = item.result
+		completed++
+		e.recordProgress(start, completed, total, item.result)
+		e.writePartialResults(compactedResults(results))
 	}
 	if firstErr != nil {
 		return nil, firstErr
@@ -238,9 +311,9 @@ func strongestSuppression(audits []SuppressionAudit) (SuppressionAudit, bool) {
 
 func suppressionPriority(action string) int {
 	switch action {
-	case "report-only":
+	case config.SuppressionReportOnly:
 		return 0
-	case "lower-priority":
+	case config.SuppressionLowerPriority:
 		return 1
 	case "quarantine-required":
 		return 2
@@ -263,6 +336,426 @@ func (e *Engine) workerCount(mutants int) int {
 		workers = 1
 	}
 	return workers
+}
+
+func (e *Engine) environment(mutants int) Environment {
+	wd, _ := os.Getwd()
+	env := Environment{
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		GoVersion:       runtime.Version(),
+		WorkingDir:      wd,
+		TempDir:         os.TempDir(),
+		Isolation:       e.cfg.Execution.Isolation,
+		Workers:         e.workerCount(mutants),
+		TestTimeout:     e.cfg.Tests.Timeout.String(),
+		GoFlags:         os.Getenv("GOFLAGS"),
+		GoMaxProcs:      os.Getenv("GOMAXPROCS"),
+		GoMemLimit:      os.Getenv("GOMEMLIMIT"),
+		CI:              os.Getenv("CI"),
+		WSL:             isWSL(),
+		CGroup:          cgroupSummary(),
+		WindowsOneDrive: runtime.GOOS == "windows" && pathMentionsOneDrive(wd),
+	}
+	if e.cfg.Execution.Resources.MaxProcessMemoryMB > 0 {
+		env.Extra = map[string]string{"max_process_memory_mb": strconv.Itoa(e.cfg.Execution.Resources.MaxProcessMemoryMB)}
+	}
+	if e.cfg.Execution.Budget > 0 {
+		env.Budget = e.cfg.Execution.Budget.String()
+	}
+	return env
+}
+
+func isWSL() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return false
+	}
+	text := strings.ToLower(string(data))
+	return strings.Contains(text, "microsoft") || strings.Contains(text, "wsl")
+}
+
+func cgroupSummary() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	line := lines[0]
+	if len(line) > 160 {
+		line = line[:160]
+	}
+	return line
+}
+
+func pathMentionsOneDrive(path string) bool {
+	return strings.Contains(strings.ToLower(path), "onedrive")
+}
+
+func (e *Engine) checkpoint(mutants []Mutant, reason string) Checkpoint {
+	ids := make([]string, 0, len(mutants))
+	for _, mutant := range mutants {
+		ids = append(ids, mutant.ID)
+	}
+	sort.Strings(ids)
+	cfg := struct {
+		Policy          string
+		MutatorProfile  string
+		SelectionMode   string
+		SelectionFilter bool
+		Isolation       string
+		TestCommand     []string
+		TestTimeout     string
+		GoVersion       string
+		GOFLAGS         string
+		Mutants         []string
+		Files           []string
+	}{
+		Policy:          e.cfg.Policy,
+		MutatorProfile:  e.cfg.Mutators.Profile,
+		SelectionMode:   e.cfg.Selection.Mode,
+		SelectionFilter: e.cfg.Selection.Prefilter,
+		Isolation:       e.cfg.Execution.Isolation,
+		TestCommand:     e.cfg.Tests.Command,
+		TestTimeout:     e.cfg.Tests.Timeout.String(),
+		GoVersion:       runtime.Version(),
+		GOFLAGS:         os.Getenv("GOFLAGS"),
+		Mutants:         ids,
+		Files:           e.checkpointFileFingerprints(mutants),
+	}
+	data, _ := json.Marshal(cfg)
+	return Checkpoint{Fingerprint: digestBytes(data), Mutants: len(ids), IncludesFileDigests: true, Reason: reason}
+}
+
+func (e *Engine) checkpointFileFingerprints(mutants []Mutant) []string {
+	modules := map[string]bool{}
+	for _, mutant := range mutants {
+		if mutant.Module != "" {
+			modules[mutant.Module] = true
+		}
+	}
+	var fingerprints []string
+	for module := range modules {
+		fingerprints = append(fingerprints, e.moduleCheckpointFingerprints(module)...)
+	}
+	sort.Strings(fingerprints)
+	return fingerprints
+}
+
+func (e *Engine) moduleCheckpointFingerprints(module string) []string {
+	var fingerprints []string
+	_ = filepath.WalkDir(module, func(path string, entry os.DirEntry, err error) error {
+		if skipCheckpointWalkEntry(entry, err) {
+			return checkpointDirAction(entry)
+		}
+		fingerprint, ok := e.checkpointFileFingerprint(module, path, entry.Name())
+		if ok {
+			fingerprints = append(fingerprints, fingerprint)
+		}
+		return nil
+	})
+	return fingerprints
+}
+
+func skipCheckpointWalkEntry(entry os.DirEntry, err error) bool {
+	return err != nil || entry == nil || entry.IsDir()
+}
+
+func checkpointDirAction(entry os.DirEntry) error {
+	if entry != nil && entry.IsDir() && shouldSkipCheckpointDir(entry.Name()) {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func (e *Engine) checkpointFileFingerprint(module, path, name string) (string, bool) {
+	if !e.checkpointIncludesFile(module, path, name) {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(module, path)
+	if err != nil {
+		rel = path
+	}
+	return filepath.ToSlash(rel) + ":" + digestBytes(data), true
+}
+
+func (e *Engine) checkpointIncludesFile(module, path, name string) bool {
+	if strings.HasSuffix(name, ".go") || name == "go.mod" || name == "go.sum" {
+		return true
+	}
+	rel, err := filepath.Rel(module, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, pattern := range e.cfg.Execution.CheckpointIncludes {
+		pattern = filepath.ToSlash(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		if globMatch(pattern, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func globMatch(pattern, rel string) bool {
+	for _, match := range []func(string, string) bool{directGlobMatch, recursivePrefixGlobMatch, recursiveSuffixGlobMatch, recursiveMiddleGlobMatch} {
+		if match(pattern, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func directGlobMatch(pattern, rel string) bool {
+	ok, err := filepath.Match(pattern, rel)
+	return err == nil && ok
+}
+
+func recursivePrefixGlobMatch(pattern, rel string) bool {
+	if !strings.Contains(pattern, "**/") {
+		return false
+	}
+	return directGlobMatch(strings.ReplaceAll(pattern, "**/", ""), rel)
+}
+
+func recursiveSuffixGlobMatch(pattern, rel string) bool {
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		return rel == prefix || strings.HasPrefix(rel, prefix+"/")
+	}
+	return false
+}
+
+func recursiveMiddleGlobMatch(pattern, rel string) bool {
+	if !strings.Contains(pattern, "/**/") {
+		return false
+	}
+	parts := strings.Split(pattern, "/**/")
+	if len(parts) != 2 || !strings.HasPrefix(rel, parts[0]+"/") {
+		return false
+	}
+	tail := strings.TrimPrefix(rel, parts[0]+"/")
+	return directGlobMatch(parts[1], tail)
+}
+
+func shouldSkipCheckpointDir(name string) bool {
+	switch name {
+	case ".git", ".cervomut", "vendor", "node_modules", "dist", "build":
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *Engine) setCheckpointScope(mutants []Mutant) {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	e.checkpointScope = append([]Mutant{}, mutants...)
+}
+
+func (e *Engine) currentCheckpointScope() []Mutant {
+	e.checkpointMu.Lock()
+	defer e.checkpointMu.Unlock()
+	return append([]Mutant{}, e.checkpointScope...)
+}
+
+func (e *Engine) checkpointFromResults(results []MutantResult, reason string) Checkpoint {
+	mutants := e.currentCheckpointScope()
+	if len(mutants) > 0 {
+		return e.checkpoint(mutants, reason)
+	}
+	mutants = make([]Mutant, 0, len(results))
+	for _, result := range results {
+		if result.Mutant.ID == "" {
+			continue
+		}
+		mutants = append(mutants, result.Mutant)
+	}
+	return e.checkpoint(mutants, reason)
+}
+
+func (e *Engine) recordProgress(start time.Time, completed, total int, result MutantResult) {
+	if total <= 0 || e.cfg.Reports.Output == "" {
+		return
+	}
+	event := ProgressEvent{
+		SchemaVersion: "1",
+		Time:          time.Now().UTC(),
+		Completed:     completed,
+		Total:         total,
+		MutantID:      result.MutantID,
+		Status:        result.Status,
+		Elapsed:       time.Since(start),
+		Remaining:     total - completed,
+	}
+	if completed > 0 {
+		perMutant := event.Elapsed / time.Duration(completed)
+		event.ETA = (perMutant * time.Duration(event.Remaining)).Round(time.Second).String()
+	}
+	event.ActiveMutant = result.MutantID
+	event.Message = fmt.Sprintf("mutant %d/%d %s %s eta=%s", completed, total, result.MutantID, result.Status, event.ETA)
+	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
+	_ = appendProgressEvent(filepath.Join(e.cfg.Reports.Output, "progress.jsonl"), event)
+	fmt.Fprintf(os.Stderr, "progress %d/%d %s %s eta=%s\n", completed, total, result.MutantID, result.Status, event.ETA)
+}
+
+func appendProgressEvent(path string, event ProgressEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) writePartialResults(results []MutantResult) {
+	if e.cfg.Reports.Output == "" {
+		return
+	}
+	run := RunResult{
+		SchemaVersion: "1",
+		Environment:   e.environment(len(results)),
+		Checkpoint:    e.checkpointFromResults(results, "partial"),
+		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder, "partial": true},
+		Mutants:       append([]MutantResult{}, results...),
+	}
+	rankSurvivors(run.Mutants)
+	run.Summary = summarize(run.Mutants)
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
+	_ = writeFileAtomic(filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json"), data, 0o644)
+	summary, err := json.MarshalIndent(struct {
+		SchemaVersion string         `json:"schema_version"`
+		Checkpoint    Checkpoint     `json:"checkpoint"`
+		Summary       Summary        `json:"summary"`
+		Thresholds    map[string]any `json:"thresholds"`
+	}{
+		SchemaVersion: "1",
+		Checkpoint:    run.Checkpoint,
+		Summary:       run.Summary,
+		Thresholds:    run.Thresholds,
+	}, "", "  ")
+	if err == nil {
+		_ = writeFileAtomic(filepath.Join(e.cfg.Reports.Output, "partial-summary.json"), summary, 0o644)
+	}
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func compactedResults(results []MutantResult) []MutantResult {
+	compacted := make([]MutantResult, 0, len(results))
+	for _, result := range results {
+		if result.MutantID == "" {
+			continue
+		}
+		compacted = append(compacted, result)
+	}
+	return compacted
+}
+
+func (e *Engine) loadPartialResults(mutants []Mutant) (map[string]MutantResult, error) {
+	results := map[string]MutantResult{}
+	if e.cfg.Reports.Output == "" {
+		return results, nil
+	}
+	path := filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return results, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var run RunResult
+	if err := json.Unmarshal(data, &run); err != nil {
+		return nil, fmt.Errorf("load partial checkpoint: %w", err)
+	}
+	want := e.checkpoint(mutants, "partial")
+	if run.Checkpoint.Fingerprint == "" {
+		return nil, errors.New("partial checkpoint is missing compatibility fingerprint; rerun without --resume")
+	}
+	if run.Checkpoint.Fingerprint != want.Fingerprint {
+		return nil, fmt.Errorf("partial checkpoint fingerprint mismatch: have %s want %s; rerun without --resume", run.Checkpoint.Fingerprint, want.Fingerprint)
+	}
+	for _, result := range run.Mutants {
+		if result.MutantID == "" {
+			continue
+		}
+		results[result.MutantID] = result
+	}
+	return results, nil
+}
+
+func orderResults(mutants []Mutant, results []MutantResult) []MutantResult {
+	byID := map[string]MutantResult{}
+	for _, result := range results {
+		byID[result.MutantID] = result
+	}
+	ordered := make([]MutantResult, 0, len(results))
+	for _, mutant := range mutants {
+		if result, ok := byID[mutant.ID]; ok {
+			ordered = append(ordered, result)
+		}
+	}
+	return ordered
 }
 
 func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedResult, error) {
@@ -357,6 +850,11 @@ func (e *Engine) scheduleMutants(mutants []Mutant) {
 			if left != right {
 				return left < right
 			}
+			left = timeoutRiskPriority(mutants[i])
+			right = timeoutRiskPriority(mutants[j])
+			if left != right {
+				return left < right
+			}
 		}
 		return mutants[i].ID < mutants[j].ID
 	})
@@ -377,37 +875,56 @@ func recommendationPriority(recommendation string) int {
 	}
 }
 
+func timeoutRiskPriority(mutant Mutant) int {
+	switch mutant.Operator {
+	case "conditionals-negation", "conditionals-boundary", "boolean-literals", "logical":
+		return 0
+	case "arithmetic-basic", "string-empty-literals", "nil-checks", "numeric-literals", "return-bool-literals", "assignment-arithmetic", "inc-dec":
+		return 1
+	case "error-returns":
+		return 2
+	case "literals", "returns", "loop-control", "slice-map-len-boundary":
+		return 3
+	default:
+		return 2
+	}
+}
+
 func (e *Engine) suppressionAudit(mutant mutator.Mutant) []SuppressionAudit {
 	if !e.cfg.Suppression.Enabled {
 		return nil
 	}
 	var audits []SuppressionAudit
 	for _, rule := range e.cfg.Suppression.Rules {
-		if rule.Operator != "" && rule.Operator != mutant.Operator {
+		if !suppressionRuleMatches(rule, mutant) {
 			continue
 		}
-		if rule.EquivalentRisk != "" && rule.EquivalentRisk != mutant.EquivalentRisk {
-			continue
-		}
-		if rule.File != "" && !suppressionFileMatches(rule.File, mutant.File) {
-			continue
-		}
-		if rule.Original != "" && rule.Original != mutant.Original {
-			continue
-		}
-		if rule.Mutated != "" && rule.Mutated != mutant.Mutated {
-			continue
-		}
-		evidenceLevel := "suspected"
-		if rule.Evidence != "" {
-			evidenceLevel = rule.Evidence
-		}
-		if rule.Action == "suppress" {
-			evidenceLevel = "rule-suppressed"
-		}
-		audits = append(audits, SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason, EvidenceLevel: evidenceLevel, ReviewerCount: rule.Reviewers})
+		audits = append(audits, suppressionAuditFromRule(rule))
 	}
 	return audits
+}
+
+func suppressionRuleMatches(rule config.SuppressionRule, mutant mutator.Mutant) bool {
+	return optionalMatch(rule.Operator, mutant.Operator) &&
+		optionalMatch(rule.EquivalentRisk, mutant.EquivalentRisk) &&
+		(rule.File == "" || suppressionFileMatches(rule.File, mutant.File)) &&
+		optionalMatch(rule.Original, mutant.Original) &&
+		optionalMatch(rule.Mutated, mutant.Mutated)
+}
+
+func optionalMatch(want, got string) bool {
+	return want == "" || want == got
+}
+
+func suppressionAuditFromRule(rule config.SuppressionRule) SuppressionAudit {
+	evidenceLevel := "suspected"
+	if rule.Evidence != "" {
+		evidenceLevel = rule.Evidence
+	}
+	if rule.Action == "suppress" {
+		evidenceLevel = "rule-suppressed"
+	}
+	return SuppressionAudit{Name: rule.Name, Action: rule.Action, Reason: rule.Reason, EvidenceLevel: evidenceLevel, ReviewerCount: rule.Reviewers}
 }
 
 func suppressionFileMatches(pattern, file string) bool {
@@ -507,6 +1024,7 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 	if e.cfg.Cache.Enabled && e.cfg.Cache.Mode != "off" {
 		if cached, ok, err := e.getCached(key); err == nil && ok {
 			result := cached
+			result.PreviousStatus = result.Status
 			result.Status = StatusCached
 			result.StatusReason = "result reused from incremental cache"
 			return result, nil
@@ -535,17 +1053,17 @@ func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []str
 	}
 	workdir, err := isolate.CopyModule(mutant.Module)
 	if err != nil {
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	cleanup := func() { _ = isolate.Cleanup(workdir) }
 	targetFile, err := isolate.ContainedTargetPath(mutant.Module, workdir, mutant.File)
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := applyDiffReplacement(targetFile, mutant); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	return workdir, command, cleanup, nil
 }
@@ -553,31 +1071,31 @@ func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []str
 func prepareOverlayMutation(mutant Mutant, command []string) (string, []string, func(), error) {
 	tmp, err := os.MkdirTemp("", "cervomut-overlay-*")
 	if err != nil {
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 	rel, err := filepath.Rel(mutant.Module, mutant.File)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		cleanup()
-		return "", nil, func() {}, errors.New("mutant file is outside module")
+		return "", nil, noopCleanup, errors.New("mutant file is outside module")
 	}
 	mutatedPath := filepath.Join(tmp, rel)
 	if err := os.MkdirAll(filepath.Dir(mutatedPath), 0o755); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	data, err := os.ReadFile(mutant.File)
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := os.WriteFile(mutatedPath, data, 0o644); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := applyDiffReplacement(mutatedPath, mutant); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	overlayPath := filepath.Join(tmp, "overlay.json")
 	overlay := struct {
@@ -586,13 +1104,17 @@ func prepareOverlayMutation(mutant Mutant, command []string) (string, []string, 
 	overlayData, err := json.MarshalIndent(overlay, "", "  ")
 	if err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	if err := os.WriteFile(overlayPath, overlayData, 0o644); err != nil {
 		cleanup()
-		return "", nil, func() {}, err
+		return "", nil, noopCleanup, err
 	}
 	return mutant.Module, withOverlayFlag(command, overlayPath), cleanup, nil
+}
+
+func noopCleanup() {
+	// No temporary resources were allocated before the failure.
 }
 
 func withOverlayFlag(command []string, overlayPath string) []string {
@@ -645,26 +1167,48 @@ func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, erro
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err := cmd.Run()
+	err := cmd.Start()
+	var cleanup func()
+	if err == nil {
+		cleanup, err = applyProcessLimits(cmd, e.cfg.Execution.Resources)
+		if err != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}
+	if err == nil {
+		err = cmd.Wait()
+	}
+	if cleanup != nil {
+		cleanup()
+	}
 	text := output.String()
 	if max := e.cfg.Reports.MaxOutputBytes; max > 0 && len(text) > max {
 		text = text[:max]
 	}
 	status := StatusKilled
+	failureKind := ""
 	reason := "tests failed with mutant applied"
 	if runCtx.Err() == context.DeadlineExceeded {
 		status = StatusTimedOut
+		failureKind = "timeout"
 		reason = "test command timed out"
 	} else if err == nil {
 		status = StatusSurvived
 		reason = "tests passed with mutant applied"
+	} else if errors.Is(err, errProcessLimitUnsupported) {
+		status = StatusCompileError
+		failureKind = "resource_limit_unsupported"
+		reason = err.Error()
 	} else if !strings.Contains(text, "FAIL") {
 		status = StatusCompileError
+		failureKind = classifyFailure(text, err)
 		reason = "test command failed before running assertions"
 	}
 	return MutantResult{
 		MutantID:     job.Mutant.ID,
 		Status:       status,
+		FailureKind:  failureKind,
 		Duration:     time.Since(start),
 		TestCommand:  job.TestCommand,
 		StatusReason: reason,
@@ -690,6 +1234,22 @@ func applyDiffReplacement(path string, mutant Mutant) error {
 	return os.WriteFile(path, []byte(text), 0o644)
 }
 
+func classifyFailure(output string, err error) string {
+	text := strings.ToLower(output)
+	switch {
+	case strings.Contains(text, "panic:"):
+		return "test_panic"
+	case strings.Contains(text, "build failed"), strings.Contains(text, "compilation failed"), strings.Contains(text, "undefined:"), strings.Contains(text, "syntax error"):
+		return "compile_error"
+	case strings.Contains(text, "no such file or directory"), strings.Contains(text, "cannot find"):
+		return "environment_error"
+	case err != nil:
+		return "runner_error"
+	default:
+		return ""
+	}
+}
+
 func moduleForTargets(targets []string) (string, error) {
 	if len(targets) == 0 {
 		return os.Getwd()
@@ -702,7 +1262,7 @@ func moduleForTargets(targets []string) (string, error) {
 }
 
 func summarize(results []MutantResult) Summary {
-	s := Summary{MutatorStats: map[string]MutatorStat{}, EquivalentRiskStats: map[string]int{}}
+	s := Summary{MutatorStats: map[string]MutatorStat{}, EquivalentRiskStats: map[string]int{}, TimeoutRiskStats: map[string]int{}}
 	s.Total = len(results)
 	s.GeneratedMutants = len(results)
 	for _, result := range results {
@@ -717,77 +1277,143 @@ func summarize(results []MutantResult) Summary {
 			risk = "unknown"
 		}
 		s.EquivalentRiskStats[risk]++
+		s.TimeoutRiskStats[timeoutRiskBand(result.Mutant)]++
 		if stat.Recommendation == "" {
 			stat.Recommendation = result.Mutant.Recommendation
 		}
 		if stat.EquivalentRisk == "" {
 			stat.EquivalentRisk = result.Mutant.EquivalentRisk
 		}
-		switch result.Status {
-		case StatusKilled:
-			s.Killed++
-			stat.Killed++
-			s.ExecutedMutants++
-			s.CoveredMutants++
-		case StatusSurvived:
-			s.Survived++
-			stat.Survived++
-			s.ExecutedMutants++
-			s.CoveredMutants++
-			if result.Mutant.EquivalentRisk == "high" {
-				s.HighRiskSurvivors++
-			}
-		case StatusNotCovered:
-			s.NotCovered++
-			stat.NotCovered++
-		case StatusTimedOut:
-			s.TimedOut++
-			stat.TimedOut++
-			s.ExecutedMutants++
-			s.CoveredMutants++
-		case StatusCompileError:
-			s.CompileError++
-			stat.CompileError++
-			s.ExecutedMutants++
-			s.CoveredMutants++
-		case StatusSkipped:
-			s.Skipped++
-			stat.Skipped++
-		case StatusIgnored:
-			s.Ignored++
-			stat.Ignored++
-		case StatusQuarantined:
-			s.Quarantined++
-			stat.Quarantined++
-		case StatusCached:
-			s.Cached++
-			stat.Cached++
-		}
-		for _, audit := range result.Mutant.SuppressionAudit {
-			switch audit.Action {
-			case "report-only":
-				s.SuppressionReportOnly++
-			case "lower-priority":
-				s.SuppressionLowerPriority++
-			case "suppress":
-				s.SuppressionSuppressed++
-			case "quarantine-required":
-				s.SuppressionQuarantineRequired++
-			}
-		}
+		applyStatusToSummary(&s, &stat, result)
+		applySuppressionAudits(&s, result.Mutant.SuppressionAudit)
 		s.MutatorStats[operator] = stat
 	}
 	eligible := s.Total - s.Ignored - s.Quarantined - s.Skipped - s.NotCovered
+	s.EffectiveMutants = s.Killed + s.Survived
+	s.ScoreDenominator = eligible
 	if eligible > 0 {
 		s.Score = float64(s.Killed) / float64(eligible) * 100
-		s.EffectiveScore = s.Score
-		s.TestEfficacy = s.Score
+	}
+	if s.EffectiveMutants > 0 {
+		s.EffectiveScore = float64(s.Killed) / float64(s.EffectiveMutants) * 100
+		s.TestEfficacy = s.EffectiveScore
 	}
 	coverable := s.Total - s.Ignored - s.Quarantined - s.Skipped
 	if coverable > 0 {
 		s.MutationCoverage = float64(coverable-s.NotCovered) / float64(coverable) * 100
 	}
+	s.DenominatorHealth = denominatorHealth(s)
 	return s
+}
+
+func applyStatusToSummary(s *Summary, stat *MutatorStat, result MutantResult) {
+	status := result.Status
+	if status == StatusCached {
+		s.Cached++
+		stat.Cached++
+		status = result.PreviousStatus
+	}
+	switch status {
+	case StatusKilled:
+		s.Killed++
+		stat.Killed++
+		s.ExecutedMutants++
+		s.CoveredMutants++
+	case StatusSurvived:
+		s.Survived++
+		stat.Survived++
+		s.ExecutedMutants++
+		s.CoveredMutants++
+		if result.Mutant.EquivalentRisk == "high" {
+			s.HighRiskSurvivors++
+		}
+	case StatusNotCovered:
+		s.NotCovered++
+		stat.NotCovered++
+	case StatusTimedOut:
+		s.TimedOut++
+		stat.TimedOut++
+		s.ExecutedMutants++
+		s.CoveredMutants++
+	case StatusCompileError:
+		s.CompileError++
+		stat.CompileError++
+		s.ExecutedMutants++
+		s.CoveredMutants++
+	case StatusSkipped:
+		s.Skipped++
+		stat.Skipped++
+	case StatusIgnored:
+		s.Ignored++
+		stat.Ignored++
+	case StatusQuarantined:
+		s.Quarantined++
+		stat.Quarantined++
+	}
+}
+
+func applySuppressionAudits(s *Summary, audits []SuppressionAudit) {
+	for _, audit := range audits {
+		switch audit.Action {
+		case config.SuppressionReportOnly:
+			s.SuppressionReportOnly++
+		case config.SuppressionLowerPriority:
+			s.SuppressionLowerPriority++
+		case "suppress":
+			s.SuppressionSuppressed++
+		case "quarantine-required":
+			s.SuppressionQuarantineRequired++
+		}
+	}
+}
+
+func timeoutRiskBand(mutant Mutant) string {
+	switch timeoutRiskPriority(mutant) {
+	case 0:
+		return "low"
+	case 1:
+		return "medium"
+	case 2:
+		return "high"
+	default:
+		return "very_high"
+	}
+}
+
+func denominatorHealth(s Summary) DenominatorHealth {
+	health := DenominatorHealth{
+		Generated:        s.GeneratedMutants,
+		Covered:          s.CoveredMutants,
+		Executed:         s.ExecutedMutants,
+		Effective:        s.EffectiveMutants,
+		ScoreDenominator: s.ScoreDenominator,
+		Killed:           s.Killed,
+		Survived:         s.Survived,
+		NotCovered:       s.NotCovered,
+		TimedOut:         s.TimedOut,
+		CompileError:     s.CompileError,
+		Skipped:          s.Skipped,
+		Ignored:          s.Ignored,
+		Quarantined:      s.Quarantined,
+		Healthy:          true,
+	}
+	if health.Generated > 0 && health.Effective == 0 {
+		health.Warnings = append(health.Warnings, "no_effective_mutants")
+	}
+	if health.Effective > 0 && health.TimedOut > health.Effective {
+		health.Warnings = append(health.Warnings, "timed_out_exceeds_effective")
+	}
+	if health.Effective > 0 && health.NotCovered > health.Effective {
+		health.Warnings = append(health.Warnings, "not_covered_exceeds_effective")
+	}
+	if health.Effective > 0 && health.ScoreDenominator > health.Effective*2 {
+		health.Warnings = append(health.Warnings, "score_denominator_dwarfs_effective")
+	}
+	if health.Effective > 0 && s.TestEfficacy >= 90 && (health.TimedOut > health.Effective || health.NotCovered > health.Effective) {
+		health.Warnings = append(health.Warnings, "high_score_poor_denominator_health")
+	}
+	health.Healthy = len(health.Warnings) == 0
+	return health
 }
 
 type historyFile struct {
@@ -833,55 +1459,8 @@ func (e *Engine) applyHistory(results []MutantResult) HistoryStats {
 	operatorSurvived := map[string]int{}
 	for i := range results {
 		result := &results[i]
-		operator := result.Mutant.Operator
-		if operator == "" {
-			operator = "unknown"
-		}
-		previous, existed := store.Mutants[result.MutantID]
-		if existed {
-			result.PreviousStatus = previous.Status
-			result.FirstSeen = previous.FirstSeen
-			result.SurvivorAgeRuns = previous.SurvivedRuns
-			if result.Status == StatusSurvived {
-				result.HistoryStatus = "existing_survivor"
-				if previous.SurvivedRuns > 0 {
-					stats.LongStandingSurvivors++
-					result.HistoryStatus = "long_standing_survivor"
-				}
-			}
-		} else {
-			result.FirstSeen = now
-			if result.Status == StatusSurvived {
-				result.HistoryStatus = "new_survivor"
-				stats.NewSurvivors++
-			}
-		}
-		if result.HistoryStatus == "" {
-			result.HistoryStatus = "seen"
-		}
-		result.LastSeen = now
-		entry := previous
-		entry.MutantID = result.MutantID
-		entry.Operator = operator
-		entry.Status = result.Status
-		if entry.FirstSeen == "" {
-			entry.FirstSeen = result.FirstSeen
-		}
-		entry.LastSeen = now
-		entry.SeenRuns++
-		switch result.Status {
-		case StatusSurvived:
-			entry.SurvivedRuns++
-		case StatusKilled:
-			entry.KilledRuns++
-		case StatusNotCovered:
-			entry.NotCoveredRuns++
-		case StatusCompileError:
-			entry.CompileErrorRuns++
-		case StatusTimedOut:
-			entry.TimedOutRuns++
-		}
-		result.SurvivorAgeRuns = entry.SurvivedRuns
+		operator := historyOperator(result.Mutant.Operator)
+		entry := updateHistoryResult(result, store.Mutants[result.MutantID], now, &stats)
 		store.Mutants[result.MutantID] = entry
 		operatorSeen[operator]++
 		if result.Status == StatusSurvived {
@@ -904,6 +1483,74 @@ func (e *Engine) applyHistory(results []MutantResult) HistoryStats {
 		}
 	}
 	return stats
+}
+
+func historyOperator(operator string) string {
+	if operator == "" {
+		return "unknown"
+	}
+	return operator
+}
+
+func updateHistoryResult(result *MutantResult, previous historyEntry, now string, stats *HistoryStats) historyEntry {
+	if previous.MutantID == "" {
+		result.FirstSeen = now
+		if result.Status == StatusSurvived {
+			result.HistoryStatus = "new_survivor"
+			stats.NewSurvivors++
+		}
+	} else {
+		result.PreviousStatus = previous.Status
+		result.FirstSeen = previous.FirstSeen
+		result.SurvivorAgeRuns = previous.SurvivedRuns
+		markExistingSurvivor(result, previous, stats)
+	}
+	if result.HistoryStatus == "" {
+		result.HistoryStatus = "seen"
+	}
+	result.LastSeen = now
+	entry := updateHistoryEntry(previous, *result, now)
+	result.SurvivorAgeRuns = entry.SurvivedRuns
+	return entry
+}
+
+func markExistingSurvivor(result *MutantResult, previous historyEntry, stats *HistoryStats) {
+	if result.Status != StatusSurvived {
+		return
+	}
+	result.HistoryStatus = "existing_survivor"
+	if previous.SurvivedRuns > 0 {
+		stats.LongStandingSurvivors++
+		result.HistoryStatus = "long_standing_survivor"
+	}
+}
+
+func updateHistoryEntry(entry historyEntry, result MutantResult, now string) historyEntry {
+	entry.MutantID = result.MutantID
+	entry.Operator = historyOperator(result.Mutant.Operator)
+	entry.Status = result.Status
+	if entry.FirstSeen == "" {
+		entry.FirstSeen = result.FirstSeen
+	}
+	entry.LastSeen = now
+	entry.SeenRuns++
+	incrementHistoryStatus(&entry, result.Status)
+	return entry
+}
+
+func incrementHistoryStatus(entry *historyEntry, status Status) {
+	switch status {
+	case StatusSurvived:
+		entry.SurvivedRuns++
+	case StatusKilled:
+		entry.KilledRuns++
+	case StatusNotCovered:
+		entry.NotCoveredRuns++
+	case StatusCompileError:
+		entry.CompileErrorRuns++
+	case StatusTimedOut:
+		entry.TimedOutRuns++
+	}
 }
 
 func rankSurvivors(results []MutantResult) {
@@ -987,7 +1634,7 @@ func survivorRankScore(result MutantResult) (float64, string) {
 		score += result.OperatorYield * 10
 	}
 	for _, audit := range result.Mutant.SuppressionAudit {
-		if audit.Action == "lower-priority" || audit.Action == "report-only" {
+		if audit.Action == config.SuppressionLowerPriority || audit.Action == config.SuppressionReportOnly {
 			score -= 8
 		}
 	}
@@ -1233,8 +1880,12 @@ func (e *Engine) coverageMentions(mutant Mutant) bool {
 	rel, _ := filepath.Rel(mutant.Module, mutant.File)
 	rel = filepath.ToSlash(rel)
 	base := filepath.Base(mutant.File)
+	return coverageDataMentions(string(data), rel, base, mutant.Line)
+}
+
+func coverageDataMentions(data, rel, base string, mutantLine int) bool {
 	parseable := false
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(data, "\n") {
 		file, startLine, endLine, count, ok := parseCoverageProfileLine(line)
 		if !ok {
 			continue
@@ -1243,15 +1894,20 @@ func (e *Engine) coverageMentions(mutant Mutant) bool {
 		if count <= 0 || !coverageFileMatches(file, rel, base) {
 			continue
 		}
-		if mutant.Line >= startLine && mutant.Line <= endLine {
+		if mutantLine >= startLine && mutantLine <= endLine {
 			return true
 		}
 	}
-	if !parseable {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.Contains(line, rel+":") || strings.Contains(line, base+":") {
-				return true
-			}
+	if parseable {
+		return false
+	}
+	return fallbackCoverageMentions(data, rel, base)
+}
+
+func fallbackCoverageMentions(data, rel, base string) bool {
+	for _, line := range strings.Split(data, "\n") {
+		if strings.Contains(line, rel+":") || strings.Contains(line, base+":") {
+			return true
 		}
 	}
 	return false

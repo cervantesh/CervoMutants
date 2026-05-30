@@ -61,6 +61,7 @@ type MutantJob struct {
 type MutantResult struct {
 	MutantID           string        `json:"mutant_id"`
 	Status             Status        `json:"status"`
+	FailureKind        string        `json:"failure_kind,omitempty"`
 	Duration           time.Duration `json:"duration"`
 	TestCommand        []string      `json:"selected_tests"`
 	StatusReason       string        `json:"status_reason"`
@@ -97,10 +98,13 @@ type Summary struct {
 	GeneratedMutants              int                    `json:"generated_mutants"`
 	CoveredMutants                int                    `json:"covered_mutants"`
 	ExecutedMutants               int                    `json:"executed_mutants"`
+	EffectiveMutants              int                    `json:"effective_mutants"`
+	ScoreDenominator              int                    `json:"score_denominator"`
 	Score                         float64                `json:"score"`
 	EffectiveScore                float64                `json:"effective_score"`
 	TestEfficacy                  float64                `json:"test_efficacy"`
 	MutationCoverage              float64                `json:"mutation_coverage"`
+	DenominatorHealth             DenominatorHealth      `json:"denominator_health"`
 	HighRiskSurvivors             int                    `json:"high_risk_survivors"`
 	SuppressionReportOnly         int                    `json:"suppression_report_only"`
 	SuppressionLowerPriority      int                    `json:"suppression_lower_priority"`
@@ -108,8 +112,27 @@ type Summary struct {
 	SuppressionQuarantineRequired int                    `json:"suppression_quarantine_required"`
 	NewSurvivors                  int                    `json:"new_survivors"`
 	LongStandingSurvivors         int                    `json:"long_standing_survivors"`
+	TimeoutRiskStats              map[string]int         `json:"timeout_risk_statistics,omitempty"`
 	EquivalentRiskStats           map[string]int         `json:"equivalent_risk_statistics,omitempty"`
 	MutatorStats                  map[string]MutatorStat `json:"mutator_statistics,omitempty"`
+}
+
+type DenominatorHealth struct {
+	Generated        int      `json:"generated"`
+	Covered          int      `json:"covered"`
+	Executed         int      `json:"executed"`
+	Effective        int      `json:"effective"`
+	ScoreDenominator int      `json:"score_denominator"`
+	Killed           int      `json:"killed"`
+	Survived         int      `json:"survived"`
+	NotCovered       int      `json:"not_covered"`
+	TimedOut         int      `json:"timed_out"`
+	CompileError     int      `json:"compile_error"`
+	Skipped          int      `json:"skipped"`
+	Ignored          int      `json:"ignored"`
+	Quarantined      int      `json:"quarantined"`
+	Healthy          bool     `json:"healthy"`
+	Warnings         []string `json:"warnings,omitempty"`
 }
 
 type MutatorStat struct {
@@ -158,12 +181,56 @@ type HistoryStats struct {
 type RunResult struct {
 	SchemaVersion string             `json:"schema_version"`
 	Summary       Summary            `json:"summary"`
+	Environment   Environment        `json:"environment"`
+	Checkpoint    Checkpoint         `json:"checkpoint,omitempty"`
 	Thresholds    map[string]any     `json:"thresholds"`
 	Baseline      BaselineComparison `json:"baseline"`
 	Cache         CacheStats         `json:"cache"`
 	Quarantine    QuarantineStats    `json:"quarantine"`
 	History       HistoryStats       `json:"history"`
 	Mutants       []MutantResult     `json:"mutants"`
+}
+
+type Checkpoint struct {
+	Fingerprint         string `json:"fingerprint"`
+	Mutants             int    `json:"mutants"`
+	IncludesFileDigests bool   `json:"includes_file_digests"`
+	Reason              string `json:"reason,omitempty"`
+}
+
+type Environment struct {
+	OS              string            `json:"os"`
+	Arch            string            `json:"arch"`
+	GoVersion       string            `json:"go_version,omitempty"`
+	ToolVersion     string            `json:"tool_version,omitempty"`
+	WorkingDir      string            `json:"working_dir,omitempty"`
+	TempDir         string            `json:"temp_dir,omitempty"`
+	Isolation       string            `json:"isolation,omitempty"`
+	Workers         int               `json:"workers,omitempty"`
+	TestTimeout     string            `json:"test_timeout,omitempty"`
+	Budget          string            `json:"budget,omitempty"`
+	GoFlags         string            `json:"go_flags,omitempty"`
+	GoMaxProcs      string            `json:"go_max_procs,omitempty"`
+	GoMemLimit      string            `json:"go_mem_limit,omitempty"`
+	CI              string            `json:"ci,omitempty"`
+	WSL             bool              `json:"wsl,omitempty"`
+	CGroup          string            `json:"cgroup,omitempty"`
+	WindowsOneDrive bool              `json:"windows_onedrive,omitempty"`
+	Extra           map[string]string `json:"extra,omitempty"`
+}
+
+type ProgressEvent struct {
+	SchemaVersion string        `json:"schema_version"`
+	Time          time.Time     `json:"time"`
+	Completed     int           `json:"completed"`
+	Total         int           `json:"total"`
+	MutantID      string        `json:"mutant_id,omitempty"`
+	Status        Status        `json:"status,omitempty"`
+	Elapsed       time.Duration `json:"elapsed"`
+	Remaining     int           `json:"remaining"`
+	ETA           string        `json:"eta,omitempty"`
+	ActiveMutant  string        `json:"active_mutant,omitempty"`
+	Message       string        `json:"message"`
 }
 
 type RunRequest struct {

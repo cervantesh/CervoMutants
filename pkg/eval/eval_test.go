@@ -99,3 +99,33 @@ func TestWriteOutputsJSONMarkdownAndSchema(t *testing.T) {
 		t.Fatalf("evaluation markdown missing manual review section: %s", md)
 	}
 }
+
+func TestScoreAndDecisionBranches(t *testing.T) {
+	high := Metrics{TotalMutants: 10, Survived: 1, Cached: 2}
+	scorecard := score(high, false)
+	scorecard.Total = 85
+	scorecard.FaultRevealing.Score = 18
+	scorecard.Actionability.Score = 12
+	if decision := decide(scorecard, false); decision != DecisionCandidateDefault {
+		t.Fatalf("candidate decision = %q", decision)
+	}
+
+	scorecard.Noise.Score = 4
+	scorecard.Total = 40
+	if decision := decide(scorecard, false); decision != DecisionNeedsTuning {
+		t.Fatalf("tuning decision = %q", decision)
+	}
+
+	if ciScore(Metrics{TotalMutants: 1}) != 15 {
+		t.Fatal("ciScore should cap at 15 for clean non-empty run")
+	}
+	if actionabilityScore(Metrics{TotalMutants: 1, Survived: 1}) != 15 {
+		t.Fatal("actionabilityScore should cap at 15")
+	}
+	if costScore(Metrics{Cached: 1}) != 8 {
+		t.Fatal("costScore should cap at 8")
+	}
+	if defaultString("", "fallback") != "fallback" || defaultString("value", "fallback") != "value" {
+		t.Fatal("defaultString returned unexpected values")
+	}
+}

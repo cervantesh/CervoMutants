@@ -25,11 +25,13 @@ func JSON(result engine.RunResult) ([]byte, error) {
 
 func Summary(result engine.RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nNew survivors: %d\nLong-standing survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
+	fmt.Fprintf(&b, "Mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nEffective mutants: %d\nScore denominator: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nQuarantined: %d\nTimed out: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nNew survivors: %d\nLong-standing survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
 		result.Summary.Score,
 		result.Summary.GeneratedMutants,
 		result.Summary.CoveredMutants,
 		result.Summary.ExecutedMutants,
+		result.Summary.EffectiveMutants,
+		result.Summary.ScoreDenominator,
 		result.Summary.Killed,
 		result.Summary.Survived,
 		result.Summary.NotCovered,
@@ -46,6 +48,25 @@ func Summary(result engine.RunResult) string {
 		result.Summary.SuppressionSuppressed,
 		result.Summary.SuppressionQuarantineRequired,
 	)
+	if result.Summary.DenominatorHealth.Generated > 0 || len(result.Summary.DenominatorHealth.Warnings) > 0 {
+		health := result.Summary.DenominatorHealth
+		fmt.Fprintf(&b, "Denominator health: healthy=%t generated=%d covered=%d executed=%d effective=%d score_denominator=%d killed=%d survived=%d not_covered=%d timed_out=%d compile_error=%d\n",
+			health.Healthy,
+			health.Generated,
+			health.Covered,
+			health.Executed,
+			health.Effective,
+			health.ScoreDenominator,
+			health.Killed,
+			health.Survived,
+			health.NotCovered,
+			health.TimedOut,
+			health.CompileError,
+		)
+		if len(health.Warnings) > 0 {
+			fmt.Fprintf(&b, "Denominator warnings: %s\n", strings.Join(health.Warnings, ", "))
+		}
+	}
 	if len(result.Summary.EquivalentRiskStats) > 0 {
 		b.WriteString("Equivalent-risk statistics:\n")
 		keys := make([]string, 0, len(result.Summary.EquivalentRiskStats))
@@ -78,6 +99,18 @@ func Summary(result engine.RunResult) string {
 				stat.EquivalentRisk,
 			)
 		}
+	}
+	if result.Environment.OS != "" {
+		fmt.Fprintf(&b, "Environment: os=%s arch=%s go=%s isolation=%s workers=%d timeout=%s wsl=%t onedrive=%t\n",
+			result.Environment.OS,
+			result.Environment.Arch,
+			result.Environment.GoVersion,
+			result.Environment.Isolation,
+			result.Environment.Workers,
+			result.Environment.TestTimeout,
+			result.Environment.WSL,
+			result.Environment.WindowsOneDrive,
+		)
 	}
 	return b.String()
 }

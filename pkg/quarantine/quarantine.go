@@ -26,27 +26,46 @@ type Policy struct {
 
 func Validate(entries []Entry, policy Policy, now time.Time) error {
 	for _, entry := range entries {
-		if strings.TrimSpace(entry.MutantID) == "" {
-			return errors.New("quarantine entry requires mutant_id")
+		if err := validateEntry(entry, policy, now); err != nil {
+			return err
 		}
-		if policy.RequireReason && strings.TrimSpace(entry.Reason) == "" {
-			return errors.New("quarantine entry requires reason")
+	}
+	return nil
+}
+
+func validateEntry(entry Entry, policy Policy, now time.Time) error {
+	if strings.TrimSpace(entry.MutantID) == "" {
+		return errors.New("quarantine entry requires mutant_id")
+	}
+	required := []struct {
+		enabled bool
+		value   string
+		message string
+	}{
+		{policy.RequireReason, entry.Reason, "quarantine entry requires reason"},
+		{policy.RequireOwner, entry.Owner, "quarantine entry requires owner"},
+		{policy.RequireIssue, entry.Issue, "quarantine entry requires issue"},
+	}
+	for _, field := range required {
+		if field.enabled && strings.TrimSpace(field.value) == "" {
+			return errors.New(field.message)
 		}
-		if policy.RequireOwner && strings.TrimSpace(entry.Owner) == "" {
-			return errors.New("quarantine entry requires owner")
-		}
-		if policy.RequireIssue && strings.TrimSpace(entry.Issue) == "" {
-			return errors.New("quarantine entry requires issue")
-		}
-		if entry.ExpiresAt.IsZero() {
-			return errors.New("quarantine entry requires expires_at")
-		}
-		if policy.FailOnExpired && !entry.ExpiresAt.After(now) {
-			return errors.New("quarantine entry expired")
-		}
-		if policy.MaxRenewals > 0 && entry.Renewals > policy.MaxRenewals {
-			return errors.New("quarantine entry exceeded max renewals")
-		}
+	}
+	if err := validateExpiry(entry, policy, now); err != nil {
+		return err
+	}
+	if policy.MaxRenewals > 0 && entry.Renewals > policy.MaxRenewals {
+		return errors.New("quarantine entry exceeded max renewals")
+	}
+	return nil
+}
+
+func validateExpiry(entry Entry, policy Policy, now time.Time) error {
+	if entry.ExpiresAt.IsZero() {
+		return errors.New("quarantine entry requires expires_at")
+	}
+	if policy.FailOnExpired && !entry.ExpiresAt.After(now) {
+		return errors.New("quarantine entry expired")
 	}
 	return nil
 }

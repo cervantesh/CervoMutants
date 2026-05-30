@@ -2,11 +2,19 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	IsolationTempWorkdir     = "temp-workdir"
+	SuppressionReportOnly    = "report-only"
+	SuppressionLowerPriority = "lower-priority"
 )
 
 type Config struct {
@@ -49,10 +57,18 @@ type Mutators struct {
 }
 
 type Execution struct {
-	Workers   int           `yaml:"workers" json:"workers"`
-	Isolation string        `yaml:"isolation" json:"isolation"`
-	Budget    time.Duration `yaml:"budget" json:"budget"`
-	FailFast  bool          `yaml:"fail_fast" json:"fail_fast"`
+	Workers            int           `yaml:"workers" json:"workers"`
+	Isolation          string        `yaml:"isolation" json:"isolation"`
+	Budget             time.Duration `yaml:"budget" json:"budget"`
+	FailFast           bool          `yaml:"fail_fast" json:"fail_fast"`
+	Resume             bool          `yaml:"resume" json:"resume"`
+	CheckpointIncludes []string      `yaml:"checkpoint_includes" json:"checkpoint_includes"`
+	Resources          Resources     `yaml:"resources" json:"resources"`
+}
+
+type Resources struct {
+	MaxProcessMemoryMB int `yaml:"max_process_memory_mb" json:"max_process_memory_mb"`
+	MaxProcesses       int `yaml:"max_processes" json:"max_processes"`
 }
 
 type Selection struct {
@@ -162,13 +178,13 @@ func Defaults() Config {
 			BaselineRequired: true,
 		},
 		Mutators:  Mutators{Profile: "conservative"},
-		Execution: Execution{Workers: workers, Isolation: "temp-workdir"},
+		Execution: Execution{Workers: workers, Isolation: IsolationTempWorkdir, CheckpointIncludes: []string{"testdata/**", "fixtures/**"}},
 		Selection: Selection{Mode: "package", UseTimings: true, CoverageProfile: ".cervomut/coverage.out", TimingsPath: ".cervomut/timings.json"},
 		Suppression: Suppression{Enabled: true, Rules: []SuppressionRule{
-			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: "report-only", Reason: "High equivalent-mutant risk must be visible before suppression is allowed.", Evidence: "heuristic"},
-			{Name: "lower-priority-loop-control", Operator: "loop-control", Action: "lower-priority", Reason: "Loop-control mutants are high-signal but often require manual review."},
-			{Name: "lower-priority-broad-literals", Operator: "literals", Action: "lower-priority", Reason: "Broad literal mutants often need equivalence review before CI gating."},
-			{Name: "lower-priority-broad-returns", Operator: "returns", Action: "lower-priority", Reason: "Broad return mutants can duplicate narrower return-bool-literal signal."},
+			{Name: "audit-high-equivalent-risk", EquivalentRisk: "high", Action: SuppressionReportOnly, Reason: "High equivalent-mutant risk must be visible before suppression is allowed.", Evidence: "heuristic"},
+			{Name: "lower-priority-loop-control", Operator: "loop-control", Action: SuppressionLowerPriority, Reason: "Loop-control mutants are high-signal but often require manual review."},
+			{Name: "lower-priority-broad-literals", Operator: "literals", Action: SuppressionLowerPriority, Reason: "Broad literal mutants often need equivalence review before CI gating."},
+			{Name: "lower-priority-broad-returns", Operator: "returns", Action: SuppressionLowerPriority, Reason: "Broad return mutants can duplicate narrower return-bool-literal signal."},
 		}},
 		History:  History{Enabled: true, Path: ".cervomut/history.json"},
 		Cache:    Cache{Enabled: true, Path: ".cervomut/cache", Mode: "incremental"},
@@ -226,32 +242,25 @@ func Load(path string) (Config, error) {
 }
 
 func (cfg Config) Validate() error {
-	if cfg.Policy != "" && !oneOf(cfg.Policy, "ci-fast", "ci-balanced", "nightly", "campaign") {
-		return errors.New("policy must be ci-fast, ci-balanced, nightly, or campaign")
+	fields := []enumField{
+		{name: "scope.mode", value: cfg.Scope.Mode, allowed: []string{"all", "changed", "packages"}},
+		{name: "selection.mode", value: cfg.Selection.Mode, allowed: []string{"all", "package", "coverage"}},
+		{name: "mutators.profile", value: cfg.Mutators.Profile, allowed: []string{"gremlins-compatible", "conservative-fast", "conservative", "default", "aggressive"}},
+		{name: "execution.isolation", value: cfg.Execution.Isolation, allowed: []string{IsolationTempWorkdir, "overlay"}},
+		{name: "cache.mode", value: cfg.Cache.Mode, allowed: []string{"off", "read-only", "incremental"}},
+		{name: "limits.sample", value: cfg.Limits.Sample, allowed: []string{"none", "random", "deterministic"}},
 	}
-	if !oneOf(cfg.Scope.Mode, "all", "changed", "packages") {
-		return errors.New("scope.mode must be all, changed, or packages")
+	if cfg.Policy != "" {
+		fields = append(fields, enumField{name: "policy", value: cfg.Policy, allowed: []string{"ci-fast", "ci-balanced", "nightly", "campaign", "comparison-safe"}})
 	}
-	if !oneOf(cfg.Selection.Mode, "all", "package", "coverage") {
-		return errors.New("selection.mode must be all, package, or coverage")
-	}
-	if !oneOf(cfg.Mutators.Profile, "gremlins-compatible", "conservative-fast", "conservative", "default", "aggressive") {
-		return errors.New("mutators.profile must be gremlins-compatible, conservative-fast, conservative, default, or aggressive")
-	}
-	if !oneOf(cfg.Execution.Isolation, "temp-workdir", "overlay") {
-		return errors.New("execution.isolation must be temp-workdir or overlay")
-	}
-	if !oneOf(cfg.Cache.Mode, "off", "read-only", "incremental") {
-		return errors.New("cache.mode must be off, read-only, or incremental")
-	}
-	if !oneOf(cfg.Limits.Sample, "none", "random", "deterministic") {
-		return errors.New("limits.sample must be none, random, or deterministic")
+	if err := validateEnums(fields); err != nil {
+		return err
 	}
 	for _, rule := range cfg.Suppression.Rules {
 		if rule.Name == "" || rule.Action == "" || rule.Reason == "" {
 			return errors.New("suppression rules require name, action, and reason")
 		}
-		if !oneOf(rule.Action, "report-only", "lower-priority", "suppress", "quarantine-required") {
+		if !oneOf(rule.Action, SuppressionReportOnly, SuppressionLowerPriority, "suppress", "quarantine-required") {
 			return errors.New("suppression rule action must be report-only, lower-priority, suppress, or quarantine-required")
 		}
 		if rule.Evidence != "" && !oneOf(rule.Evidence, "heuristic", "sampled", "confirmed") {
@@ -262,6 +271,31 @@ func (cfg Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+type enumField struct {
+	name    string
+	value   string
+	allowed []string
+}
+
+func validateEnums(fields []enumField) error {
+	for _, field := range fields {
+		if !oneOf(field.value, field.allowed...) {
+			return fmt.Errorf("%s must be %s", field.name, stringsJoin(field.allowed, ", ", "or"))
+		}
+	}
+	return nil
+}
+
+func stringsJoin(values []string, sep, lastSep string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	if len(values) == 1 {
+		return values[0]
+	}
+	return strings.Join(values[:len(values)-1], sep) + sep + lastSep + " " + values[len(values)-1]
 }
 
 func ApplyPolicy(cfg Config) Config {
@@ -280,6 +314,19 @@ func ApplyPolicy(cfg Config) Config {
 		cfg.Execution.Isolation = "overlay"
 		cfg.Tests.Timeout = 45 * time.Second
 		cfg.Reports.Formats = []string{"summary", "json", "junit"}
+	case "comparison-safe":
+		cfg.Mutators.Profile = "gremlins-compatible"
+		cfg.Selection.Mode = "package"
+		cfg.Selection.Prefilter = false
+		cfg.Execution.Isolation = "overlay"
+		cfg.Execution.Budget = 10 * time.Minute
+		cfg.Execution.Workers = minInt(cfg.Execution.Workers, 2)
+		cfg.Tests.Timeout = 20 * time.Second
+		cfg.Limits.Sample = "deterministic"
+		if cfg.Limits.MaxMutants == 0 {
+			cfg.Limits.MaxMutants = 250
+		}
+		cfg.Reports.Formats = []string{"summary", "json", "junit"}
 	case "nightly":
 		cfg.Mutators.Profile = "default"
 		cfg.Selection.Mode = "coverage"
@@ -291,11 +338,18 @@ func ApplyPolicy(cfg Config) Config {
 		cfg.Mutators.Profile = "aggressive"
 		cfg.Selection.Mode = "package"
 		cfg.Selection.Prefilter = false
-		cfg.Execution.Isolation = "temp-workdir"
+		cfg.Execution.Isolation = IsolationTempWorkdir
 		cfg.Tests.Timeout = 2 * time.Minute
 		cfg.Reports.Formats = []string{"summary", "json", "junit", "html"}
 	}
 	return cfg
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func oneOf(value string, allowed ...string) bool {

@@ -3,6 +3,7 @@ package baseline
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
 )
@@ -25,6 +26,9 @@ func Load(path string) (engine.RunResult, bool, error) {
 func Save(path string, result engine.RunResult) error {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)

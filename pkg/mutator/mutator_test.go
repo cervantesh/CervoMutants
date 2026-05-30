@@ -1,6 +1,8 @@
 package mutator
 
 import (
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -75,6 +77,12 @@ func Check(n int, ready bool, p *int) bool {
 		t.Fatalf("generated %d mutants, want at least 4", len(mutants))
 	}
 
+	assertActionableMutants(t, mutants)
+	assertConservativeOperators(t, mutants)
+}
+
+func assertActionableMutants(t *testing.T, mutants []Mutant) {
+	t.Helper()
 	seen := map[string]bool{}
 	for _, mutant := range mutants {
 		if mutant.ID == "" || mutant.Operator == "" || mutant.Diff == "" || mutant.Line == 0 {
@@ -94,7 +102,10 @@ func Check(n int, ready bool, p *int) bool {
 		}
 		seen[mutant.ID] = true
 	}
+}
 
+func assertConservativeOperators(t *testing.T, mutants []Mutant) {
+	t.Helper()
 	foundConditional := false
 	foundLogical := false
 	foundBoolean := false
@@ -229,6 +240,51 @@ const marker = "cervomut:ignore"
 `)
 	if _, err := ValidateInlineIgnores("sample.go", src, true); err != nil {
 		t.Fatalf("ValidateInlineIgnores treated string literal as directive: %v", err)
+	}
+}
+
+func TestFormatNodePrintsASTNode(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "sample.go", `package sample
+
+func Add(a, b int) int { return a + b }
+`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := FormatNode(fset, file.Decls[0])
+	if !strings.Contains(text, "func Add") || !strings.Contains(text, "a + b") {
+		t.Fatalf("unexpected formatted node: %s", text)
+	}
+}
+
+func TestSmallMutationHelpersCoverFallbackBranches(t *testing.T) {
+	if _, err := Generate("sample", "bad.go", []byte("package sample\nfunc broken("), ""); err == nil {
+		t.Fatal("Generate accepted invalid Go")
+	}
+	if got := boundaryReplacement(token.EQL); got != "" {
+		t.Fatalf("boundaryReplacement(EQL) = %q, want empty", got)
+	}
+	if operatorMatchesIgnore("logical", "conditionals") {
+		t.Fatal("conditionals ignore should not match logical")
+	}
+	if _, err := replaceFirst("abc", "z", "x"); err == nil {
+		t.Fatal("replaceFirst accepted missing token")
+	}
+	if parseInlineIgnoreOperator(`reason="all"`) != "*" {
+		t.Fatal("reason-only inline ignore should apply to all operators")
+	}
+	if parseInlineIgnoreReason(`reason=unquoted`) != "unquoted" {
+		t.Fatal("inline ignore should accept unquoted reason fallback")
+	}
+	if operatorEnabled("unknown", ProfileAggressive) {
+		t.Fatal("unknown operator should not be enabled")
+	}
+	if equivalentRisk("unknown") != "unknown" || recommendation("unknown") != "review" || compileErrorRisk("unknown") != "unknown" {
+		t.Fatal("unknown operator metadata fallbacks changed")
+	}
+	if hint("unknown") == "" || description("", "unknown", "a", "b") == "" {
+		t.Fatal("fallback hint/description should be populated")
 	}
 }
 
