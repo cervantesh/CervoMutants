@@ -1130,11 +1130,12 @@ func (e *Engine) selectTests(mutant Mutant) TestPlan {
 	if len(command) == 0 {
 		command = []string{"go", "test", "./..."}
 	}
-	if e.cfg.Selection.Prefilter && !e.coverageMentions(mutant) {
+	lineCovered, fileCovered := e.coverageSignal(mutant)
+	if e.cfg.Selection.Prefilter && !fileCovered {
 		return TestPlan{Command: command, Reason: "coverage prefilter did not match mutant file", CoversMutant: false, CoverageSource: "package-mode-prefilter"}
 	}
-	if e.cfg.Selection.Mode == "package" && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
-		command[2] = mutant.Package
+	if e.cfg.Selection.Mode == "package" && isGoTestCommand(command) && mutant.Package != "" {
+		command = packageScopedCommand(command, mutant.Package)
 		source := "unknown"
 		if e.cfg.Selection.Prefilter {
 			source = "package-mode-prefilter"
@@ -1142,13 +1143,58 @@ func (e *Engine) selectTests(mutant Mutant) TestPlan {
 		return TestPlan{Command: command, Reason: "package selected from mutant file", CoversMutant: true, CoverageSource: source}
 	}
 	if e.cfg.Selection.Mode == "coverage" {
-		if e.coverageMentions(mutant) && len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
-			command[2] = mutant.Package
-			return TestPlan{Command: command, Reason: "coverage profile matched mutant file", CoversMutant: true, CoverageSource: "coverage-mode"}
+		if lineCovered && isGoTestCommand(command) && mutant.Package != "" {
+			command = packageScopedCommand(command, mutant.Package)
+			return TestPlan{Command: command, Reason: "coverage profile matched mutant line", CoversMutant: true, CoverageSource: "coverage-mode"}
+		}
+		if fileCovered && isGoTestCommand(command) && mutant.Package != "" {
+			command = packageScopedCommand(command, mutant.Package)
+			return TestPlan{Command: command, Reason: "coverage profile matched mutant file; package fallback selected", CoversMutant: true, CoverageSource: "coverage-mode-file-fallback"}
 		}
 		return TestPlan{Command: command, Reason: "coverage profile did not match mutant file", CoversMutant: false, CoverageSource: "coverage-mode"}
 	}
 	return TestPlan{Command: command, Reason: "all tests selected", CoversMutant: true, CoverageSource: "unknown"}
+}
+
+func isGoTestCommand(command []string) bool {
+	return len(command) >= 2 && command[0] == "go" && command[1] == "test"
+}
+
+func packageScopedCommand(command []string, pkg string) []string {
+	next := append([]string{}, command[:2]...)
+	replacedPackage := false
+	for i := 2; i < len(command); i++ {
+		arg := command[i]
+		if isGoTestFlagWithSeparateValue(arg) && i+1 < len(command) {
+			next = append(next, arg, command[i+1])
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			next = append(next, arg)
+			continue
+		}
+		if !replacedPackage {
+			next = append(next, pkg)
+			replacedPackage = true
+		}
+	}
+	if !replacedPackage {
+		next = append(next, pkg)
+	}
+	return next
+}
+
+func isGoTestFlagWithSeparateValue(arg string) bool {
+	if strings.Contains(arg, "=") {
+		return false
+	}
+	switch arg {
+	case "-run", "-bench", "-count", "-timeout", "-coverprofile", "-covermode", "-coverpkg", "-tags", "-cpu", "-parallel", "-shuffle":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, error) {
@@ -1869,21 +1915,26 @@ func digestBytes(data []byte) string {
 }
 
 func (e *Engine) coverageMentions(mutant Mutant) bool {
+	lineCovered, _ := e.coverageSignal(mutant)
+	return lineCovered
+}
+
+func (e *Engine) coverageSignal(mutant Mutant) (lineCovered bool, fileCovered bool) {
 	profile := e.cfg.Selection.CoverageProfile
 	if !filepath.IsAbs(profile) {
 		profile = filepath.Join(mutant.Module, profile)
 	}
 	data, err := os.ReadFile(profile)
 	if err != nil {
-		return false
+		return false, false
 	}
 	rel, _ := filepath.Rel(mutant.Module, mutant.File)
 	rel = filepath.ToSlash(rel)
 	base := filepath.Base(mutant.File)
-	return coverageDataMentions(string(data), rel, base, mutant.Line)
+	return coverageDataSignal(string(data), rel, base, mutant.Line)
 }
 
-func coverageDataMentions(data, rel, base string, mutantLine int) bool {
+func coverageDataSignal(data, rel, base string, mutantLine int) (lineCovered bool, fileCovered bool) {
 	parseable := false
 	for _, line := range strings.Split(data, "\n") {
 		file, startLine, endLine, count, ok := parseCoverageProfileLine(line)
@@ -1894,14 +1945,16 @@ func coverageDataMentions(data, rel, base string, mutantLine int) bool {
 		if count <= 0 || !coverageFileMatches(file, rel, base) {
 			continue
 		}
+		fileCovered = true
 		if mutantLine >= startLine && mutantLine <= endLine {
-			return true
+			lineCovered = true
 		}
 	}
-	if parseable {
-		return false
+	if !parseable {
+		fileCovered = fallbackCoverageMentions(data, rel, base)
+		lineCovered = fileCovered
 	}
-	return fallbackCoverageMentions(data, rel, base)
+	return lineCovered, fileCovered
 }
 
 func fallbackCoverageMentions(data, rel, base string) bool {
