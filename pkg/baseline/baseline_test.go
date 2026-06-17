@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cervantesh/CervoMutants/pkg/engine"
+	"github.com/cervantesh/cervo-mutants/pkg/engine"
 )
 
 func TestLoadMissingBaseline(t *testing.T) {

@@ -17,13 +17,13 @@ tests either do not execute the behavior, do not assert the changed outcome, or
 that the mutation is equivalent/noisy and should be governed explicitly.
 
 Tracking issue for the original project:  
-https://github.com/cervantesh/CervoMutants/issues/1
+https://github.com/cervantesh/cervo-mutants/issues/1
 
 Current documentation refresh:  
-https://github.com/cervantesh/CervoMutants/issues/33
+https://github.com/cervantesh/cervo-mutants/issues/33
 
 Project site:  
-https://cervantesh.github.io/CervoMutants/
+https://cervantesh.github.io/cervo-mutants/
 
 ## Current Status
 
@@ -47,7 +47,7 @@ platform. The project currently includes:
 From a Go workspace:
 
 ```powershell
-go install github.com/cervantesh/CervoMutants/cmd/cervomut@latest
+go install github.com/cervantesh/cervo-mutants/cmd/cervomut@latest
 ```
 
 From this repository:

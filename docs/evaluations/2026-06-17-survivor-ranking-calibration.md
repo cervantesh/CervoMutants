@@ -1,6 +1,6 @@
 # 2026-06-17 Survivor Ranking Calibration Review
 
-Tracking issue: https://github.com/cervantesh/CervoMutants/issues/13
+Tracking issue: https://github.com/cervantesh/cervo-mutants/issues/13
 
 This note records the manual survivor review requested by issue #13. The goal
 was to check whether current survivor ranking defaults match human judgment

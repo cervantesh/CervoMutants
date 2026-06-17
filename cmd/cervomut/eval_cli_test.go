@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cervantesh/CervoMutants/pkg/config"
-	"github.com/cervantesh/CervoMutants/pkg/engine"
-	evalpkg "github.com/cervantesh/CervoMutants/pkg/eval"
+	"github.com/cervantesh/cervo-mutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/engine"
+	evalpkg "github.com/cervantesh/cervo-mutants/pkg/eval"
 )
 
 func TestEvalCommandWritesEvaluationArtifacts(t *testing.T) {

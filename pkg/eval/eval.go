@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cervantesh/CervoMutants/pkg/engine"
+	"github.com/cervantesh/cervo-mutants/pkg/engine"
 )
 
 const (
@@ -169,7 +169,7 @@ func Markdown(e Evaluation) string {
 func Schema() string {
 	return `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cervantesh/CervoMutants/schemas/evaluation.schema.json",
+  "$id": "https://github.com/cervantesh/cervo-mutants/schemas/evaluation.schema.json",
   "title": "CervoMutants Evaluation",
   "type": "object",
   "required": ["schema_version", "framework", "tool", "target", "decision", "scorecard", "metrics", "required_manual_review"],

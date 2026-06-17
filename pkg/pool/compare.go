@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cervantesh/CervoMutants/pkg/extcompare"
+	"github.com/cervantesh/cervo-mutants/pkg/extcompare"
 )
 
 var defaultCompareNames = []string{"cobra", "pflag", "moby", "hugo", "prometheus", "terraform", "grpc-go", "echo", "logrus", "validator", "decimal", "gjson"}

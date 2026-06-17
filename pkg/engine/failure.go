@@ -5,7 +5,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/cervantesh/CervoMutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/config"
 )
 
 type PanicError struct {

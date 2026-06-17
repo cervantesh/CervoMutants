@@ -2,9 +2,9 @@
 
 Tracking issues:
 
-- https://github.com/cervantesh/CervoMutants/issues/5
-- https://github.com/cervantesh/CervoMutants/issues/6
-- https://github.com/cervantesh/CervoMutants/issues/7
+- https://github.com/cervantesh/cervo-mutants/issues/5
+- https://github.com/cervantesh/cervo-mutants/issues/6
+- https://github.com/cervantesh/cervo-mutants/issues/7
 
 This framework evaluates mutation testing tools for first-party Go repositories
 and decides whether CervoMutants should be the default for application repos

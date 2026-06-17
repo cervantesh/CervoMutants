@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cervantesh/CervoMutants/pkg/extcompare"
+	"github.com/cervantesh/cervo-mutants/pkg/extcompare"
 )
 
 type SmokeOptions struct {

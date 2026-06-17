@@ -1,6 +1,6 @@
 # Go Repository Pool For Anti-Fitting Calibration
 
-Tracking issue: https://github.com/cervantesh/CervoMutants/issues/13
+Tracking issue: https://github.com/cervantesh/cervo-mutants/issues/13
 
 This pool exists to keep CervoMutants from overfitting to Cobra. Cobra remains a
 useful tuning target, but it must not be the arbiter for operator promotion,
