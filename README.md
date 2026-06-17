@@ -22,8 +22,11 @@ https://github.com/cervantesh/cervo-mutants/issues/1
 Current documentation refresh:  
 https://github.com/cervantesh/cervo-mutants/issues/33
 
-Project site:  
+Project site:
 https://cervantesh.github.io/cervo-mutants/
+
+Contribution guide:
+[CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Current Status
 
@@ -648,8 +651,13 @@ Latest local Sonar pass after issue #31:
 - [docs/compatibility-policy.md](docs/compatibility-policy.md): formal
   compatibility contract for CLI, report schema, and experimental protocol
   surfaces.
+- [docs/adr/README.md](docs/adr/README.md): architecture decision records for
+  durable product and system choices.
 - [docs/releasing.md](docs/releasing.md): tag-driven release workflow, assets,
   checksums, and upgrade-note requirements.
+- [docs/contributing-technical.md](docs/contributing-technical.md): package
+  boundaries, validation expectations, and safe change patterns for
+  contributors.
 - [docs/example-repos.md](docs/example-repos.md): maintained example workspaces
   for small, medium, and large-repo adoption patterns.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
