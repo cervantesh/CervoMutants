@@ -261,6 +261,14 @@ func TestReportAndShowAcceptOutputDirectory(t *testing.T) {
 	if err := run([]string{"report", "survivors", "--out", out}); err != nil {
 		t.Fatalf("report survivors --out returned error: %v", err)
 	}
+	recommendationsOutput := captureStdout(t, func() {
+		if err := run([]string{"report", "recommendations", "--out", out}); err != nil {
+			t.Fatalf("report recommendations --out returned error: %v", err)
+		}
+	})
+	if !strings.Contains(recommendationsOutput, "# CervoMutants Test Recommendations") {
+		t.Fatalf("report recommendations output unexpected:\n%s", recommendationsOutput)
+	}
 	sarifOutput := captureStdout(t, func() {
 		if err := run([]string{"report", "sarif", "--out", out}); err != nil {
 			t.Fatalf("report sarif --out returned error: %v", err)
@@ -742,6 +750,7 @@ func actionableOnlyRunResult() engine.RunResult {
 				SurvivorRank:        1,
 				Actionability:       "high",
 				SuggestedTestScope:  "./fixture",
+				TestRecommendation:  &engine.TestRecommendation{Summary: "Start with `fixture_sort_test.go`", Strategy: "tighten-branch-assertions", CandidateTests: []string{"fixture_sort_test.go"}},
 				SuggestedSkipReason: "review once",
 				SemanticGroupSize:   2,
 				Mutant: engine.Mutant{
@@ -798,6 +807,7 @@ func actionableOnlyRunResult() engine.RunResult {
 				SurvivorRank:       4,
 				Actionability:      "medium",
 				SuggestedTestScope: "./fixture",
+				TestRecommendation: &engine.TestRecommendation{Summary: "Start with `fixture_logic_test.go`", Strategy: "tighten-branch-assertions", CandidateTests: []string{"fixture_logic_test.go"}},
 				Mutant: engine.Mutant{
 					ID:       "keep",
 					File:     "calc.go",

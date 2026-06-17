@@ -179,16 +179,17 @@ func GitHubSummary(result engine.RunResult) string {
 	topSurvivors := githubTopSurvivors(result.Mutants, 5)
 	if len(topSurvivors) > 0 {
 		b.WriteString("\n### Top Survivor Queue\n\n")
-		b.WriteString("| Rank | Mutant | Actionability | Operator | Location | Skip guidance |\n")
-		b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+		b.WriteString("| Rank | Mutant | Actionability | Operator | Location | Next test | Skip guidance |\n")
+		b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
 		for _, survivor := range topSurvivors {
 			location := fmt.Sprintf("%s:%d", sarifSlashPath(survivor.Mutant.File), survivor.Mutant.Line)
-			fmt.Fprintf(&b, "| %d | `%s` | `%s` | `%s` | `%s` | %s |\n",
+			fmt.Fprintf(&b, "| %d | `%s` | `%s` | `%s` | `%s` | %s | %s |\n",
 				survivor.SurvivorRank,
 				escapeMarkdownCell(survivor.MutantID),
 				escapeMarkdownCell(survivor.Actionability),
 				escapeMarkdownCell(survivor.Mutant.Operator),
 				escapeMarkdownCell(location),
+				escapeMarkdownCell(githubRecommendationCell(survivor)),
 				escapeMarkdownCell(ledgerSuggestedReason(survivor, "review based on the mutation diff and nearby tests")),
 			)
 		}
@@ -247,6 +248,21 @@ func githubTopSurvivors(mutants []engine.MutantResult, limit int) []engine.Mutan
 func escapeMarkdownCell(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	return strings.ReplaceAll(value, "|", "\\|")
+}
+
+func githubRecommendationCell(mutant engine.MutantResult) string {
+	primary := recommendationPrimaryTest(mutant.TestRecommendation)
+	summary := recommendationSummary(mutant.TestRecommendation)
+	switch {
+	case primary != "" && summary != "":
+		return primary + ": " + summary
+	case primary != "":
+		return primary
+	case summary != "":
+		return summary
+	default:
+		return mutant.SuggestedTestScope
+	}
 }
 
 func sarifRelevantStatus(status engine.Status) bool {
@@ -347,6 +363,15 @@ func sarifProperties(mutant engine.MutantResult) map[string]any {
 		"equivalent_risk":      mutant.Mutant.EquivalentRisk,
 		"actionability":        mutant.Actionability,
 		"suggested_test_scope": mutant.SuggestedTestScope,
+	}
+	if primary := recommendationPrimaryTest(mutant.TestRecommendation); primary != "" {
+		properties["recommended_test"] = primary
+	}
+	if strategy := recommendationStrategy(mutant.TestRecommendation); strategy != "" {
+		properties["test_recommendation_strategy"] = strategy
+	}
+	if summary := recommendationSummary(mutant.TestRecommendation); summary != "" {
+		properties["test_recommendation_summary"] = summary
 	}
 	if mutant.Mutant.PlatformSensitive {
 		properties["platform_sensitive"] = true

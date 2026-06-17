@@ -230,7 +230,7 @@ func SurvivorsWithOptions(result engine.RunResult, opts SurvivorsOptions) string
 			fmt.Fprintf(&b, "Group %s (%d mutants): %s\n", label, groupSize, mutant.Mutant.GroupReason)
 			seenGroups[group] = true
 		}
-		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
+		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s next_test=%s strategy=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, recommendationPrimaryTest(mutant.TestRecommendation), recommendationStrategy(mutant.TestRecommendation), mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
 	}
 	return b.String()
 }
@@ -480,38 +480,42 @@ func highEquivalentRiskEvidence(mutant engine.MutantResult) []string {
 }
 
 type htmlReportRow struct {
-	MutantID          string
-	Status            string
-	Survivor          bool
-	SurvivorRank      int
-	Actionability     string
-	Operator          string
-	EquivalentRisk    string
-	GroupFilter       string
-	GroupLabel        string
-	HistoryStatus     string
-	AgeBand           string
-	AgeLabel          string
-	TimingBand        string
-	TimingLabel       string
-	DurationText      string
-	File              string
-	Line              int
-	Function          string
-	Original          string
-	Mutated           string
-	Description       string
-	FailureKind       string
-	StatusReason      string
-	SuggestedSkip     string
-	SuggestedScope    string
-	NearestTests      string
-	RankReason        string
-	Diff              string
-	Actionable        bool
-	PlatformSensitive bool
-	NonProgressRisk   string
-	Search            string
+	MutantID                  string
+	Status                    string
+	Survivor                  bool
+	SurvivorRank              int
+	Actionability             string
+	Operator                  string
+	EquivalentRisk            string
+	GroupFilter               string
+	GroupLabel                string
+	HistoryStatus             string
+	AgeBand                   string
+	AgeLabel                  string
+	TimingBand                string
+	TimingLabel               string
+	DurationText              string
+	File                      string
+	Line                      int
+	Function                  string
+	Original                  string
+	Mutated                   string
+	Description               string
+	FailureKind               string
+	StatusReason              string
+	SuggestedSkip             string
+	SuggestedScope            string
+	NearestTests              string
+	RecommendationSummary     string
+	RecommendationStrategy    string
+	RecommendationPrimaryTest string
+	RecommendationAssertions  string
+	RankReason                string
+	Diff                      string
+	Actionable                bool
+	PlatformSensitive         bool
+	NonProgressRisk           string
+	Search                    string
 }
 
 type htmlFilterOption struct {
@@ -697,6 +701,12 @@ tbody tr:hover{background:#f8fafe}
 		if row.SuggestedScope != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">suggested_scope=%s</div>`, html.EscapeString(row.SuggestedScope))
 		}
+		if row.RecommendationPrimaryTest != "" {
+			fmt.Fprintf(&b, `<div class="mutant-meta">next_test=%s</div>`, html.EscapeString(row.RecommendationPrimaryTest))
+		}
+		if row.RecommendationStrategy != "" {
+			fmt.Fprintf(&b, `<div class="mutant-meta">test_strategy=%s</div>`, html.EscapeString(row.RecommendationStrategy))
+		}
 		if row.NearestTests != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">nearby_tests=%s</div>`, html.EscapeString(row.NearestTests))
 		}
@@ -711,6 +721,12 @@ tbody tr:hover{background:#f8fafe}
 		}
 		if row.RankReason != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">rank=%s</div>`, html.EscapeString(row.RankReason))
+		}
+		if row.RecommendationSummary != "" {
+			fmt.Fprintf(&b, `<div class="mutant-meta">next_test_summary=%s</div>`, html.EscapeString(row.RecommendationSummary))
+		}
+		if row.RecommendationAssertions != "" {
+			fmt.Fprintf(&b, `<div class="mutant-meta">suggested_assertions=%s</div>`, html.EscapeString(row.RecommendationAssertions))
 		}
 		if row.SuggestedSkip != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">skip=%s</div>`, html.EscapeString(row.SuggestedSkip))
@@ -878,38 +894,42 @@ func htmlRows(result engine.RunResult) []htmlReportRow {
 			historyStatus = "unknown"
 		}
 		rows = append(rows, htmlReportRow{
-			MutantID:          mutant.MutantID,
-			Status:            string(mutant.Status),
-			Survivor:          mutant.Status == engine.StatusSurvived,
-			SurvivorRank:      mutant.SurvivorRank,
-			Actionability:     actionability,
-			Operator:          mutant.Mutant.Operator,
-			EquivalentRisk:    equivalentRisk,
-			GroupFilter:       groupFilter,
-			GroupLabel:        groupLabel,
-			HistoryStatus:     historyStatus,
-			AgeBand:           ageBand,
-			AgeLabel:          ageLabel,
-			TimingBand:        timingBand,
-			TimingLabel:       timingLabel,
-			DurationText:      htmlDurationText(mutant.Duration),
-			File:              mutant.Mutant.File,
-			Line:              mutant.Mutant.Line,
-			Function:          mutant.Mutant.Function,
-			Original:          mutant.Mutant.Original,
-			Mutated:           mutant.Mutant.Mutated,
-			Description:       mutant.Mutant.Description,
-			FailureKind:       mutant.FailureKind,
-			StatusReason:      mutant.StatusReason,
-			SuggestedSkip:     ledgerSuggestedReason(mutant, ""),
-			SuggestedScope:    mutant.SuggestedTestScope,
-			NearestTests:      strings.Join(mutant.NearestTests, ", "),
-			RankReason:        mutant.RankReason,
-			Diff:              mutant.Mutant.Diff,
-			Actionable:        isActionableSurvivor(result.Environment.OS, mutant),
-			PlatformSensitive: mutant.Mutant.PlatformSensitive,
-			NonProgressRisk:   mutant.Mutant.NonProgressRisk,
-			Search:            htmlSearchText(mutant, groupLabel, historyStatus, ageLabel, timingLabel),
+			MutantID:                  mutant.MutantID,
+			Status:                    string(mutant.Status),
+			Survivor:                  mutant.Status == engine.StatusSurvived,
+			SurvivorRank:              mutant.SurvivorRank,
+			Actionability:             actionability,
+			Operator:                  mutant.Mutant.Operator,
+			EquivalentRisk:            equivalentRisk,
+			GroupFilter:               groupFilter,
+			GroupLabel:                groupLabel,
+			HistoryStatus:             historyStatus,
+			AgeBand:                   ageBand,
+			AgeLabel:                  ageLabel,
+			TimingBand:                timingBand,
+			TimingLabel:               timingLabel,
+			DurationText:              htmlDurationText(mutant.Duration),
+			File:                      mutant.Mutant.File,
+			Line:                      mutant.Mutant.Line,
+			Function:                  mutant.Mutant.Function,
+			Original:                  mutant.Mutant.Original,
+			Mutated:                   mutant.Mutant.Mutated,
+			Description:               mutant.Mutant.Description,
+			FailureKind:               mutant.FailureKind,
+			StatusReason:              mutant.StatusReason,
+			SuggestedSkip:             ledgerSuggestedReason(mutant, ""),
+			SuggestedScope:            mutant.SuggestedTestScope,
+			NearestTests:              strings.Join(mutant.NearestTests, ", "),
+			RecommendationSummary:     recommendationSummary(mutant.TestRecommendation),
+			RecommendationStrategy:    recommendationStrategy(mutant.TestRecommendation),
+			RecommendationPrimaryTest: recommendationPrimaryTest(mutant.TestRecommendation),
+			RecommendationAssertions:  recommendationAssertions(mutant.TestRecommendation),
+			RankReason:                mutant.RankReason,
+			Diff:                      mutant.Mutant.Diff,
+			Actionable:                isActionableSurvivor(result.Environment.OS, mutant),
+			PlatformSensitive:         mutant.Mutant.PlatformSensitive,
+			NonProgressRisk:           mutant.Mutant.NonProgressRisk,
+			Search:                    htmlSearchText(mutant, groupLabel, historyStatus, ageLabel, timingLabel),
 		})
 	}
 	return rows
@@ -999,6 +1019,10 @@ func htmlSearchText(mutant engine.MutantResult, groupLabel, historyStatus, ageLa
 		mutant.Mutant.Description,
 		mutant.StatusReason,
 		mutant.RankReason,
+		recommendationSummary(mutant.TestRecommendation),
+		recommendationStrategy(mutant.TestRecommendation),
+		recommendationPrimaryTest(mutant.TestRecommendation),
+		recommendationAssertions(mutant.TestRecommendation),
 		groupLabel,
 		historyStatus,
 		ageLabel,
@@ -1156,6 +1180,7 @@ func WriteFormatsWithOptions(dir string, result engine.RunResult, formats []stri
 	if opts.ActionableOnly {
 		files["survivors-actionable.txt"] = []byte(SurvivorsWithOptions(result, SurvivorsOptions{ActionableOnly: true}))
 	}
+	files["test-recommendations.md"] = []byte(TestRecommendations(result))
 	ledgerData, err := SemanticTriageLedger(result)
 	if err != nil {
 		return err

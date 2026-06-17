@@ -1,0 +1,22 @@
+# CervoMutants Test Recommendations
+
+Actionable review units: **1** of **2** survivors (filtered=1 collapsed=0)
+
+## #1 `pkg/review.go:19:conditionals-boundary:123456789abc`
+
+- Location: `pkg/review.go:19`
+- Operator: `conditionals-boundary`
+- Actionability: `high`
+- Suggested scope: `./pkg/review`
+- Recommendation priority: `high`
+- Recommendation strategy: `tighten-branch-assertions`
+- Summary: Start with `pkg/review_sort_test.go` while this survivor is new: Add a strict ordering assertion.
+- Candidate tests: `pkg/review_sort_test.go`, `pkg/review_test.go`
+- Suggested assertion: Add a strict ordering assertion.
+- Rationale: operator=conditionals-boundary -> branch and boundary assertions usually kill this operator family
+- Rationale: coverage_source=coverage-mode -> the mutant was matched by coverage data, so the next test should usually be an assertion upgrade
+- Rationale: nearby_tests=2 -> start with pkg/review_sort_test.go
+- Rationale: history=new_survivor -> fix the closest nearby test while the regression is still fresh
+- Rationale: semantic_group=sort comparator boundary -> one good review can collapse 2 similar survivors
+- Skip guidance: review once for this semantic group before treating each survivor independently
+

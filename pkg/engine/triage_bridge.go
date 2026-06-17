@@ -53,6 +53,16 @@ func rankSurvivors(results []MutantResult) {
 		results[i].RankReason = survivor.RankReason
 		results[i].Actionability = survivor.Actionability
 		results[i].SuggestedTestScope = survivor.SuggestedTestScope
+		if survivor.TestRecommendation != nil {
+			results[i].TestRecommendation = &TestRecommendation{
+				Priority:            survivor.TestRecommendation.Priority,
+				Strategy:            survivor.TestRecommendation.Strategy,
+				Summary:             survivor.TestRecommendation.Summary,
+				CandidateTests:      append([]string{}, survivor.TestRecommendation.CandidateTests...),
+				SuggestedAssertions: append([]string{}, survivor.TestRecommendation.SuggestedAssertions...),
+				Rationale:           append([]string{}, survivor.TestRecommendation.Rationale...),
+			}
+		}
 		results[i].SuggestedSkipReason = survivor.SuggestedSkip
 		results[i].SemanticGroupSize = survivor.SemanticGroupSize
 		results[i].NearestTests = append([]string{}, survivor.NearestTests...)
@@ -90,9 +100,12 @@ func triageMutant(mutant Mutant) triage.Mutant {
 	}
 	return triage.Mutant{
 		ID:                mutant.ID,
+		File:              mutant.File,
 		Package:           mutant.Package,
 		Function:          mutant.Function,
 		Operator:          mutant.Operator,
+		Hint:              mutant.Hint,
+		Description:       mutant.Description,
 		Recommendation:    mutant.Recommendation,
 		EquivalentRisk:    mutant.EquivalentRisk,
 		NearbyTests:       append([]string{}, mutant.NearbyTests...),

@@ -132,6 +132,17 @@ Minimum JSON fields for actionability:
   "rank_reason": "score=148.0 risk=medium recommendation=fast-ci coverage_source=coverage-mode nearby_tests=1",
   "actionability": "high",
   "suggested_test_scope": "./pkg",
+  "test_recommendation": {
+    "priority": "high",
+    "strategy": "tighten-branch-assertions",
+    "summary": "Start with foo_test.go: add an assertion for the opposite branch.",
+    "candidate_tests": ["foo_test.go"],
+    "suggested_assertions": ["Add an assertion for the opposite branch."],
+    "rationale": [
+      "coverage_source=coverage-mode -> the mutant was matched by coverage data, so the next test should usually be an assertion upgrade",
+      "history=new_survivor -> fix the closest nearby test while the regression is still fresh"
+    ]
+  },
   "nearest_tests": ["pkg/foo_test.go"],
   "mutant": {
     "file": "...",
@@ -146,6 +157,14 @@ Minimum JSON fields for actionability:
   }
 }
 ```
+
+That recommendation block is intentionally additive and auditable. It should
+explain:
+
+- which nearby test to touch first;
+- what kind of assertion or regression case is likely missing;
+- why the tool chose that recommendation from coverage, operator, and history
+  signal.
 
 ### 4. CI Relevance And Scope Control
 

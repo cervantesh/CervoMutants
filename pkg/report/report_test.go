@@ -66,11 +66,19 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 					EvidenceLevel: "suspected",
 				}},
 			},
-			SurvivorRank:        1,
-			RankScore:           140,
-			RankReason:          "risk=medium recommendation=fast-ci nearby_tests=1",
-			Actionability:       "high",
-			SuggestedTestScope:  "./pkg",
+			SurvivorRank:       1,
+			RankScore:          140,
+			RankReason:         "risk=medium recommendation=fast-ci nearby_tests=1",
+			Actionability:      "high",
+			SuggestedTestScope: "./pkg",
+			TestRecommendation: &engine.TestRecommendation{
+				Priority:            "high",
+				Strategy:            "tighten-branch-assertions",
+				Summary:             "Start with `pkg/foo_test.go`: Add an assertion for the opposite branch.",
+				CandidateTests:      []string{"pkg/foo_test.go"},
+				SuggestedAssertions: []string{"Add an assertion for the opposite branch."},
+				Rationale:           []string{"coverage_source=coverage-mode -> the mutant was matched by coverage data, so the next test should usually be an assertion upgrade"},
+			},
 			SuggestedSkipReason: "review once for this semantic group before treating each survivor independently",
 			NearestTests:        []string{"pkg/foo_test.go"},
 			SemanticGroupSize:   2,
@@ -95,7 +103,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "test_recommendation", "candidate_tests", "suggested_assertions", "rationale", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -198,9 +206,9 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 func TestSurvivorsReportIsRanked(t *testing.T) {
 	run := engine.RunResult{
 		Mutants: []engine.MutantResult{
-			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
-			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Actionability: "high", Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
-			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
+			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-value-assertions", CandidateTests: []string{"pkg/a_test.go"}}, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
+			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Actionability: "high", TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-branch-assertions", CandidateTests: []string{"pkg/b_test.go"}}, Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
+			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-value-assertions", CandidateTests: []string{"pkg/c_test.go"}}, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
 		},
 	}
 
@@ -210,6 +218,9 @@ func TestSurvivorsReportIsRanked(t *testing.T) {
 	}
 	if !strings.Contains(text, "Group sort comparator boundary (2 mutants)") {
 		t.Fatalf("survivors report missing semantic group header:\n%s", text)
+	}
+	if !strings.Contains(text, "next_test=pkg/b_test.go") || !strings.Contains(text, "strategy=tighten-branch-assertions") {
+		t.Fatalf("survivors report missing test recommendation context:\n%s", text)
 	}
 }
 
@@ -356,7 +367,7 @@ func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 	if err := WriteFormats(dir, run, []string{"summary", "json"}); err != nil {
 		t.Fatalf("WriteFormats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}
@@ -372,7 +383,7 @@ func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
 	if err := WriteFormats(dir, run, nil); err != nil {
 		t.Fatalf("WriteFormats default formats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("default formats missing %s: %v", want, err)
 		}
@@ -392,7 +403,7 @@ func TestWriteFormatsWithActionableViewWritesExtraArtifact(t *testing.T) {
 		Environment: engine.Environment{OS: "windows"},
 		Summary:     engine.Summary{Total: 2, Survived: 2},
 		Mutants: []engine.MutantResult{
-			{MutantID: "keep", Status: engine.StatusSurvived, SurvivorRank: 1, Actionability: "high", Mutant: engine.Mutant{File: "a.go", Line: 1, Operator: "logical", Original: "&&", Mutated: "||"}},
+			{MutantID: "keep", Status: engine.StatusSurvived, SurvivorRank: 1, Actionability: "high", TestRecommendation: &engine.TestRecommendation{Summary: "Start with `pkg/a_test.go`", CandidateTests: []string{"pkg/a_test.go"}}, Mutant: engine.Mutant{File: "a.go", Line: 1, Operator: "logical", Original: "&&", Mutated: "||"}},
 			{MutantID: "hide", Status: engine.StatusSurvived, SurvivorRank: 2, Actionability: "high", Mutant: engine.Mutant{File: "b.go", Line: 2, Operator: "numeric-literals", Original: "0o755", Mutated: "0", PlatformSensitive: true}},
 		},
 	}
@@ -410,6 +421,13 @@ func TestWriteFormatsWithActionableViewWritesExtraArtifact(t *testing.T) {
 	text := string(data)
 	if !strings.Contains(text, "keep") || strings.Contains(text, "hide") {
 		t.Fatalf("unexpected actionable-only artifact:\n%s", text)
+	}
+	recommendations, err := os.ReadFile(filepath.Join(dir, "test-recommendations.md"))
+	if err != nil {
+		t.Fatalf("test-recommendations.md missing: %v", err)
+	}
+	if !strings.Contains(string(recommendations), "# CervoMutants Test Recommendations") || !strings.Contains(string(recommendations), "pkg/a_test.go") {
+		t.Fatalf("unexpected recommendation artifact:\n%s", recommendations)
 	}
 }
 
@@ -451,6 +469,7 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 				Actionability:       "high",
 				SurvivorRank:        1,
 				SuggestedTestScope:  "./pkg",
+				TestRecommendation:  &engine.TestRecommendation{Summary: "Start with `pkg/foo_test.go`", Strategy: "tighten-branch-assertions", CandidateTests: []string{"pkg/foo_test.go"}},
 				SuggestedSkipReason: "review once",
 				Mutant: engine.Mutant{
 					File:           filepath.Join(workingDir, "pkg", "foo.go"),
@@ -501,6 +520,7 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 		`"ruleId": "not_covered"`,
 		`"uri": "pkg/foo.go"`,
 		`"mutant_id": "m-survived"`,
+		`"recommended_test": "pkg/foo_test.go"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("sarif output missing %q:\n%s", want, text)
@@ -513,8 +533,9 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 		"Raw score: **50.00%**",
 		"Actionable score: **66.67%**",
 		"Baseline regression: **true**",
-		"| Rank | Mutant | Actionability | Operator | Location | Skip guidance |",
+		"| Rank | Mutant | Actionability | Operator | Location | Next test | Skip guidance |",
 		"`m-survived`",
+		"pkg/foo_test.go: Start with `pkg/foo_test.go`",
 		"| timed out | 1 |",
 	} {
 		if !strings.Contains(summary, want) {
@@ -569,6 +590,7 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 				SurvivorAgeRuns:    6,
 				HistoryStatus:      "long_standing_survivor",
 				SuggestedTestScope: "./pkg",
+				TestRecommendation: &engine.TestRecommendation{Summary: "Promote `pkg/foo_test.go` into a named regression", Strategy: "tighten-branch-assertions", CandidateTests: []string{"pkg/foo_test.go"}, SuggestedAssertions: []string{"Add a strict ordering assertion."}},
 				NearestTests:       []string{"pkg/foo_test.go"},
 				RankReason:         "risk=medium recommendation=fast-ci",
 				Mutant: engine.Mutant{
@@ -629,6 +651,8 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 		"True actionable survivors",
 		"long-standing (5+ runs)",
 		"slow (&gt;2s)",
+		"next_test=pkg/foo_test.go",
+		"test_strategy=tighten-branch-assertions",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html workbench missing %q:\n%s", want, html)
@@ -640,7 +664,7 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 	if err := WriteAll(dir, run); err != nil {
 		t.Fatalf("WriteAll returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "junit.xml", "index.html", "mutation-report.sarif", "github-summary.md"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "junit.xml", "index.html", "mutation-report.sarif", "github-summary.md"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}

@@ -69,7 +69,7 @@ func cmdReport(args []string) error {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return fmt.Errorf("report requires summary, survivors, sarif, github-summary, or open")
+		return fmt.Errorf("report requires summary, survivors, recommendations, sarif, github-summary, or open")
 	}
 	cfg := loadConfigIfPresent()
 	if *out != "" {
@@ -89,6 +89,8 @@ func cmdReport(args []string) error {
 		fmt.Print(report.Summary(result))
 	case "survivors":
 		fmt.Print(report.SurvivorsWithOptions(result, report.SurvivorsOptions{ActionableOnly: *actionableOnly}))
+	case "recommendations":
+		fmt.Print(report.TestRecommendations(result))
 	case "sarif":
 		data, err := report.SARIF(result)
 		if err != nil {
