@@ -458,6 +458,8 @@ Latest local Sonar pass after issue #31:
   evaluation framework and research basis.
 - [docs/signal-first-mutation-testing.md](docs/signal-first-mutation-testing.md):
   product framework behind CervoMutants defaults.
+- [docs/project-maturity-assessment.md](docs/project-maturity-assessment.md):
+  dated assessment of product, code, and operational maturity.
 - [docs/policy-presets.md](docs/policy-presets.md): policy preset behavior.
 - [docs/sonar.md](docs/sonar.md): local and CI Sonar workflow.
 - [docs/go-toolchain-compatibility.md](docs/go-toolchain-compatibility.md):
