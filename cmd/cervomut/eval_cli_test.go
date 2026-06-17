@@ -277,6 +277,14 @@ func TestReportAndShowAcceptOutputDirectory(t *testing.T) {
 	if !strings.Contains(governanceOutput, "# CervoMutants Governance Review") {
 		t.Fatalf("report governance output unexpected:\n%s", governanceOutput)
 	}
+	historyOutput := captureStdout(t, func() {
+		if err := run([]string{"report", "history", "--out", out}); err != nil {
+			t.Fatalf("report history --out returned error: %v", err)
+		}
+	})
+	if !strings.Contains(historyOutput, "Historical runs:") {
+		t.Fatalf("report history output unexpected:\n%s", historyOutput)
+	}
 	sarifOutput := captureStdout(t, func() {
 		if err := run([]string{"report", "sarif", "--out", out}); err != nil {
 			t.Fatalf("report sarif --out returned error: %v", err)

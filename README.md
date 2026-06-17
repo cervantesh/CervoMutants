@@ -93,6 +93,8 @@ Important files:
 | `.cervomut/reports/index.html` | Filterable survivor review workbench with raw-report fallback, diff browsing, and client-side triage filters. |
 | `.cervomut/reports/mutation-report.sarif` | GitHub code-scanning friendly mutation findings. |
 | `.cervomut/reports/github-summary.md` | Compact GitHub step summary markdown for PR/Actions views, including owner routing when configured. |
+| `.cervomut/reports/history-dashboard.json` | Structured multi-run history snapshot for raw score, actionable score, survivor aging, timeout movement, and operator yield. |
+| `.cervomut/reports/history-dashboard.html` | Human-readable historical dashboard built from persisted run history. |
 | `.cervomut/reports/test-recommendations.md` | Actionable next-test queue derived from nearby tests, coverage source, operator family, survivor history, and optional owner routing. |
 | `.cervomut/reports/governance-review.md` | Human-readable suppression/quarantine review pack with generated templates and expiry guidance. |
 | `.cervomut/reports/governance-review.json` | Auditable structured export for suppression/quarantine review workflows. |
@@ -189,6 +191,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut report survivors --out DIR --actionable-only` | Print only the actionable survivor review set, with equivalent/platform-sensitive duplicates collapsed. |
 | `cervomut report recommendations --out DIR` | Print the recommended next tests for actionable survivors. |
 | `cervomut report governance --out DIR` | Print the generated suppression/quarantine review pack. |
+| `cervomut report history --out DIR` | Print the historical trend summary derived from persisted run history. |
 | `cervomut report sarif --out DIR` | Print GitHub code-scanning SARIF for the stored report. |
 | `cervomut report github-summary --out DIR` | Print compact GitHub summary markdown for the stored report. |
 | `cervomut report open` | Open the HTML survivor review workbench. |

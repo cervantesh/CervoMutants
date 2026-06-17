@@ -11,6 +11,7 @@ type historyFile struct {
 	SchemaVersion string                  `json:"schema_version"`
 	UpdatedAt     string                  `json:"updated_at"`
 	Mutants       map[string]historyEntry `json:"mutants"`
+	Runs          []HistoryRun            `json:"runs,omitempty"`
 }
 
 type historyEntry struct {
@@ -32,18 +33,14 @@ func (e *Engine) applyHistory(results []MutantResult) HistoryStats {
 	if !e.cfg.History.Enabled {
 		return stats
 	}
-	path := e.cfg.History.Path
-	if path == "" {
-		path = ".cervomut/history.json"
-		stats.Path = path
-	}
-	store := historyFile{SchemaVersion: "1", Mutants: map[string]historyEntry{}}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &store)
-	}
+	path := e.historyPath()
+	stats.Path = path
+	store := e.loadHistoryStore(path)
 	if store.Mutants == nil {
 		store.Mutants = map[string]historyEntry{}
 	}
+	stats.UpdatedAt = store.UpdatedAt
+	stats.Runs = append([]HistoryRun{}, store.Runs...)
 	stats.LoadedMutants = len(store.Mutants)
 	now := time.Now().UTC().Format(time.RFC3339)
 	operatorSeen := map[string]int{}
@@ -68,12 +65,24 @@ func (e *Engine) applyHistory(results []MutantResult) HistoryStats {
 	}
 	stats.UpdatedMutants = len(results)
 	store.UpdatedAt = now
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-		if data, err := json.MarshalIndent(store, "", "  "); err == nil {
-			_ = os.WriteFile(path, data, 0o644)
-		}
-	}
+	stats.UpdatedAt = now
+	e.writeHistoryStore(path, store)
 	return stats
+}
+
+func (e *Engine) recordHistoryRun(result *RunResult) {
+	if result == nil || !e.cfg.History.Enabled {
+		return
+	}
+	path := e.historyPath()
+	store := e.loadHistoryStore(path)
+	run := historyRunFromResult(*result)
+	store.Runs = append(store.Runs, run)
+	store.UpdatedAt = run.RunAt
+	e.writeHistoryStore(path, store)
+	result.History.Path = path
+	result.History.UpdatedAt = store.UpdatedAt
+	result.History.Runs = append([]HistoryRun{}, store.Runs...)
 }
 
 func historyOperator(operator string) string {
@@ -142,4 +151,89 @@ func incrementHistoryStatus(entry *historyEntry, status Status) {
 	case StatusTimedOut:
 		entry.TimedOutRuns++
 	}
+}
+
+func (e *Engine) historyPath() string {
+	path := e.cfg.History.Path
+	if path == "" {
+		return ".cervomut/history.json"
+	}
+	return path
+}
+
+func (e *Engine) loadHistoryStore(path string) historyFile {
+	store := historyFile{SchemaVersion: "1", Mutants: map[string]historyEntry{}}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &store)
+	}
+	if store.Mutants == nil {
+		store.Mutants = map[string]historyEntry{}
+	}
+	return store
+}
+
+func (e *Engine) writeHistoryStore(path string, store historyFile) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+		if data, err := json.MarshalIndent(store, "", "  "); err == nil {
+			_ = os.WriteFile(path, data, 0o644)
+		}
+	}
+}
+
+func historyRunFromResult(result RunResult) HistoryRun {
+	runAt := time.Now().UTC().Format(time.RFC3339)
+	if lastSeen := latestResultTimestamp(result.Mutants); lastSeen != "" {
+		runAt = lastSeen
+	}
+	newCount, agingCount, longStandingCount := survivorAgeCounts(result.Mutants)
+	operatorYield := map[string]float64{}
+	for operator, value := range result.History.OperatorUsefulSurvivor {
+		operatorYield[operator] = value
+	}
+	return HistoryRun{
+		RunAt:                   runAt,
+		RawScore:                result.Summary.Score,
+		ActionableScore:         result.Summary.Actionable.ActionableScore,
+		Survived:                result.Summary.Survived,
+		TrueActionableSurvivors: result.Summary.Actionable.TrueActionableSurvivors,
+		NewSurvivors:            result.Summary.NewSurvivors,
+		LongStandingSurvivors:   result.Summary.LongStandingSurvivors,
+		SurvivorAgeNew:          newCount,
+		SurvivorAgeAging:        agingCount,
+		SurvivorAgeLongStanding: longStandingCount,
+		TimedOut:                result.Summary.TimedOut,
+		NonProgressTimeouts:     result.Summary.NonProgressTimeouts,
+		OperatorUsefulSurvivor:  operatorYield,
+	}
+}
+
+func latestResultTimestamp(results []MutantResult) string {
+	latest := ""
+	for _, result := range results {
+		timestamp := result.LastSeen
+		if timestamp == "" {
+			continue
+		}
+		if latest == "" || timestamp > latest {
+			latest = timestamp
+		}
+	}
+	return latest
+}
+
+func survivorAgeCounts(results []MutantResult) (newCount, agingCount, longStandingCount int) {
+	for _, result := range results {
+		if result.Status != StatusSurvived {
+			continue
+		}
+		switch {
+		case result.SurvivorAgeRuns <= 1:
+			newCount++
+		case result.SurvivorAgeRuns < 5:
+			agingCount++
+		default:
+			longStandingCount++
+		}
+	}
+	return newCount, agingCount, longStandingCount
 }

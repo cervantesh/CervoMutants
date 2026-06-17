@@ -411,7 +411,7 @@ func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 	if err := WriteFormats(dir, run, []string{"summary", "json"}); err != nil {
 		t.Fatalf("WriteFormats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json", "history-dashboard.json", "history-dashboard.html"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}
@@ -427,7 +427,7 @@ func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
 	if err := WriteFormats(dir, run, nil); err != nil {
 		t.Fatalf("WriteFormats default formats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json", "history-dashboard.json", "history-dashboard.html"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("default formats missing %s: %v", want, err)
 		}
@@ -565,6 +565,77 @@ func TestGovernanceReviewExportsTemplatesAndPolicy(t *testing.T) {
 	for _, want := range []string{"# CervoMutants Governance Review", "## Quarantine Templates", "## Suppression Templates", "timeout", "audit-high-equivalent-risk", "runtime-owner", "ownership_route=owner=runtime-owner team=runtime rule=pkg-runtime"} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("governance markdown missing %q:\n%s", want, markdown)
+		}
+	}
+}
+
+func TestHistoryDashboardOutputs(t *testing.T) {
+	run := engine.RunResult{
+		History: engine.HistoryStats{
+			Enabled: true,
+			Path:    ".cervomut/history.json",
+			Runs: []engine.HistoryRun{
+				{
+					RunAt:                   "2026-06-16T10:00:00Z",
+					RawScore:                72.5,
+					ActionableScore:         80,
+					Survived:                8,
+					TrueActionableSurvivors: 5,
+					NewSurvivors:            2,
+					LongStandingSurvivors:   1,
+					SurvivorAgeNew:          2,
+					SurvivorAgeAging:        3,
+					SurvivorAgeLongStanding: 1,
+					TimedOut:                2,
+					NonProgressTimeouts:     1,
+					OperatorUsefulSurvivor: map[string]float64{
+						"logical":               0.20,
+						"conditionals-boundary": 0.50,
+					},
+				},
+				{
+					RunAt:                   "2026-06-17T10:00:00Z",
+					RawScore:                78,
+					ActionableScore:         84.5,
+					Survived:                6,
+					TrueActionableSurvivors: 4,
+					NewSurvivors:            1,
+					LongStandingSurvivors:   2,
+					SurvivorAgeNew:          1,
+					SurvivorAgeAging:        2,
+					SurvivorAgeLongStanding: 2,
+					TimedOut:                1,
+					NonProgressTimeouts:     0,
+					OperatorUsefulSurvivor: map[string]float64{
+						"logical":               0.10,
+						"conditionals-boundary": 0.60,
+					},
+				},
+			},
+		},
+	}
+
+	jsonData, err := HistoryDashboardJSON(run)
+	if err != nil {
+		t.Fatalf("HistoryDashboardJSON returned error: %v", err)
+	}
+	for _, want := range []string{`"run_count": 2`, `"raw_score": 78`, `"actionable_score": 84.5`, `"survivor_age_long_standing": 2`} {
+		if !strings.Contains(string(jsonData), want) {
+			t.Fatalf("history dashboard json missing %q:\n%s", want, jsonData)
+		}
+	}
+
+	text := HistorySummary(run)
+	for _, want := range []string{"Historical runs: 2", "Latest raw score: 78.00%", "Delta vs previous: raw=+5.50 actionable=+4.50 survived=-2"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("history summary missing %q:\n%s", want, text)
+		}
+	}
+
+	html := HistoryDashboardHTML(run)
+	for _, want := range []string{"cervomut history dashboard", "Historical runs", "Latest actionable score", "Latest operator yield", "conditionals-boundary", "2026-06-17T10:00:00Z"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("history dashboard html missing %q:\n%s", want, html)
 		}
 	}
 }
@@ -814,7 +885,7 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 	if err := WriteAll(dir, run); err != nil {
 		t.Fatalf("WriteAll returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "junit.xml", "index.html", "mutation-report.sarif", "github-summary.md"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "junit.xml", "index.html", "mutation-report.sarif", "github-summary.md", "history-dashboard.json", "history-dashboard.html"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}

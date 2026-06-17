@@ -235,11 +235,29 @@ type QuarantineStats struct {
 type HistoryStats struct {
 	Enabled                bool               `json:"enabled"`
 	Path                   string             `json:"path,omitempty"`
+	UpdatedAt              string             `json:"updated_at,omitempty"`
 	LoadedMutants          int                `json:"loaded_mutants"`
 	UpdatedMutants         int                `json:"updated_mutants"`
 	NewSurvivors           int                `json:"new_survivors"`
 	LongStandingSurvivors  int                `json:"long_standing_survivors"`
 	OperatorUsefulSurvivor map[string]float64 `json:"operator_useful_survivor_yield,omitempty"`
+	Runs                   []HistoryRun       `json:"runs,omitempty"`
+}
+
+type HistoryRun struct {
+	RunAt                   string             `json:"run_at"`
+	RawScore                float64            `json:"raw_score"`
+	ActionableScore         float64            `json:"actionable_score"`
+	Survived                int                `json:"survived"`
+	TrueActionableSurvivors int                `json:"true_actionable_survivors"`
+	NewSurvivors            int                `json:"new_survivors"`
+	LongStandingSurvivors   int                `json:"long_standing_survivors"`
+	SurvivorAgeNew          int                `json:"survivor_age_new"`
+	SurvivorAgeAging        int                `json:"survivor_age_aging"`
+	SurvivorAgeLongStanding int                `json:"survivor_age_long_standing"`
+	TimedOut                int                `json:"timed_out"`
+	NonProgressTimeouts     int                `json:"non_progress_timeouts"`
+	OperatorUsefulSurvivor  map[string]float64 `json:"operator_useful_survivor,omitempty"`
 }
 
 type RunResult struct {
