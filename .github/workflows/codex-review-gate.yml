@@ -35,7 +35,9 @@ jobs:
             const number = context.issue.number;
             const maxWaitMs = 8 * 60 * 1000;
             const pollMs = 15000;
-            const runStartedAt = Date.now();
+            const workflowID = "codex-review-gate.yml";
+            let cachedReviewFloor = null;
+            let cachedReviewHead = null;
 
             function isCodex(login) {
               return Boolean(login) && botLogins.has(login);
@@ -43,6 +45,46 @@ jobs:
 
             function sleep(ms) {
               return new Promise((resolve) => setTimeout(resolve, ms));
+            }
+
+            async function getReviewFloor(headSha) {
+              if (cachedReviewFloor !== null && cachedReviewHead === headSha) {
+                return cachedReviewFloor;
+              }
+
+              const workflowRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner,
+                repo,
+                workflow_id: workflowID,
+                event: "pull_request",
+                per_page: 100,
+              });
+
+              const matchingRunTimes = workflowRuns
+                .filter((run) => {
+                  if (run.head_sha !== headSha) {
+                    return false;
+                  }
+                  if (!Array.isArray(run.pull_requests) || run.pull_requests.length === 0) {
+                    return true;
+                  }
+                  return run.pull_requests.some((pullRequest) => pullRequest.number === number);
+                })
+                .map((run) => Date.parse(run.created_at))
+                .filter((value) => Number.isFinite(value));
+
+              if (matchingRunTimes.length === 0) {
+                const currentRun = await github.rest.actions.getWorkflowRun({
+                  owner,
+                  repo,
+                  run_id: context.runId,
+                });
+                matchingRunTimes.push(Date.parse(currentRun.data.created_at));
+              }
+
+              cachedReviewHead = headSha;
+              cachedReviewFloor = Math.min(...matchingRunTimes);
+              return cachedReviewFloor;
             }
 
             async function fetchGateState() {
@@ -106,6 +148,7 @@ jobs:
 
               const unresolvedThreads = [];
               let codexThreadCount = 0;
+              const reviewFloor = await getReviewFloor(pr.headRefOid);
 
               for (const thread of pr.reviewThreads.nodes) {
                 if (thread.isOutdated) {
@@ -148,7 +191,7 @@ jobs:
                 return (
                   isCodex(reaction.user?.login) &&
                   reaction.content === "+1" &&
-                  Date.parse(reaction.created_at) >= runStartedAt
+                  Date.parse(reaction.created_at) >= reviewFloor
                 );
               });
 
