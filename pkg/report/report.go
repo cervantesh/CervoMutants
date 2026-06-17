@@ -1268,6 +1268,12 @@ func WriteFormatsWithOptions(dir string, result engine.RunResult, formats []stri
 		return err
 	}
 	files["governance-review.json"] = governanceJSON
+	historyJSON, err := HistoryDashboardJSON(result)
+	if err != nil {
+		return err
+	}
+	files["history-dashboard.json"] = historyJSON
+	files["history-dashboard.html"] = []byte(HistoryDashboardHTML(result))
 	ledgerData, err := SemanticTriageLedger(result)
 	if err != nil {
 		return err

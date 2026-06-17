@@ -134,6 +134,7 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (result RunResult, err
 			result.Baseline = BaselineComparison{Enabled: true, CurrentScore: result.Summary.Score}
 		}
 	}
+	e.recordHistoryRun(&result)
 	if err := writeReportsForRun(e, result); err != nil {
 		return RunResult{}, wrapStageError("environment_error", err)
 	}

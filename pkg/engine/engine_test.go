@@ -1275,6 +1275,83 @@ func TestHistoryDisabledAndMixedStatuses(t *testing.T) {
 	}
 }
 
+func TestRecordHistoryRunAppendsHistoricalSnapshots(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.History.Path = filepath.Join(dir, "history.json")
+	e := New(cfg)
+
+	firstMutants := []MutantResult{{
+		MutantID: "m1",
+		Status:   StatusSurvived,
+		Mutant:   Mutant{Operator: "logical"},
+	}}
+	firstHistory := e.applyHistory(firstMutants)
+	firstRun := RunResult{
+		Summary: Summary{
+			Score:               50,
+			Survived:            1,
+			TimedOut:            1,
+			NonProgressTimeouts: 1,
+			Actionable: ActionableSummary{
+				ActionableScore:         66.67,
+				TrueActionableSurvivors: 1,
+			},
+		},
+		History: firstHistory,
+		Mutants: firstMutants,
+	}
+
+	e.recordHistoryRun(&firstRun)
+	if len(firstRun.History.Runs) != 1 {
+		t.Fatalf("first historical run snapshot missing: %+v", firstRun.History.Runs)
+	}
+	if firstRun.History.Runs[0].RawScore != 50 || firstRun.History.Runs[0].ActionableScore != 66.67 {
+		t.Fatalf("first historical run scores missing: %+v", firstRun.History.Runs[0])
+	}
+
+	secondMutants := []MutantResult{{
+		MutantID: "m1",
+		Status:   StatusKilled,
+		Mutant:   Mutant{Operator: "logical"},
+	}}
+	secondHistory := e.applyHistory(secondMutants)
+	secondRun := RunResult{
+		Summary: Summary{
+			Score:    75,
+			Survived: 0,
+			Actionable: ActionableSummary{
+				ActionableScore:         100,
+				TrueActionableSurvivors: 0,
+			},
+		},
+		History: secondHistory,
+		Mutants: secondMutants,
+	}
+
+	e.recordHistoryRun(&secondRun)
+	if len(secondRun.History.Runs) != 2 {
+		t.Fatalf("historical snapshots were not appended: %+v", secondRun.History.Runs)
+	}
+	if secondRun.History.Runs[1].RawScore != 75 || secondRun.History.Runs[1].Survived != 0 {
+		t.Fatalf("second historical snapshot mismatch: %+v", secondRun.History.Runs[1])
+	}
+
+	data, err := os.ReadFile(cfg.History.Path)
+	if err != nil {
+		t.Fatalf("history file missing: %v", err)
+	}
+	var stored struct {
+		Runs []HistoryRun `json:"runs"`
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("history file is not valid JSON: %v", err)
+	}
+	if len(stored.Runs) != 2 {
+		t.Fatalf("stored history runs = %d, want 2", len(stored.Runs))
+	}
+}
+
 func TestBudgetSchedulingPrioritizesFastOperators(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Execution.Budget = 1
