@@ -93,6 +93,7 @@ Important files:
 | `.cervomut/reports/index.html` | Filterable survivor review workbench with raw-report fallback, diff browsing, and client-side triage filters. |
 | `.cervomut/reports/mutation-report.sarif` | GitHub code-scanning friendly mutation findings. |
 | `.cervomut/reports/github-summary.md` | Compact GitHub step summary markdown for PR/Actions views. |
+| `.cervomut/reports/test-recommendations.md` | Actionable next-test queue derived from nearby tests, coverage source, operator family, and survivor history. |
 | `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
 | `.cervomut/reports/semantic-triage-ledger.json` | Auditable skip/quarantine suggestions for known noisy patterns. |
 | `.cervomut/reports/partial-mutation-report.json` | Checkpoint report for timeout/interrupted runs. |
@@ -184,6 +185,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut report summary --out DIR` | Print report summary. |
 | `cervomut report survivors --out DIR` | Print ranked surviving mutants. |
 | `cervomut report survivors --out DIR --actionable-only` | Print only the actionable survivor review set, with equivalent/platform-sensitive duplicates collapsed. |
+| `cervomut report recommendations --out DIR` | Print the recommended next tests for actionable survivors. |
 | `cervomut report sarif --out DIR` | Print GitHub code-scanning SARIF for the stored report. |
 | `cervomut report github-summary --out DIR` | Print compact GitHub summary markdown for the stored report. |
 | `cervomut report open` | Open the HTML survivor review workbench. |
@@ -380,6 +382,18 @@ Survivors are ranked by actionability using:
 - history status;
 - operator historical yield;
 - suppression audit hits.
+
+Actionable survivors also carry a structured `test_recommendation` block. v1
+uses:
+
+- nearby test files;
+- coverage source tightness vs fallback/package-level selection;
+- operator family;
+- survivor history and age;
+- target-OS sensitivity where relevant.
+
+The goal is to answer "which test should I touch first and what kind of
+assertion is missing?" without generating tests automatically.
 
 ## Quarantine And Suppression
 

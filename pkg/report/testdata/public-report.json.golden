@@ -270,6 +270,25 @@
       "rank_reason": "risk=high recommendation=fast-ci nearby_tests=2",
       "actionability": "high",
       "suggested_test_scope": "./pkg/review",
+      "test_recommendation": {
+        "priority": "high",
+        "strategy": "tighten-branch-assertions",
+        "summary": "Start with `pkg/review_sort_test.go` while this survivor is new: Add a strict ordering assertion.",
+        "candidate_tests": [
+          "pkg/review_sort_test.go",
+          "pkg/review_test.go"
+        ],
+        "suggested_assertions": [
+          "Add a strict ordering assertion."
+        ],
+        "rationale": [
+          "operator=conditionals-boundary -\u003e branch and boundary assertions usually kill this operator family",
+          "coverage_source=coverage-mode -\u003e the mutant was matched by coverage data, so the next test should usually be an assertion upgrade",
+          "nearby_tests=2 -\u003e start with pkg/review_sort_test.go",
+          "history=new_survivor -\u003e fix the closest nearby test while the regression is still fresh",
+          "semantic_group=sort comparator boundary -\u003e one good review can collapse 2 similar survivors"
+        ]
+      },
       "suggested_skip_reason": "review once for this semantic group before treating each survivor independently",
       "nearest_tests": [
         "pkg/review_test.go",
@@ -376,6 +395,27 @@
       "rank_reason": "risk=medium recommendation=nightly platform-sensitive windows",
       "actionability": "medium",
       "suggested_test_scope": "./pkg/fs",
+      "test_recommendation": {
+        "priority": "medium",
+        "strategy": "review-platform-contract",
+        "summary": "Promote `pkg/fs_test.go` into a named regression: Review on the target OS before treating permission-mode survivors as actionable.",
+        "candidate_tests": [
+          "pkg/fs_test.go"
+        ],
+        "suggested_assertions": [
+          "Review on the target OS before treating permission-mode survivors as actionable.",
+          "Keep the assertion file-local; fallback coverage usually means the package-level run is too broad.",
+          "Exercise the permission-mode behavior on Windows explicitly before treating the survivor as actionable.",
+          "Give the fix a dedicated regression case name so future runs expose the contract immediately."
+        ],
+        "rationale": [
+          "operator=numeric-literals -\u003e exact value checks usually kill this operator family",
+          "coverage_source=coverage-mode-file-fallback -\u003e the mutant was reached through fallback coverage rather than a tight file-level match",
+          "nearby_tests=1 -\u003e start with pkg/fs_test.go",
+          "history=long_standing_survivor -\u003e this mutant has survived 7 runs; convert the next fix into a named regression",
+          "goos=windows -\u003e permission-mode mutations need target-OS verification before escalation"
+        ]
+      },
       "suggested_skip_reason": "review on the target OS before treating this permission-mode mutant as actionable",
       "nearest_tests": [
         "pkg/fs_test.go"

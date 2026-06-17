@@ -96,3 +96,50 @@ func TestActionableViewAndSummaryHelpers(t *testing.T) {
 		t.Fatalf("actionable score = %.2f, want 60", summary.ActionableScore)
 	}
 }
+
+func TestBuildTestRecommendationUsesNearbyTestsCoverageAndHistory(t *testing.T) {
+	rec := BuildTestRecommendation("linux", Result{
+		MutantID:        "pkg/review.go:19:conditionals-boundary:123",
+		Status:          StatusSurvived,
+		CoverageSource:  "coverage-mode-file-fallback",
+		HistoryStatus:   "long_standing_survivor",
+		SurvivorAgeRuns: 6,
+		Mutant: Mutant{
+			File:           "pkg/review.go",
+			Package:        "./pkg/review",
+			Function:       "ReviewIDs",
+			Operator:       "conditionals-boundary",
+			Hint:           "Add a strict ordering assertion.",
+			Description:    "Changed < to <= in ReviewIDs.",
+			Recommendation: "fast-ci",
+			GroupLabel:     "sort comparator boundary",
+			NearbyTests:    []string{"pkg/review_test.go", "pkg/review_sort_test.go"},
+		},
+	}, 2, "high")
+	if rec == nil {
+		t.Fatal("expected recommendation")
+	}
+	if rec.Priority != "high" || rec.Strategy != "tighten-branch-assertions" {
+		t.Fatalf("unexpected recommendation header: %+v", rec)
+	}
+	if len(rec.CandidateTests) != 2 || rec.CandidateTests[0] != "pkg/review_sort_test.go" {
+		t.Fatalf("candidate test ordering mismatch: %+v", rec.CandidateTests)
+	}
+	if !strings.Contains(rec.Summary, "named regression") || !strings.Contains(rec.Summary, "pkg/review_sort_test.go") {
+		t.Fatalf("recommendation summary missing history/test focus: %s", rec.Summary)
+	}
+	text := strings.Join(rec.Rationale, "\n")
+	for _, want := range []string{
+		"coverage_source=coverage-mode-file-fallback",
+		"operator=conditionals-boundary",
+		"history=long_standing_survivor",
+		"semantic_group=sort comparator boundary",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("recommendation rationale missing %q:\n%s", want, text)
+		}
+	}
+	if len(rec.SuggestedAssertions) == 0 || !strings.Contains(rec.SuggestedAssertions[0], "strict ordering assertion") {
+		t.Fatalf("suggested assertions missing hint: %+v", rec.SuggestedAssertions)
+	}
+}

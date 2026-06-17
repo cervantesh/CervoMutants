@@ -17,9 +17,12 @@ const (
 
 type Mutant struct {
 	ID                string
+	File              string
 	Package           string
 	Function          string
 	Operator          string
+	Hint              string
+	Description       string
 	Recommendation    string
 	EquivalentRisk    string
 	NearbyTests       []string
@@ -56,6 +59,7 @@ type RankedSurvivor struct {
 	RankReason         string
 	Actionability      string
 	SuggestedTestScope string
+	TestRecommendation *TestRecommendation
 	SuggestedSkip      string
 	SemanticGroupSize  int
 	NearestTests       []string
@@ -194,6 +198,7 @@ func RankSurvivors(goos string, results []Result) []RankedSurvivor {
 	for rank, idx := range survivors {
 		groupSize := groupSizes[normalized[idx].Mutant.SemanticGroup]
 		score, reason := survivorRankScore(goos, normalized[idx], groupSize)
+		actionabilityBand := actionability(score)
 		skip := normalized[idx].SuggestedSkip
 		if skip == "" && groupSize > 1 {
 			skip = "review once for this semantic group before treating each survivor independently"
@@ -203,8 +208,9 @@ func RankSurvivors(goos string, results []Result) []RankedSurvivor {
 			SurvivorRank:       rank + 1,
 			RankScore:          score,
 			RankReason:         reason,
-			Actionability:      actionability(score),
+			Actionability:      actionabilityBand,
 			SuggestedTestScope: SuggestedTestScope(normalized[idx].Mutant),
+			TestRecommendation: BuildTestRecommendation(goos, normalized[idx], groupSize, actionabilityBand),
 			SuggestedSkip:      skip,
 			SemanticGroupSize:  groupSize,
 			NearestTests:       append([]string{}, normalized[idx].Mutant.NearbyTests...),

@@ -69,31 +69,41 @@ type MutantJob struct {
 }
 
 type MutantResult struct {
-	MutantID            string        `json:"mutant_id"`
-	Status              Status        `json:"status"`
-	FailureKind         string        `json:"failure_kind,omitempty"`
-	MemoryPeakBytes     int64         `json:"memory_peak_bytes,omitempty"`
-	Duration            time.Duration `json:"duration"`
-	TestCommand         []string      `json:"selected_tests"`
-	StatusReason        string        `json:"status_reason"`
-	SelectionReason     string        `json:"selection_reason,omitempty"`
-	CoverageSource      string        `json:"coverage_source,omitempty"`
-	Output              string        `json:"output"`
-	Mutant              Mutant        `json:"mutant"`
-	SurvivorRank        int           `json:"survivor_rank,omitempty"`
-	RankScore           float64       `json:"rank_score,omitempty"`
-	RankReason          string        `json:"rank_reason,omitempty"`
-	Actionability       string        `json:"actionability,omitempty"`
-	SuggestedTestScope  string        `json:"suggested_test_scope,omitempty"`
-	SuggestedSkipReason string        `json:"suggested_skip_reason,omitempty"`
-	NearestTests        []string      `json:"nearest_tests,omitempty"`
-	SemanticGroupSize   int           `json:"semantic_group_size,omitempty"`
-	PreviousStatus      Status        `json:"previous_status,omitempty"`
-	FirstSeen           string        `json:"first_seen,omitempty"`
-	LastSeen            string        `json:"last_seen,omitempty"`
-	SurvivorAgeRuns     int           `json:"survivor_age_runs,omitempty"`
-	HistoryStatus       string        `json:"history_status,omitempty"`
-	OperatorYield       float64       `json:"operator_historical_yield,omitempty"`
+	MutantID            string              `json:"mutant_id"`
+	Status              Status              `json:"status"`
+	FailureKind         string              `json:"failure_kind,omitempty"`
+	MemoryPeakBytes     int64               `json:"memory_peak_bytes,omitempty"`
+	Duration            time.Duration       `json:"duration"`
+	TestCommand         []string            `json:"selected_tests"`
+	StatusReason        string              `json:"status_reason"`
+	SelectionReason     string              `json:"selection_reason,omitempty"`
+	CoverageSource      string              `json:"coverage_source,omitempty"`
+	Output              string              `json:"output"`
+	Mutant              Mutant              `json:"mutant"`
+	SurvivorRank        int                 `json:"survivor_rank,omitempty"`
+	RankScore           float64             `json:"rank_score,omitempty"`
+	RankReason          string              `json:"rank_reason,omitempty"`
+	Actionability       string              `json:"actionability,omitempty"`
+	SuggestedTestScope  string              `json:"suggested_test_scope,omitempty"`
+	TestRecommendation  *TestRecommendation `json:"test_recommendation,omitempty"`
+	SuggestedSkipReason string              `json:"suggested_skip_reason,omitempty"`
+	NearestTests        []string            `json:"nearest_tests,omitempty"`
+	SemanticGroupSize   int                 `json:"semantic_group_size,omitempty"`
+	PreviousStatus      Status              `json:"previous_status,omitempty"`
+	FirstSeen           string              `json:"first_seen,omitempty"`
+	LastSeen            string              `json:"last_seen,omitempty"`
+	SurvivorAgeRuns     int                 `json:"survivor_age_runs,omitempty"`
+	HistoryStatus       string              `json:"history_status,omitempty"`
+	OperatorYield       float64             `json:"operator_historical_yield,omitempty"`
+}
+
+type TestRecommendation struct {
+	Priority            string   `json:"priority,omitempty"`
+	Strategy            string   `json:"strategy,omitempty"`
+	Summary             string   `json:"summary,omitempty"`
+	CandidateTests      []string `json:"candidate_tests,omitempty"`
+	SuggestedAssertions []string `json:"suggested_assertions,omitempty"`
+	Rationale           []string `json:"rationale,omitempty"`
 }
 
 type Summary struct {

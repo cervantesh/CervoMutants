@@ -81,9 +81,12 @@
             "equivalent_risk": "high",
             "mutant_id": "pkg/review.go:19:conditionals-boundary:123456789abc",
             "operator": "conditionals-boundary",
+            "recommended_test": "pkg/review_sort_test.go",
             "semantic_group": "sort-boundary:pkg/review.go:19",
             "status": "survived",
-            "suggested_test_scope": "./pkg/review"
+            "suggested_test_scope": "./pkg/review",
+            "test_recommendation_strategy": "tighten-branch-assertions",
+            "test_recommendation_summary": "Start with `pkg/review_sort_test.go` while this survivor is new: Add a strict ordering assertion."
           }
         },
         {
@@ -113,8 +116,11 @@
             "mutant_id": "pkg/fs.go:41:numeric-literals:ff00ff00aa11",
             "operator": "numeric-literals",
             "platform_sensitive": true,
+            "recommended_test": "pkg/fs_test.go",
             "status": "survived",
-            "suggested_test_scope": "./pkg/fs"
+            "suggested_test_scope": "./pkg/fs",
+            "test_recommendation_strategy": "review-platform-contract",
+            "test_recommendation_summary": "Promote `pkg/fs_test.go` into a named regression: Review on the target OS before treating permission-mode survivors as actionable."
           }
         },
         {
