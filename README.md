@@ -94,6 +94,8 @@ Important files:
 | `.cervomut/reports/mutation-report.sarif` | GitHub code-scanning friendly mutation findings. |
 | `.cervomut/reports/github-summary.md` | Compact GitHub step summary markdown for PR/Actions views. |
 | `.cervomut/reports/test-recommendations.md` | Actionable next-test queue derived from nearby tests, coverage source, operator family, and survivor history. |
+| `.cervomut/reports/governance-review.md` | Human-readable suppression/quarantine review pack with generated templates and expiry guidance. |
+| `.cervomut/reports/governance-review.json` | Auditable structured export for suppression/quarantine review workflows. |
 | `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
 | `.cervomut/reports/semantic-triage-ledger.json` | Auditable skip/quarantine suggestions for known noisy patterns. |
 | `.cervomut/reports/partial-mutation-report.json` | Checkpoint report for timeout/interrupted runs. |
@@ -186,6 +188,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut report survivors --out DIR` | Print ranked surviving mutants. |
 | `cervomut report survivors --out DIR --actionable-only` | Print only the actionable survivor review set, with equivalent/platform-sensitive duplicates collapsed. |
 | `cervomut report recommendations --out DIR` | Print the recommended next tests for actionable survivors. |
+| `cervomut report governance --out DIR` | Print the generated suppression/quarantine review pack. |
 | `cervomut report sarif --out DIR` | Print GitHub code-scanning SARIF for the stored report. |
 | `cervomut report github-summary --out DIR` | Print compact GitHub summary markdown for the stored report. |
 | `cervomut report open` | Open the HTML survivor review workbench. |
@@ -410,6 +413,15 @@ Quarantine entries must include:
 
 Expired quarantines can fail CI. Quarantined mutants remain visible in reports
 and do not improve the primary score.
+
+`governance-review.md` and `governance-review.json` are the review companions
+for this policy layer. They generate:
+
+- quarantine candidate templates with suggested expiry windows and policy
+  reminders;
+- suppression rule templates with evidence and reviewer metadata;
+- auditable exports suitable for issue comments, follow-up review, or external
+  tooling.
 
 Suppression is stricter. A rule with `action: suppress` requires confirmed
 evidence and at least one reviewer. Lower-confidence rules should use
