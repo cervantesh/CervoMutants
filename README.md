@@ -664,6 +664,8 @@ Latest local Sonar pass after issue #31:
   for small, medium, and large-repo adoption patterns.
 - [docs/adoption-guide.md](docs/adoption-guide.md): public fit, rollout,
   limitation, and tradeoff guidance grounded in current validation evidence.
+- [docs/github-review-workflow.md](docs/github-review-workflow.md): the default
+  PR and CI review model using the maintained GitHub workflow examples.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
   for custom mutators, suppression evaluators, and survivor rankers.
 - [docs/daemon-worker.md](docs/daemon-worker.md): experimental daemon/worker
