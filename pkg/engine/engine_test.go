@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cervantesh/CervoMutants/pkg/config"
-	"github.com/cervantesh/CervoMutants/pkg/mutator"
+	"github.com/cervantesh/cervo-mutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/mutator"
 )
 
 func writeFixture(t *testing.T) string {

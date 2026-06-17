@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cervantesh/CervoMutants/pkg/pool"
+	"github.com/cervantesh/cervo-mutants/pkg/pool"
 )
 
 func TestPoolSmokeCommandDispatches(t *testing.T) {

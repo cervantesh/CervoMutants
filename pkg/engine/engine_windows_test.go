@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cervantesh/CervoMutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/config"
 )
 
 func TestRunTestClassifiesMemoryKilledOnWindowsJobObjectLimit(t *testing.T) {
