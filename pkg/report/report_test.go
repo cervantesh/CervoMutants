@@ -224,6 +224,112 @@ func TestSurvivorsActionableOnlyFiltersAndCollapses(t *testing.T) {
 	}
 }
 
+func TestSemanticTriageLedgerGroupsAndSuggestsActions(t *testing.T) {
+	run := engine.RunResult{
+		Environment: engine.Environment{OS: "windows"},
+		Mutants: []engine.MutantResult{
+			{MutantID: "group-lead", Status: engine.StatusSurvived, SurvivorRank: 1, Actionability: "high", SemanticGroupSize: 2, SuggestedSkipReason: "review once", Mutant: engine.Mutant{
+				File:                "a.go",
+				Line:                1,
+				Operator:            "conditionals-boundary",
+				Original:            "<",
+				Mutated:             "<=",
+				EquivalentRisk:      "high",
+				SemanticTags:        []string{"equivalence-risk-group", "sort-comparator-boundary"},
+				SemanticGroup:       "sort:1",
+				GroupLabel:          "sort comparator boundary",
+				GroupReason:         "shared review",
+				SuggestedSkipReason: "review once",
+			}},
+			{MutantID: "group-dup", Status: engine.StatusSurvived, SurvivorRank: 2, Actionability: "medium", SemanticGroupSize: 2, Mutant: engine.Mutant{
+				File:           "a.go",
+				Line:           2,
+				Operator:       "conditionals-boundary",
+				Original:       "<",
+				Mutated:        "<=",
+				EquivalentRisk: "high",
+				SemanticGroup:  "sort:1",
+				GroupLabel:     "sort comparator boundary",
+				GroupReason:    "shared review",
+			}},
+			{MutantID: "platform", Status: engine.StatusSurvived, Actionability: "medium", Mutant: engine.Mutant{
+				File:                "b.go",
+				Line:                3,
+				Operator:            "numeric-literals",
+				Original:            "0o755",
+				Mutated:             "0",
+				PlatformSensitive:   true,
+				SuggestedSkipReason: "review on windows first",
+			}},
+			{MutantID: "timeout", Status: engine.StatusTimedOut, FailureKind: "non_progress_loop", StatusReason: "loop variable stopped making progress", Mutant: engine.Mutant{
+				File:                "c.go",
+				Line:                4,
+				Operator:            "inc-dec",
+				Original:            "i++",
+				Mutated:             "i--",
+				NonProgressRisk:     "high",
+				SuggestedSkipReason: "reviewed-skip or quarantine if timeout confirms the loop is non-progress",
+			}},
+			{MutantID: "fallback", Status: engine.StatusSurvived, Actionability: "low", SuggestedSkipReason: "reviewed-skip after confirming fallback equivalence", Mutant: engine.Mutant{
+				File:           "d.go",
+				Line:           5,
+				Operator:       "literals",
+				Original:       "\"fallback\"",
+				Mutated:        "\"noop\"",
+				EquivalentRisk: "high",
+				SemanticTags:   []string{"fallback-literal"},
+			}},
+		},
+	}
+
+	data, err := SemanticTriageLedger(run)
+	if err != nil {
+		t.Fatalf("SemanticTriageLedger returned error: %v", err)
+	}
+	var ledger TriageLedger
+	if err := json.Unmarshal(data, &ledger); err != nil {
+		t.Fatalf("ledger is not JSON: %v", err)
+	}
+	if ledger.SchemaVersion != "1" {
+		t.Fatalf("ledger schema version = %q, want 1", ledger.SchemaVersion)
+	}
+	if len(ledger.Entries) != 4 {
+		t.Fatalf("ledger entry count = %d, want 4: %+v", len(ledger.Entries), ledger.Entries)
+	}
+
+	var (
+		groupEntry    *TriageLedgerEntry
+		platformEntry *TriageLedgerEntry
+		timeoutEntry  *TriageLedgerEntry
+		fallbackEntry *TriageLedgerEntry
+	)
+	for i := range ledger.Entries {
+		entry := &ledger.Entries[i]
+		switch entry.MutantID {
+		case "group-lead":
+			groupEntry = entry
+		case "platform":
+			platformEntry = entry
+		case "timeout":
+			timeoutEntry = entry
+		case "fallback":
+			fallbackEntry = entry
+		}
+	}
+	if groupEntry == nil || groupEntry.SuggestedAction != "reviewed-skip" || groupEntry.GroupKey != "sort:1" || groupEntry.GroupSize != 2 || len(groupEntry.MutantIDs) != 2 {
+		t.Fatalf("group entry unexpected: %+v", groupEntry)
+	}
+	if platformEntry == nil || platformEntry.Risk != "platform-sensitive" || platformEntry.SuggestedAction != "reviewed-skip" || !strings.Contains(strings.Join(platformEntry.Evidence, " "), "goos=windows") {
+		t.Fatalf("platform entry unexpected: %+v", platformEntry)
+	}
+	if timeoutEntry == nil || timeoutEntry.Risk != "non-progress-timeout" || timeoutEntry.SuggestedAction != "quarantine" || !strings.Contains(strings.Join(timeoutEntry.Evidence, " "), "failure_kind=non_progress_loop") {
+		t.Fatalf("timeout entry unexpected: %+v", timeoutEntry)
+	}
+	if fallbackEntry == nil || fallbackEntry.Risk != "equivalence-risk" || fallbackEntry.SuggestedAction != "reviewed-skip" || !strings.Contains(strings.Join(fallbackEntry.Evidence, " "), "equivalent_risk=high") {
+		t.Fatalf("fallback entry unexpected: %+v", fallbackEntry)
+	}
+}
+
 func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 	dir := t.TempDir()
 	run := engine.RunResult{SchemaVersion: "1", Summary: engine.Summary{Total: 1}}
@@ -231,7 +337,7 @@ func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 	if err := WriteFormats(dir, run, []string{"summary", "json"}); err != nil {
 		t.Fatalf("WriteFormats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}
@@ -247,7 +353,7 @@ func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
 	if err := WriteFormats(dir, run, nil); err != nil {
 		t.Fatalf("WriteFormats default formats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("default formats missing %s: %v", want, err)
 		}
@@ -274,6 +380,9 @@ func TestWriteFormatsWithActionableViewWritesExtraArtifact(t *testing.T) {
 
 	if err := WriteFormatsWithOptions(dir, run, []string{"summary"}, WriteOptions{ActionableOnly: true}); err != nil {
 		t.Fatalf("WriteFormatsWithOptions returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "semantic-triage-ledger.json")); err != nil {
+		t.Fatalf("semantic-triage-ledger.json missing: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "survivors-actionable.txt"))
 	if err != nil {
@@ -310,7 +419,7 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 	if err := WriteAll(dir, run); err != nil {
 		t.Fatalf("WriteAll returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "junit.xml", "index.html"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "junit.xml", "index.html"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}
