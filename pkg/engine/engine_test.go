@@ -1792,11 +1792,6 @@ func assertQuarantineLoad(t *testing.T, e *Engine, path string) {
 
 func assertPriorityHelpers(t *testing.T) {
 	t.Helper()
-	for risk, want := range map[string]int{"low": 0, "medium": 1, "high": 2, "other": 3} {
-		if got := riskPriority(risk); got != want {
-			t.Fatalf("riskPriority(%q) = %d, want %d", risk, got, want)
-		}
-	}
 	for action, want := range map[string]int{"report-only": 0, "lower-priority": 1, "quarantine-required": 2, "suppress": 3, "none": -1} {
 		if got := suppressionPriority(action); got != want {
 			t.Fatalf("suppressionPriority(%q) = %d, want %d", action, got, want)

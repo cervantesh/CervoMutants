@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
+	"github.com/cervantesh/cervo-mutants/pkg/triage"
 )
 
 type SurvivorsOptions struct {
@@ -274,16 +275,15 @@ func filterSurvivors(result engine.RunResult, survivors []engine.MutantResult, o
 }
 
 func isActionableSurvivor(goos string, survivor engine.MutantResult) bool {
-	if survivor.Actionability == "low" {
-		return false
-	}
-	if strings.EqualFold(goos, "windows") && survivor.Mutant.PlatformSensitive {
-		return false
-	}
-	if survivor.Mutant.NonProgressRisk == "high" {
-		return false
-	}
-	return true
+	return triage.IsActionableSurvivor(goos, triage.Result{
+		MutantID:      survivor.MutantID,
+		Status:        string(survivor.Status),
+		Actionability: survivor.Actionability,
+		Mutant: triage.Mutant{
+			PlatformSensitive: survivor.Mutant.PlatformSensitive,
+			NonProgressRisk:   survivor.Mutant.NonProgressRisk,
+		},
+	})
 }
 
 func SemanticTriageLedger(result engine.RunResult) ([]byte, error) {
