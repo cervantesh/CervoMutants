@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -26,10 +27,20 @@ import (
 const (
 	configFileName           = "cervomut.yaml"
 	mutationReportFileName   = "mutation-report.json"
+	failureDebugFileName     = "failure-debug.json"
 	flagTestTimeout          = "test-timeout"
 	flagMaxMutants           = "max-mutants"
 	flagMaxProcessMemoryMB   = "max-process-memory-mb"
 	reportOutputDirectoryDoc = "report output directory"
+)
+
+var (
+	runEngineFn = func(cfg config.Config, req engine.RunRequest) (engine.RunResult, error) {
+		return engine.New(cfg).Run(context.Background(), req)
+	}
+	writeRunResultFn = writeRunResult
+	writeEvalFn      = evalpkg.Write
+	buildEvalFn      = evalpkg.Build
 )
 
 func main() {
@@ -42,8 +53,7 @@ func main() {
 func run(args []string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			stack := strings.TrimSpace(string(debug.Stack()))
-			err = fmt.Errorf("internal_error: unexpected panic: %v\n%s", recovered, stack)
+			err = fmt.Errorf("internal_error: unexpected panic: %v", recovered)
 		}
 	}()
 	if len(args) == 0 {
@@ -134,21 +144,37 @@ func cmdAffected(args []string) error {
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 
-func cmdRun(args []string) error {
+func cmdRun(args []string) (err error) {
 	opts, targets, err := parseRunOptions(args)
 	if err != nil {
 		return err
 	}
-	cfg := loadConfigIfPresent()
-	applyRunOptions(&cfg, opts)
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-	result, err := engine.New(cfg).Run(context.Background(), engine.RunRequest{Targets: targets, DryRun: opts.dryRun})
+	cfg, err := loadConfigIfPresentStrict()
 	if err != nil {
-		return err
+		cfg = config.Defaults()
+		applyRunOutput(&cfg, opts.out)
+		return finalizeStructuredFailure("run", args, targets, cfg, "config_error", err, "")
 	}
-	return writeRunResult(cfg, result, opts.dryRun)
+	applyRunOptions(&cfg, opts)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = finalizeStructuredFailure("run", args, targets, cfg, "internal_error", fmt.Errorf("unexpected panic: %v", recovered), trimCLIStack(string(debug.Stack())))
+		}
+	}()
+	if err := cfg.Validate(); err != nil {
+		return finalizeStructuredFailure("run", args, targets, cfg, "config_error", err, "")
+	}
+	result, err := runEngineFn(cfg, engine.RunRequest{Targets: targets, DryRun: opts.dryRun})
+	if err != nil {
+		return finalizeStructuredFailure("run", args, targets, cfg, classifyStructuredFailure(err), err, stackFromError(err))
+	}
+	if err := writeRunResultFn(cfg, result, opts.dryRun); err != nil {
+		if strings.Contains(err.Error(), "threshold") {
+			return err
+		}
+		return finalizeStructuredFailure("run", args, targets, cfg, classifyStructuredFailure(err), err, stackFromError(err))
+	}
+	return nil
 }
 
 type runOptions struct {
@@ -289,12 +315,120 @@ func writeRunResult(cfg config.Config, result engine.RunResult, dryRun bool) err
 	return nil
 }
 
+type failureDebugArtifact struct {
+	SchemaVersion string   `json:"schema_version"`
+	Kind          string   `json:"kind"`
+	Message       string   `json:"message"`
+	CorrelationID string   `json:"correlation_id"`
+	Command       []string `json:"command,omitempty"`
+	Targets       []string `json:"targets,omitempty"`
+	StackTrace    string   `json:"stack_trace,omitempty"`
+}
+
+func finalizeStructuredFailure(command string, args, targets []string, cfg config.Config, kind string, cause error, stack string) error {
+	correlationID := newCorrelationID()
+	outputDir := cfg.Reports.Output
+	partialReportPresent := fileExists(filepath.Join(outputDir, "partial-mutation-report.json"))
+	partialSummaryPresent := fileExists(filepath.Join(outputDir, "partial-summary.json"))
+	debugArtifact := ""
+	if outputDir != "" {
+		_ = os.MkdirAll(outputDir, 0o755)
+		debugArtifact = failureDebugFileName
+		debugData, err := json.MarshalIndent(failureDebugArtifact{
+			SchemaVersion: "1",
+			Kind:          kind,
+			Message:       cause.Error(),
+			CorrelationID: correlationID,
+			Command:       append([]string{"cervomut", command}, args...),
+			Targets:       append([]string{}, targets...),
+			StackTrace:    stack,
+		}, "", "  ")
+		if err == nil {
+			_ = os.WriteFile(filepath.Join(outputDir, failureDebugFileName), debugData, 0o644)
+		}
+		reportPath := filepath.Join(outputDir, mutationReportFileName)
+		if !fileExists(reportPath) {
+			runResult := engine.FailureResult(cfg, engine.Failure{
+				Kind:                  kind,
+				Message:               cause.Error(),
+				CorrelationID:         correlationID,
+				Command:               append([]string{"cervomut", command}, args...),
+				Targets:               append([]string{}, targets...),
+				DebugArtifact:         debugArtifact,
+				PartialReportPresent:  partialReportPresent,
+				PartialSummaryPresent: partialSummaryPresent,
+			})
+			if data, err := report.JSON(runResult); err == nil {
+				_ = os.WriteFile(reportPath, data, 0o644)
+			}
+		}
+	}
+	return fmt.Errorf("%s: %v [correlation_id=%s]", kind, cause, correlationID)
+}
+
+func classifyStructuredFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	var panicErr *engine.PanicError
+	if errors.As(err, &panicErr) {
+		return "internal_error"
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kind := range []string{"internal_error", "discovery_error", "package_load_error", "config_error", "environment_error", "runner_error"} {
+		if strings.HasPrefix(msg, kind+":") {
+			return kind
+		}
+	}
+	switch {
+	case strings.Contains(msg, "yaml:"), strings.Contains(msg, "unknown value"), strings.Contains(msg, "unsupported"):
+		return "config_error"
+	case strings.Contains(msg, "permission denied"), strings.Contains(msg, "access is denied"), strings.Contains(msg, "read-only file system"):
+		return "environment_error"
+	case strings.Contains(msg, "baseline tests failed"), strings.Contains(msg, "test command"), strings.Contains(msg, "runner"):
+		return "runner_error"
+	case strings.Contains(msg, "no such file or directory"), strings.Contains(msg, "cannot find the path specified"), strings.Contains(msg, "the system cannot find the path specified"):
+		return "discovery_error"
+	default:
+		return "internal_error"
+	}
+}
+
+func stackFromError(err error) string {
+	var panicErr *engine.PanicError
+	if errors.As(err, &panicErr) {
+		return panicErr.Stack
+	}
+	return ""
+}
+
+func trimCLIStack(stack string) string {
+	stack = strings.TrimSpace(stack)
+	const maxBytes = 8192
+	if len(stack) <= maxBytes {
+		return stack
+	}
+	return stack[:maxBytes]
+}
+
+func newCorrelationID() string {
+	return fmt.Sprintf("cid-%d", time.Now().UTC().UnixNano())
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func cmdFast(args []string) error {
 	next := append([]string{"--policy", "ci-fast", "--report", "summary,json,junit"}, args...)
 	return cmdRun(next)
 }
 
-func cmdEval(args []string) error {
+func cmdEval(args []string) (err error) {
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
 	out := fs.String("out", ".cervomut/evaluation", "evaluation output directory")
 	framework := fs.String("framework", "generic-go", "evaluation framework")
@@ -312,7 +446,16 @@ func cmdEval(args []string) error {
 	})); err != nil {
 		return err
 	}
-	cfg := loadConfigIfPresent()
+	cfg, err := loadConfigIfPresentStrict()
+	if err != nil {
+		cfg = config.Defaults()
+		cfg.Reports.Output = *out
+		cfg.Cache.Path = filepath.Join(*out, "cache")
+		cfg.Selection.CoverageProfile = filepath.Join(*out, "coverage.out")
+		cfg.Selection.TimingsPath = filepath.Join(*out, "timings.json")
+		cfg.History.Path = filepath.Join(*out, "history.json")
+		return finalizeStructuredFailure("eval", args, fs.Args(), cfg, "config_error", err, "")
+	}
 	if *policy != "" {
 		cfg.Policy = *policy
 		cfg = config.ApplyPolicy(cfg)
@@ -346,18 +489,23 @@ func cmdEval(args []string) error {
 	if *isolation != "" {
 		cfg.Execution.Isolation = *isolation
 	}
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
 	targets := fs.Args()
-	runResult, err := engine.New(cfg).Run(context.Background(), engine.RunRequest{Targets: targets})
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = finalizeStructuredFailure("eval", args, targets, cfg, "internal_error", fmt.Errorf("unexpected panic: %v", recovered), trimCLIStack(string(debug.Stack())))
+		}
+	}()
+	if err := cfg.Validate(); err != nil {
+		return finalizeStructuredFailure("eval", args, targets, cfg, "config_error", err, "")
+	}
+	runResult, err := runEngineFn(cfg, engine.RunRequest{Targets: targets})
 	if err != nil {
-		return err
+		return finalizeStructuredFailure("eval", args, targets, cfg, classifyStructuredFailure(err), err, stackFromError(err))
 	}
 	if err := report.WriteFormats(cfg.Reports.Output, runResult, cfg.Reports.Formats); err != nil {
-		return err
+		return finalizeStructuredFailure("eval", args, targets, cfg, classifyStructuredFailure(err), err, stackFromError(err))
 	}
-	evaluation := evalpkg.Build(evalpkg.BuildRequest{
+	evaluation := buildEvalFn(evalpkg.BuildRequest{
 		Tool:       "cervo-mutants",
 		Target:     strings.Join(targets, " "),
 		Commit:     currentCommit(),
@@ -366,8 +514,8 @@ func cmdEval(args []string) error {
 		Run:        runResult,
 		ManualMode: true,
 	})
-	if err := evalpkg.Write(*out, evaluation); err != nil {
-		return err
+	if err := writeEvalFn(*out, evaluation); err != nil {
+		return finalizeStructuredFailure("eval", args, targets, cfg, classifyStructuredFailure(err), err, stackFromError(err))
 	}
 	fmt.Printf("Evaluation written to %s\n", *out)
 	return nil
@@ -634,6 +782,15 @@ func loadConfigIfPresent() config.Config {
 		}
 	}
 	return config.Defaults()
+}
+
+func loadConfigIfPresentStrict() (config.Config, error) {
+	if _, err := os.Stat(configFileName); err == nil {
+		return config.Load(configFileName)
+	} else if !os.IsNotExist(err) {
+		return config.Config{}, err
+	}
+	return config.Defaults(), nil
 }
 
 func loadLastRun(cfg config.Config) (engine.RunResult, error) {

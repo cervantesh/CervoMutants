@@ -1,10 +1,16 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cervantesh/CervoMutants/pkg/config"
+	"github.com/cervantesh/CervoMutants/pkg/engine"
+	evalpkg "github.com/cervantesh/CervoMutants/pkg/eval"
 )
 
 func TestEvalCommandWritesEvaluationArtifacts(t *testing.T) {
@@ -222,6 +228,117 @@ limits:
 	}
 }
 
+func TestRunCommandWritesStructuredFailureArtifactsOnConfigError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	out := filepath.Join(dir, "config-error-out")
+	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("version: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{"run", dir, "--out", out})
+	if err == nil || !strings.Contains(err.Error(), "config_error:") {
+		t.Fatalf("run should return config_error, got %v", err)
+	}
+	assertCorrelationIDPresent(t, err.Error())
+
+	report := readRunReportForTest(t, out)
+	if report.Failure == nil || report.Failure.Kind != "config_error" {
+		t.Fatalf("failure report = %+v", report.Failure)
+	}
+	if report.StoppedReason != "config_error" {
+		t.Fatalf("stopped_reason = %q, want config_error", report.StoppedReason)
+	}
+	if len(report.Mutants) != 0 {
+		t.Fatalf("failure report should not include mutants: %+v", report.Mutants)
+	}
+	debug := readFailureDebugForTest(t, out)
+	if debug.Kind != "config_error" || debug.StackTrace != "" {
+		t.Fatalf("debug artifact = %+v", debug)
+	}
+	if report.Failure.CorrelationID != debug.CorrelationID {
+		t.Fatalf("correlation ids differ report=%q debug=%q", report.Failure.CorrelationID, debug.CorrelationID)
+	}
+}
+
+func TestRunCommandWritesStructuredFailureArtifactsOnEnginePanic(t *testing.T) {
+	dir := writeCLIFixture(t)
+	out := filepath.Join(dir, "panic-out")
+	restoreCLIHooks(t)
+	runEngineFn = func(_ config.Config, _ engine.RunRequest) (engine.RunResult, error) {
+		panic("engine panic")
+	}
+
+	err := run([]string{"run", dir, "--out", out})
+	if err == nil || !strings.Contains(err.Error(), "internal_error:") {
+		t.Fatalf("run should return internal_error, got %v", err)
+	}
+	assertCorrelationIDPresent(t, err.Error())
+
+	report := readRunReportForTest(t, out)
+	if report.Failure == nil || report.Failure.Kind != "internal_error" {
+		t.Fatalf("failure report = %+v", report.Failure)
+	}
+	debug := readFailureDebugForTest(t, out)
+	if debug.Kind != "internal_error" || !strings.Contains(debug.Message, "engine panic") || debug.StackTrace == "" {
+		t.Fatalf("debug artifact = %+v", debug)
+	}
+}
+
+func TestEvalCommandWritesStructuredFailureArtifactsOnConfigError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	out := filepath.Join(dir, "eval-config-error-out")
+	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("version: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{"eval", dir, "--out", out})
+	if err == nil || !strings.Contains(err.Error(), "config_error:") {
+		t.Fatalf("eval should return config_error, got %v", err)
+	}
+	assertCorrelationIDPresent(t, err.Error())
+
+	report := readRunReportForTest(t, out)
+	if report.Failure == nil || report.Failure.Kind != "config_error" {
+		t.Fatalf("failure report = %+v", report.Failure)
+	}
+	debug := readFailureDebugForTest(t, out)
+	if debug.Kind != "config_error" || debug.StackTrace != "" {
+		t.Fatalf("debug artifact = %+v", debug)
+	}
+}
+
+func TestEvalCommandKeepsMutationReportWhenEvaluationWriteFails(t *testing.T) {
+	dir := writeCLIFixture(t)
+	out := filepath.Join(dir, "eval-write-fail-out")
+	restoreCLIHooks(t)
+	writeEvalFn = func(string, evalpkg.Evaluation) error {
+		return errors.New("evaluation write failed")
+	}
+
+	err := run([]string{"eval", dir, "--max-mutants", "1", "--workers", "1", "--out", out})
+	if err == nil || !strings.Contains(err.Error(), "internal_error:") {
+		t.Fatalf("eval should return internal_error, got %v", err)
+	}
+	assertCorrelationIDPresent(t, err.Error())
+
+	report := readRunReportForTest(t, out)
+	if report.Failure != nil {
+		t.Fatalf("existing mutation report should not be overwritten: %+v", report.Failure)
+	}
+	if report.Summary.Total == 0 {
+		t.Fatalf("mutation report should still contain run results: %+v", report.Summary)
+	}
+	debug := readFailureDebugForTest(t, out)
+	if debug.Kind != "internal_error" || !strings.Contains(debug.Message, "evaluation write failed") {
+		t.Fatalf("debug artifact = %+v", debug)
+	}
+	if _, err := os.Stat(filepath.Join(out, "evaluation.json")); err == nil {
+		t.Fatal("evaluation.json should not exist after write failure")
+	}
+}
+
 func TestCompareRequiresAtLeastOneReport(t *testing.T) {
 	if err := cmdCompare([]string{"--out", filepath.Join(t.TempDir(), "out.json")}); err == nil {
 		t.Fatal("cmdCompare accepted no reports")
@@ -362,4 +479,51 @@ func extractMutantIDForTest(t *testing.T, report string) string {
 		t.Fatalf("report has malformed mutant_id: %s", report)
 	}
 	return report[start : start+end]
+}
+
+func restoreCLIHooks(t *testing.T) {
+	t.Helper()
+	oldRunEngine := runEngineFn
+	oldWriteRunResult := writeRunResultFn
+	oldBuildEval := buildEvalFn
+	oldWriteEval := writeEvalFn
+	t.Cleanup(func() {
+		runEngineFn = oldRunEngine
+		writeRunResultFn = oldWriteRunResult
+		buildEvalFn = oldBuildEval
+		writeEvalFn = oldWriteEval
+	})
+}
+
+func readRunReportForTest(t *testing.T, out string) engine.RunResult {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(out, mutationReportFileName))
+	if err != nil {
+		t.Fatalf("mutation report missing: %v", err)
+	}
+	var result engine.RunResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("mutation report is not valid JSON: %v\n%s", err, data)
+	}
+	return result
+}
+
+func readFailureDebugForTest(t *testing.T, out string) failureDebugArtifact {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(out, failureDebugFileName))
+	if err != nil {
+		t.Fatalf("failure debug artifact missing: %v", err)
+	}
+	var artifact failureDebugArtifact
+	if err := json.Unmarshal(data, &artifact); err != nil {
+		t.Fatalf("failure debug artifact is not valid JSON: %v\n%s", err, data)
+	}
+	return artifact
+}
+
+func assertCorrelationIDPresent(t *testing.T, message string) {
+	t.Helper()
+	if !strings.Contains(message, "correlation_id=") {
+		t.Fatalf("error missing correlation id: %v", message)
+	}
 }

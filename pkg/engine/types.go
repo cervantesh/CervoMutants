@@ -198,12 +198,24 @@ type RunResult struct {
 	Checkpoint          Checkpoint         `json:"checkpoint,omitempty"`
 	StoppedReason       string             `json:"stopped_reason,omitempty"`
 	LastCompletedMutant string             `json:"last_completed_mutant,omitempty"`
+	Failure             *Failure           `json:"failure,omitempty"`
 	Thresholds          map[string]any     `json:"thresholds"`
 	Baseline            BaselineComparison `json:"baseline"`
 	Cache               CacheStats         `json:"cache"`
 	Quarantine          QuarantineStats    `json:"quarantine"`
 	History             HistoryStats       `json:"history"`
 	Mutants             []MutantResult     `json:"mutants"`
+}
+
+type Failure struct {
+	Kind                  string   `json:"kind"`
+	Message               string   `json:"message"`
+	CorrelationID         string   `json:"correlation_id,omitempty"`
+	Command               []string `json:"command,omitempty"`
+	Targets               []string `json:"targets,omitempty"`
+	DebugArtifact         string   `json:"debug_artifact,omitempty"`
+	PartialReportPresent  bool     `json:"partial_report_present,omitempty"`
+	PartialSummaryPresent bool     `json:"partial_summary_present,omitempty"`
 }
 
 type Checkpoint struct {

@@ -33,15 +33,32 @@ type Engine struct {
 	checkpointScope []Mutant
 }
 
+var (
+	discoverMutantsForRun = func(e *Engine, targets []string) ([]Mutant, error) {
+		return e.discoverMutants(targets)
+	}
+	runBaselineForRun = func(e *Engine, ctx context.Context, targets []string) (MutantResult, error) {
+		return e.runBaseline(ctx, targets)
+	}
+	runMutantsForRun = func(e *Engine, ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+		return e.runMutants(ctx, mutants, quarantined)
+	}
+	writeReportsForRun = func(e *Engine, result RunResult) error {
+		return e.writeReports(result)
+	}
+)
+
 func New(cfg config.Config) *Engine {
 	return &Engine{cfg: cfg}
 }
 
-func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
+func (e *Engine) Run(ctx context.Context, req RunRequest) (result RunResult, err error) {
+	defer recoverEnginePanic("run", &err)
+
 	targets := e.runTargets(req.Targets)
-	mutants, err := e.discoverMutants(targets)
+	mutants, err := discoverMutantsForRun(e, targets)
 	if err != nil {
-		return RunResult{}, err
+		return RunResult{}, wrapStageError("discovery_error", err)
 	}
 	e.scheduleMutants(mutants)
 	if e.cfg.Limits.MaxMutants > 0 && len(mutants) > e.cfg.Limits.MaxMutants {
@@ -50,9 +67,9 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	e.setCheckpointScope(mutants)
 	quarantined, expired, err := e.loadQuarantine()
 	if err != nil {
-		return RunResult{}, err
+		return RunResult{}, wrapStageError("environment_error", err)
 	}
-	result := RunResult{
+	result = RunResult{
 		SchemaVersion: "1",
 		Environment:   e.environment(len(mutants)),
 		Checkpoint:    e.checkpoint(mutants, "final"),
@@ -63,14 +80,14 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if req.DryRun {
 		return dryRunResult(result, mutants), nil
 	}
-	baselineResult, err := e.runBaseline(ctx, targets)
+	baselineResult, err := runBaselineForRun(e, ctx, targets)
 	if err != nil && e.cfg.Tests.BaselineRequired {
-		return RunResult{}, err
+		return RunResult{}, wrapStageError("runner_error", err)
 	}
 	_ = baselineResult
-	mutantResults, err := e.runMutants(ctx, mutants, quarantined)
+	mutantResults, err := runMutantsForRun(e, ctx, mutants, quarantined)
 	if err != nil {
-		return RunResult{}, err
+		return RunResult{}, wrapStageError("runner_error", err)
 	}
 	result.Mutants = mutantResults
 	result.StoppedReason, result.LastCompletedMutant = runStopMetadata(result.Mutants)
@@ -86,8 +103,8 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			result.Baseline = BaselineComparison{Enabled: true, CurrentScore: result.Summary.Score}
 		}
 	}
-	if err := e.writeReports(result); err != nil {
-		return RunResult{}, err
+	if err := writeReportsForRun(e, result); err != nil {
+		return RunResult{}, wrapStageError("environment_error", err)
 	}
 	return result, nil
 }
@@ -767,14 +784,15 @@ func orderResults(mutants []Mutant, results []MutantResult) []MutantResult {
 	return ordered
 }
 
-func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedResult, error) {
+func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (result AffectedResult, err error) {
+	defer recoverEnginePanic("affected", &err)
 	discovered, err := discover.Discover(req.Targets)
 	if err != nil {
-		return AffectedResult{}, err
+		return AffectedResult{}, wrapStageError("discovery_error", err)
 	}
 	mutants, err := e.generateMutants(discovered)
 	if err != nil {
-		return AffectedResult{}, err
+		return AffectedResult{}, wrapStageError("discovery_error", err)
 	}
 	packages := map[string]bool{}
 	files := map[string]bool{}
@@ -785,7 +803,7 @@ func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedRes
 		packages[file.Package] = true
 		files[file.Path] = true
 	}
-	result := AffectedResult{Modules: discovered.Modules, EstimatedMutants: len(mutants)}
+	result = AffectedResult{Modules: discovered.Modules, EstimatedMutants: len(mutants)}
 	for pkg := range packages {
 		result.Packages = append(result.Packages, pkg)
 	}
@@ -795,7 +813,8 @@ func (e *Engine) Affected(ctx context.Context, req AffectedRequest) (AffectedRes
 	return result, nil
 }
 
-func (e *Engine) Explain(ctx context.Context, req ExplainRequest) (ExplainResult, error) {
+func (e *Engine) Explain(ctx context.Context, req ExplainRequest) (result ExplainResult, err error) {
+	defer recoverEnginePanic("explain", &err)
 	if strings.TrimSpace(req.MutantID) == "" {
 		return ExplainResult{}, errors.New("mutant id is required")
 	}
