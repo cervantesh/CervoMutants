@@ -89,7 +89,7 @@ Important files:
 | `.cervomut/reports/mutation-report.json` | Stable JSON report for CI and agents. |
 | `.cervomut/reports/summary.txt` | Human-readable run summary. |
 | `.cervomut/reports/junit.xml` | CI test report format. |
-| `.cervomut/reports/index.html` | Human report for browsing survivors and diffs. |
+| `.cervomut/reports/index.html` | Filterable survivor review workbench with raw-report fallback, diff browsing, and client-side triage filters. |
 | `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
 | `.cervomut/reports/semantic-triage-ledger.json` | Auditable skip/quarantine suggestions for known noisy patterns. |
 | `.cervomut/reports/partial-mutation-report.json` | Checkpoint report for timeout/interrupted runs. |
@@ -162,7 +162,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut report summary --out DIR` | Print report summary. |
 | `cervomut report survivors --out DIR` | Print ranked surviving mutants. |
 | `cervomut report survivors --out DIR --actionable-only` | Print only the actionable survivor review set, with equivalent/platform-sensitive duplicates collapsed. |
-| `cervomut report open` | Open the HTML report. |
+| `cervomut report open` | Open the HTML survivor review workbench. |
 | `cervomut show MUTANT_ID --out DIR` | Show a mutant diff/context. |
 | `cervomut explain MUTANT_ID --format text\|json` | Explain what a survivor means. |
 | `cervomut list-mutators` | List operators and risk metadata. |

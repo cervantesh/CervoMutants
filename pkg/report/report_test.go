@@ -398,10 +398,50 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 	dir := t.TempDir()
 	run := engine.RunResult{
 		SchemaVersion: "1",
-		Summary:       engine.Summary{Total: 2, Killed: 1, Survived: 1, Score: 50},
+		Summary:       engine.Summary{Total: 3, Killed: 1, Survived: 2, Score: 50, LongStandingSurvivors: 1},
 		Mutants: []engine.MutantResult{
 			{MutantID: "killed", Status: engine.StatusKilled, Mutant: engine.Mutant{Diff: "-a\n+b\n"}},
-			{MutantID: "survived", Status: engine.StatusSurvived, StatusReason: "tests passed", Mutant: engine.Mutant{Diff: "<unsafe>"}},
+			{
+				MutantID:           "survived",
+				Status:             engine.StatusSurvived,
+				StatusReason:       "tests passed",
+				Duration:           3 * time.Second,
+				SurvivorRank:       1,
+				Actionability:      "high",
+				SurvivorAgeRuns:    6,
+				HistoryStatus:      "long_standing_survivor",
+				SuggestedTestScope: "./pkg",
+				NearestTests:       []string{"pkg/foo_test.go"},
+				RankReason:         "risk=medium recommendation=fast-ci",
+				Mutant: engine.Mutant{
+					File:           "pkg/foo.go",
+					Line:           10,
+					Function:       "Check",
+					Operator:       "conditionals-boundary",
+					Original:       "<",
+					Mutated:        "<=",
+					EquivalentRisk: "high",
+					GroupLabel:     "sort comparator boundary",
+					Diff:           "<unsafe>",
+					Description:    "Changed < to <= in Check.",
+				},
+			},
+			{
+				MutantID:      "survived-2",
+				Status:        engine.StatusSurvived,
+				Duration:      250 * time.Millisecond,
+				SurvivorRank:  2,
+				Actionability: "medium",
+				Mutant: engine.Mutant{
+					File:           "pkg/bar.go",
+					Line:           11,
+					Operator:       "logical",
+					Original:       "&&",
+					Mutated:        "||",
+					EquivalentRisk: "medium",
+					Diff:           "-old\n+new\n",
+				},
+			},
 		},
 	}
 
@@ -409,12 +449,34 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JUnit returned error: %v", err)
 	}
-	if !strings.Contains(string(junit), `tests="2"`) || !strings.Contains(string(junit), `failures="1"`) {
+	if !strings.Contains(string(junit), `tests="3"`) || !strings.Contains(string(junit), `failures="2"`) {
 		t.Fatalf("unexpected junit: %s", junit)
 	}
 	html := HTML(run)
-	if !strings.Contains(html, "cervomut mutation report") || strings.Contains(html, "<unsafe>") {
-		t.Fatalf("html should include report title and escape diffs: %s", html)
+	for _, want := range []string{
+		"cervomut survivor review workbench",
+		`id="filter-search"`,
+		`id="filter-actionability"`,
+		`id="filter-group"`,
+		`id="filter-history"`,
+		`id="filter-age"`,
+		`id="filter-timing"`,
+		"Group shortcuts",
+		"Operator shortcuts",
+		`data-mutant-row`,
+		`data-survivor="true"`,
+		`data-actionability="high"`,
+		`data-group="sort comparator boundary"`,
+		"Actionable survivors",
+		"long-standing (5+ runs)",
+		"slow (&gt;2s)",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("html workbench missing %q:\n%s", want, html)
+		}
+	}
+	if strings.Contains(html, "<unsafe>") {
+		t.Fatalf("html should escape diffs: %s", html)
 	}
 	if err := WriteAll(dir, run); err != nil {
 		t.Fatalf("WriteAll returned error: %v", err)
