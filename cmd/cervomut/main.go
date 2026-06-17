@@ -26,11 +26,12 @@ var (
 	runEngineFn = func(cfg config.Config, req engine.RunRequest) (engine.RunResult, error) {
 		return engine.New(cfg).Run(context.Background(), req)
 	}
-	writeRunResultFn = writeRunResult
-	writeEvalFn      = evalpkg.Write
-	buildEvalFn      = evalpkg.Build
-	runPoolSmokeFn   = pool.RunSmoke
-	runPoolCompareFn = pool.RunCompare
+	writeRunResultFn   = writeRunResult
+	writeEvalFn        = evalpkg.Write
+	buildEvalFn        = evalpkg.Build
+	runPoolSmokeFn     = pool.RunSmoke
+	runPoolCompareFn   = pool.RunCompare
+	runPoolBenchmarkFn = pool.RunBenchmark
 )
 
 func main() {

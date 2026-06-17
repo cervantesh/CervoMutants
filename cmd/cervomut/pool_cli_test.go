@@ -54,3 +54,27 @@ func TestPoolCompareCommandDispatches(t *testing.T) {
 		t.Fatal("pool compare handler was not called")
 	}
 }
+
+func TestPoolBenchmarkCommandDispatches(t *testing.T) {
+	original := runPoolBenchmarkFn
+	defer func() { runPoolBenchmarkFn = original }()
+
+	called := false
+	runPoolBenchmarkFn = func(_ context.Context, opts pool.BenchmarkOptions) (pool.RunSummary[pool.BenchmarkResult], error) {
+		called = true
+		if opts.CorpusPath != "corpus.json" || opts.WorkRoot != "work" || opts.OutputRoot != "out" || !opts.Resume || opts.CervoBinary != "cervomut.exe" {
+			t.Fatalf("unexpected benchmark options: %+v", opts)
+		}
+		if len(opts.Names) != 2 || opts.Names[0] != "cobra-doc" || opts.Names[1] != "logrus" {
+			t.Fatalf("unexpected benchmark names: %+v", opts.Names)
+		}
+		return pool.RunSummary[pool.BenchmarkResult]{SummaryPath: "out/summary.json"}, nil
+	}
+
+	if err := run([]string{"pool", "benchmark", "--corpus", "corpus.json", "--work-root", "work", "--output-root", "out", "--names", "cobra-doc,logrus", "--resume", "--cervomutants", "cervomut.exe"}); err != nil {
+		t.Fatalf("pool benchmark returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("pool benchmark handler was not called")
+	}
+}
