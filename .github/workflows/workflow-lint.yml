@@ -1,0 +1,40 @@
+name: workflow-lint
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  pull_request:
+
+jobs:
+  yaml-parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install --disable-pip-version-check pyyaml
+      - run: |
+          python - <<'PY'
+          import pathlib
+          import sys
+
+          import yaml
+
+          errors = []
+          for path in sorted(pathlib.Path(".github/workflows").glob("*.y*ml")):
+              try:
+                  yaml.safe_load(path.read_text(encoding="utf-8"))
+              except Exception as exc:  # pragma: no cover - workflow guard script
+                  errors.append(f"{path}: {exc}")
+
+          if errors:
+              print("workflow YAML validation failed:")
+              for item in errors:
+                  print(item)
+              sys.exit(1)
+
+          print("workflow YAML validation passed")
+          PY

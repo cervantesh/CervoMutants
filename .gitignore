@@ -3,7 +3,10 @@
 .scannerwork/
 *.exe
 *.test
+cervomut
 coverage.out
+coverage*.out
+coverage[0-9]*
 coverage
 dist/
 build/
