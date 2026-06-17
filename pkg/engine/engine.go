@@ -1007,26 +1007,33 @@ func (e *Engine) generateMutants(discovered discover.Result) ([]Mutant, error) {
 			generated[i].Package = file.Package
 			id, fingerprint := e.stableMutantIdentity(generated[i])
 			mutants = append(mutants, Mutant{
-				ID:               id,
-				Module:           generated[i].Module,
-				Package:          generated[i].Package,
-				File:             generated[i].File,
-				Line:             generated[i].Line,
-				Function:         generated[i].Function,
-				Operator:         generated[i].Operator,
-				Original:         generated[i].Original,
-				Mutated:          generated[i].Mutated,
-				StartOffset:      generated[i].StartOffset,
-				EndOffset:        generated[i].EndOffset,
-				Diff:             generated[i].Diff,
-				Fingerprint:      fingerprint,
-				Hint:             generated[i].Hint,
-				Description:      generated[i].Description,
-				NearbyTests:      nearbyTests(file.ModuleDir, file.Path),
-				EquivalentRisk:   generated[i].EquivalentRisk,
-				Recommendation:   generated[i].Recommendation,
-				CompileErrorRisk: generated[i].CompileErrorRisk,
-				SuppressionAudit: e.suppressionAudit(generated[i]),
+				ID:                  id,
+				Module:              generated[i].Module,
+				Package:             generated[i].Package,
+				File:                generated[i].File,
+				Line:                generated[i].Line,
+				Function:            generated[i].Function,
+				Operator:            generated[i].Operator,
+				Original:            generated[i].Original,
+				Mutated:             generated[i].Mutated,
+				StartOffset:         generated[i].StartOffset,
+				EndOffset:           generated[i].EndOffset,
+				Diff:                generated[i].Diff,
+				Fingerprint:         fingerprint,
+				Hint:                generated[i].Hint,
+				Description:         generated[i].Description,
+				NearbyTests:         nearbyTests(file.ModuleDir, file.Path),
+				EquivalentRisk:      generated[i].EquivalentRisk,
+				Recommendation:      generated[i].Recommendation,
+				CompileErrorRisk:    generated[i].CompileErrorRisk,
+				SemanticTags:        append([]string{}, generated[i].SemanticTags...),
+				SemanticGroup:       generated[i].SemanticGroup,
+				GroupLabel:          generated[i].GroupLabel,
+				GroupReason:         generated[i].GroupReason,
+				PlatformSensitive:   generated[i].PlatformSensitive,
+				NonProgressRisk:     generated[i].NonProgressRisk,
+				SuggestedSkipReason: generated[i].SuggestedSkipReason,
+				SuppressionAudit:    e.suppressionAudit(generated[i]),
 			})
 		}
 	}
@@ -1043,6 +1050,11 @@ func (e *Engine) scheduleMutants(mutants []Mutant) {
 			}
 			left = timeoutRiskPriority(mutants[i])
 			right = timeoutRiskPriority(mutants[j])
+			if left != right {
+				return left < right
+			}
+			left = platformSensitivityPriority(mutants[i])
+			right = platformSensitivityPriority(mutants[j])
 			if left != right {
 				return left < right
 			}
@@ -1067,6 +1079,9 @@ func recommendationPriority(recommendation string) int {
 }
 
 func timeoutRiskPriority(mutant Mutant) int {
+	if mutant.NonProgressRisk == "high" {
+		return 4
+	}
 	switch mutant.Operator {
 	case "conditionals-negation", "conditionals-boundary", "boolean-literals", "logical":
 		return 0
@@ -1079,6 +1094,13 @@ func timeoutRiskPriority(mutant Mutant) int {
 	default:
 		return 2
 	}
+}
+
+func platformSensitivityPriority(mutant Mutant) int {
+	if runtime.GOOS == "windows" && mutant.PlatformSensitive {
+		return 1
+	}
+	return 0
 }
 
 func (e *Engine) suppressionAudit(mutant mutator.Mutant) []SuppressionAudit {
@@ -1231,6 +1253,7 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 	result.CoverageSource = plan.CoverageSource
 	result.SuggestedTestScope = suggestedTestScope(mutant)
 	result.NearestTests = mutant.NearbyTests
+	applySemanticResultMetadata(&result)
 	e.recordTiming(mutant.ID, result.Duration)
 	if err == nil && e.cfg.Cache.Enabled && e.cfg.Cache.Mode == "incremental" {
 		_ = e.putCached(key, result)
@@ -1589,10 +1612,11 @@ func moduleForTargets(targets []string) (string, error) {
 }
 
 func summarize(results []MutantResult) Summary {
-	s := Summary{MutatorStats: map[string]MutatorStat{}, EquivalentRiskStats: map[string]int{}, TimeoutRiskStats: map[string]int{}}
+	s := Summary{MutatorStats: map[string]MutatorStat{}, EquivalentRiskStats: map[string]int{}, TimeoutRiskStats: map[string]int{}, SemanticGroupStats: map[string]int{}}
 	s.Total = len(results)
 	s.GeneratedMutants = len(results)
 	for _, result := range results {
+		applySemanticResultMetadata(&result)
 		operator := result.Mutant.Operator
 		if operator == "" {
 			operator = "unknown"
@@ -1610,6 +1634,21 @@ func summarize(results []MutantResult) Summary {
 		}
 		if stat.EquivalentRisk == "" {
 			stat.EquivalentRisk = result.Mutant.EquivalentRisk
+		}
+		status := result.Status
+		if status == StatusCached {
+			status = result.PreviousStatus
+		}
+		if status == StatusSurvived {
+			if result.Mutant.PlatformSensitive {
+				s.PlatformSensitiveSurvivors++
+			}
+			if key := semanticGroupSummaryKey(result.Mutant); key != "" {
+				s.SemanticGroupStats[key]++
+			}
+		}
+		if status == StatusTimedOut && result.FailureKind == "non_progress_loop" {
+			s.NonProgressTimeouts++
 		}
 		applyStatusToSummary(&s, &stat, result)
 		applySuppressionAudits(&s, result.Mutant.SuppressionAudit)
@@ -1716,6 +1755,13 @@ func timeoutRiskBand(mutant Mutant) string {
 	default:
 		return "very_high"
 	}
+}
+
+func semanticGroupSummaryKey(mutant Mutant) string {
+	if mutant.GroupLabel != "" {
+		return mutant.GroupLabel
+	}
+	return mutant.SemanticGroup
 }
 
 func denominatorHealth(s Summary) DenominatorHealth {
@@ -1967,16 +2013,23 @@ func incrementHistoryStatus(entry *historyEntry, status Status) {
 
 func rankSurvivors(results []MutantResult) {
 	survivors := make([]int, 0)
+	groupSizes := map[string]int{}
 	for i := range results {
+		if results[i].SuggestedSkipReason == "" {
+			results[i].SuggestedSkipReason = results[i].Mutant.SuggestedSkipReason
+		}
 		if results[i].Status == StatusSurvived {
 			survivors = append(survivors, i)
+			if key := results[i].Mutant.SemanticGroup; key != "" {
+				groupSizes[key]++
+			}
 		}
 	}
 	sort.SliceStable(survivors, func(i, j int) bool {
 		left := results[survivors[i]]
 		right := results[survivors[j]]
-		leftScore, _ := survivorRankScore(left)
-		rightScore, _ := survivorRankScore(right)
+		leftScore, _ := survivorRankScore(left, groupSizes[left.Mutant.SemanticGroup])
+		rightScore, _ := survivorRankScore(right, groupSizes[right.Mutant.SemanticGroup])
 		if leftScore != rightScore {
 			return leftScore > rightScore
 		}
@@ -1992,17 +2045,25 @@ func rankSurvivors(results []MutantResult) {
 		return left.MutantID < right.MutantID
 	})
 	for rank, index := range survivors {
-		score, reason := survivorRankScore(results[index])
+		groupSize := groupSizes[results[index].Mutant.SemanticGroup]
+		score, reason := survivorRankScore(results[index], groupSize)
 		results[index].SurvivorRank = rank + 1
 		results[index].RankScore = score
 		results[index].RankReason = reason
 		results[index].Actionability = actionability(score)
 		results[index].SuggestedTestScope = suggestedTestScope(results[index].Mutant)
+		results[index].SemanticGroupSize = groupSize
 		results[index].NearestTests = results[index].Mutant.NearbyTests
+		if results[index].SuggestedSkipReason == "" {
+			results[index].SuggestedSkipReason = results[index].Mutant.SuggestedSkipReason
+		}
+		if results[index].SuggestedSkipReason == "" && groupSize > 1 {
+			results[index].SuggestedSkipReason = "review once for this semantic group before treating each survivor independently"
+		}
 	}
 }
 
-func survivorRankScore(result MutantResult) (float64, string) {
+func survivorRankScore(result MutantResult, groupSize int) (float64, string) {
 	score := 100.0
 	risk := result.Mutant.EquivalentRisk
 	switch risk {
@@ -2050,7 +2111,19 @@ func survivorRankScore(result MutantResult) (float64, string) {
 			score -= 8
 		}
 	}
-	reason := fmt.Sprintf("score=%.1f risk=%s recommendation=%s coverage_source=%s nearby_tests=%d history=%s survivor_age_runs=%d operator_yield=%.2f", score, risk, result.Mutant.Recommendation, result.CoverageSource, len(result.Mutant.NearbyTests), result.HistoryStatus, result.SurvivorAgeRuns, result.OperatorYield)
+	if result.Mutant.SemanticGroup != "" {
+		score -= 6
+	}
+	if groupSize > 1 {
+		score -= float64(minInt(18, (groupSize-1)*6))
+	}
+	if result.Mutant.PlatformSensitive && runtime.GOOS == "windows" {
+		score -= 20
+	}
+	if result.Mutant.NonProgressRisk == "high" {
+		score -= 24
+	}
+	reason := fmt.Sprintf("score=%.1f risk=%s recommendation=%s coverage_source=%s nearby_tests=%d history=%s survivor_age_runs=%d operator_yield=%.2f semantic_group=%s group_size=%d platform_sensitive=%t non_progress_risk=%s", score, risk, result.Mutant.Recommendation, result.CoverageSource, len(result.Mutant.NearbyTests), result.HistoryStatus, result.SurvivorAgeRuns, result.OperatorYield, result.Mutant.GroupLabel, groupSize, result.Mutant.PlatformSensitive, result.Mutant.NonProgressRisk)
 	return score, reason
 }
 
@@ -2086,6 +2159,26 @@ func riskPriority(risk string) int {
 	default:
 		return 3
 	}
+}
+
+func applySemanticResultMetadata(result *MutantResult) {
+	if result.SuggestedSkipReason == "" {
+		result.SuggestedSkipReason = result.Mutant.SuggestedSkipReason
+	}
+	if result.Status == StatusTimedOut && result.Mutant.NonProgressRisk == "high" {
+		result.FailureKind = "non_progress_loop"
+		result.StatusReason = "test command timed out after a likely non-progress loop mutation"
+		if result.SuggestedSkipReason == "" {
+			result.SuggestedSkipReason = "reviewed-skip or quarantine if the timeout is a confirmed non-progress loop"
+		}
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (e *Engine) writeReports(result RunResult) error {

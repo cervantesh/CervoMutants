@@ -39,6 +39,7 @@ platform. The project currently includes:
 - Strict quarantine and audited suppression rules.
 - Summary, JSON schema v1, JUnit XML, and HTML reports.
 - Survivor ranking and denominator-health reporting.
+- Semantic triage v1 for non-progress loop timeouts, permission-mode platform sensitivity, and equivalence-risk survivor groups.
 - Daemon/worker JSON-lines contracts for future distributed execution.
 - External-tool comparison normalization for apples-to-apples studies.
 
@@ -315,6 +316,9 @@ JSON and summary reports.
 Survivors are ranked by actionability using:
 
 - equivalent-risk metadata;
+- semantic-group penalties for repeated review-once families;
+- non-progress loop risk classification for timeout-prone loop mutations;
+- GOOS-aware platform sensitivity for permission-mode mutants;
 - recommendation tier;
 - nearby tests;
 - exported function context;

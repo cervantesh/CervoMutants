@@ -18,10 +18,13 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		Slice:         engine.SliceMetadata{Enabled: true, SliceBy: "package", ShardIndex: 2, ShardCount: 4, GroupCount: 12, SelectedGroups: 3, MaxFilesPerRun: 5, SelectedFiles: 5, MaxMutantsPerPackage: 10, SelectedMutants: 25},
 		Checkpoint:    engine.Checkpoint{Fingerprint: "abc123", Mutants: 1, IncludesFileDigests: true, Reason: "final"},
 		Summary: engine.Summary{
-			Total:       1,
-			Survived:    1,
-			Score:       0,
-			Quarantined: 0,
+			Total:                      1,
+			Survived:                   1,
+			Score:                      0,
+			Quarantined:                0,
+			PlatformSensitiveSurvivors: 1,
+			NonProgressTimeouts:        1,
+			SemanticGroupStats:         map[string]int{"sort comparator boundary": 1},
 		},
 		Mutants: []engine.MutantResult{{
 			MutantID:        "pkg/foo.go:10:conditionals-negation:eq-to-ne",
@@ -35,21 +38,26 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			CoverageSource:  "coverage-mode",
 			Output:          "ok",
 			Mutant: engine.Mutant{
-				ID:               "pkg/foo.go:10:conditionals-negation:eq-to-ne",
-				Package:          "pkg",
-				File:             "pkg/foo.go",
-				Line:             10,
-				Function:         "Check",
-				Operator:         "conditionals-negation",
-				Original:         "==",
-				Mutated:          "!=",
-				Diff:             "--- pkg/foo.go\n+++ pkg/foo.go\n",
-				Hint:             "Add an assertion for the opposite branch.",
-				Description:      "Changed == to != in Check.",
-				NearbyTests:      []string{"pkg/foo_test.go"},
-				EquivalentRisk:   "medium",
-				Recommendation:   "fast-ci",
-				CompileErrorRisk: "low",
+				ID:                  "pkg/foo.go:10:conditionals-negation:eq-to-ne",
+				Package:             "pkg",
+				File:                "pkg/foo.go",
+				Line:                10,
+				Function:            "Check",
+				Operator:            "conditionals-negation",
+				Original:            "==",
+				Mutated:             "!=",
+				Diff:                "--- pkg/foo.go\n+++ pkg/foo.go\n",
+				Hint:                "Add an assertion for the opposite branch.",
+				Description:         "Changed == to != in Check.",
+				NearbyTests:         []string{"pkg/foo_test.go"},
+				EquivalentRisk:      "medium",
+				Recommendation:      "fast-ci",
+				CompileErrorRisk:    "low",
+				SemanticTags:        []string{"equivalence-risk-group", "sort-comparator-boundary"},
+				SemanticGroup:       "sort-boundary:pkg/foo.go:10",
+				GroupLabel:          "sort comparator boundary",
+				GroupReason:         "Boundary mutations inside sort comparator closures often collapse into one review decision.",
+				SuggestedSkipReason: "review once for this semantic group before treating each survivor independently",
 				SuppressionAudit: []engine.SuppressionAudit{{
 					Name:          "audit-high-equivalent-risk",
 					Action:        "report-only",
@@ -57,18 +65,20 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 					EvidenceLevel: "suspected",
 				}},
 			},
-			SurvivorRank:       1,
-			RankScore:          140,
-			RankReason:         "risk=medium recommendation=fast-ci nearby_tests=1",
-			Actionability:      "high",
-			SuggestedTestScope: "./pkg",
-			NearestTests:       []string{"pkg/foo_test.go"},
-			PreviousStatus:     engine.StatusKilled,
-			FirstSeen:          "2026-05-26T00:00:00Z",
-			LastSeen:           "2026-05-26T01:00:00Z",
-			SurvivorAgeRuns:    2,
-			HistoryStatus:      "long_standing_survivor",
-			OperatorYield:      0.5,
+			SurvivorRank:        1,
+			RankScore:           140,
+			RankReason:          "risk=medium recommendation=fast-ci nearby_tests=1",
+			Actionability:       "high",
+			SuggestedTestScope:  "./pkg",
+			SuggestedSkipReason: "review once for this semantic group before treating each survivor independently",
+			NearestTests:        []string{"pkg/foo_test.go"},
+			SemanticGroupSize:   2,
+			PreviousStatus:      engine.StatusKilled,
+			FirstSeen:           "2026-05-26T00:00:00Z",
+			LastSeen:            "2026-05-26T01:00:00Z",
+			SurvivorAgeRuns:     2,
+			HistoryStatus:       "long_standing_survivor",
+			OperatorYield:       0.5,
 		}},
 	}
 
@@ -84,7 +94,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -115,11 +125,14 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 				NotCovered:       1,
 				Healthy:          true,
 			},
-			HighRiskSurvivors:     1,
-			NewSurvivors:          1,
-			LongStandingSurvivors: 1,
-			SuppressionReportOnly: 2,
-			EquivalentRiskStats:   map[string]int{"high": 1, "medium": 2},
+			HighRiskSurvivors:          1,
+			NewSurvivors:               1,
+			LongStandingSurvivors:      1,
+			PlatformSensitiveSurvivors: 1,
+			NonProgressTimeouts:        1,
+			SuppressionReportOnly:      2,
+			EquivalentRiskStats:        map[string]int{"high": 1, "medium": 2},
+			SemanticGroupStats:         map[string]int{"sort comparator boundary": 2},
 			MutatorStats: map[string]engine.MutatorStat{
 				"conditionals-negation": {Total: 2, Killed: 1, Survived: 1, Recommendation: "fast-ci"},
 				"logical":               {Total: 1, NotCovered: 1, Recommendation: "conservative"},
@@ -142,8 +155,12 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"High-risk survivors: 1",
 		"New survivors: 1",
 		"Long-standing survivors: 1",
+		"Platform-sensitive survivors: 1",
+		"Non-progress timeouts: 1",
 		"Suppression audits: report_only=2",
 		"Equivalent-risk statistics:",
+		"Semantic-group statistics:",
+		"sort comparator boundary: 2",
 		"conditionals-negation: total=2 killed=1 survived=1 not_covered=0 pending_budget=0 skipped_resource=0 timed_out=0 memory_killed=0 compile_error=0",
 		"recommendation=fast-ci",
 		"logical: total=1 killed=0 survived=0 not_covered=1 pending_budget=0 skipped_resource=0 timed_out=0 memory_killed=0 compile_error=0",
@@ -162,14 +179,18 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 func TestSurvivorsReportIsRanked(t *testing.T) {
 	run := engine.RunResult{
 		Mutants: []engine.MutantResult{
-			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y"}},
+			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
 			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
+			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
 		},
 	}
 
 	text := Survivors(run)
 	if !strings.Contains(text, "#1 0.0 first") || strings.Index(text, "#1 0.0 first") > strings.Index(text, "#2 0.0 later") {
 		t.Fatalf("survivors were not ranked:\n%s", text)
+	}
+	if !strings.Contains(text, "Group sort comparator boundary (2 mutants)") {
+		t.Fatalf("survivors report missing semantic group header:\n%s", text)
 	}
 }
 
