@@ -53,6 +53,9 @@ platform. The project currently includes:
 
 ## Install
 
+Detailed install and upgrade paths for Windows, Linux, and macOS live in
+[docs/install.md](docs/install.md).
+
 From a Go workspace:
 
 ```powershell
@@ -677,6 +680,10 @@ Latest local Sonar pass after issue #31:
   audit contract for persisted mutation history and history dashboard outputs.
 - [docs/github-action.md](docs/github-action.md): first-party GitHub Action for
   bounded `cervomut run` CI lanes.
+- [docs/install.md](docs/install.md): install and upgrade paths for `go install`
+  and GitHub release archives across supported operating systems.
+- [docs/distribution-audit.md](docs/distribution-audit.md): end-to-end audit of
+  packaging, release assets, install paths, and onboarding surfaces.
 - [docs/quickstart.md](docs/quickstart.md): shortest supported path from first
   install to a useful local or CI mutation report.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
