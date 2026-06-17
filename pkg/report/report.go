@@ -127,6 +127,12 @@ func Summary(result engine.RunResult) string {
 			result.Environment.WSL,
 			result.Environment.WindowsOneDrive,
 		)
+		if result.Environment.TempRoot != "" {
+			fmt.Fprintf(&b, "Temp root: %s\n", result.Environment.TempRoot)
+		}
+		if len(result.Environment.Warnings) > 0 {
+			fmt.Fprintf(&b, "Environment warnings: %s\n", strings.Join(result.Environment.Warnings, ", "))
+		}
 	}
 	return b.String()
 }

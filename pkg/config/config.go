@@ -59,6 +59,7 @@ type Mutators struct {
 type Execution struct {
 	Workers            int           `yaml:"workers" json:"workers"`
 	Isolation          string        `yaml:"isolation" json:"isolation"`
+	TempRoot           string        `yaml:"temp_root" json:"temp_root"`
 	Budget             time.Duration `yaml:"budget" json:"budget"`
 	FailFast           bool          `yaml:"fail_fast" json:"fail_fast"`
 	Resume             bool          `yaml:"resume" json:"resume"`

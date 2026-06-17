@@ -161,16 +161,25 @@ func windowsChecks(wd, temp string) []Check {
 		checks = append(checks, warning("windows-onedrive", "workspace is under OneDrive; large mutation runs should use a short local temp/workdir outside synced folders\n"))
 	}
 	if mentionsOneDrive(temp) {
-		checks = append(checks, warning("windows-temp-onedrive", "TEMP appears to be under OneDrive; configure a short local temp root for mutation runs\n"))
+		checks = append(checks, warning("windows-temp-onedrive", "TEMP appears to be under OneDrive; set execution.temp_root or --temp-root to a short local path such as %LOCALAPPDATA%\\CervoMutants\\tmp\n"))
 	}
 	if len(wd) > 120 {
 		checks = append(checks, warning("windows-long-path", fmt.Sprintf("workspace path is %d characters; long paths increase risk for external tools and temp workdirs\n", len(wd))))
+	}
+	if len(temp) > 120 {
+		checks = append(checks, warning("windows-temp-long-path", fmt.Sprintf("TEMP path is %d characters; use a shorter local temp root for mutation runs\n", len(temp))))
 	}
 	volume := filepath.VolumeName(wd)
 	if strings.HasPrefix(wd, `\\`) || strings.HasPrefix(volume, `\\`) {
 		checks = append(checks, warning("windows-network-path", "workspace appears to be on a network/UNC path; local disk is recommended for mutation runs\n"))
 	}
-	checks = append(checks, warning("windows-resource-control", "for large Windows-native runs, use conservative workers and prefer Job Object/process-tree limits when available\n"))
+	if pathContainsOther(wd, temp) {
+		checks = append(checks, warning("windows-temp-workspace", "TEMP shares the workspace tree; set execution.temp_root or --temp-root to a short local path outside the repo tree\n"))
+	}
+	if strings.Contains(wd, " ") {
+		checks = append(checks, warning("windows-path-spaces", "workspace path contains spaces; keep temp roots short and local for easier Windows tool interoperability\n"))
+	}
+	checks = append(checks, warning("windows-resource-control", "for large Windows-native runs, use conservative workers, prefer Job Object/process-tree limits when available, and avoid very short per-mutant timeouts\n"))
 	return checks
 }
 
@@ -193,6 +202,26 @@ func warning(name, message string) Check {
 
 func mentionsOneDrive(path string) bool {
 	return strings.Contains(strings.ToLower(path), "onedrive")
+}
+
+func pathContainsOther(a, b string) bool {
+	left := comparableWindowsPath(a)
+	right := comparableWindowsPath(b)
+	if left == "" || right == "" {
+		return false
+	}
+	return left == right || strings.HasPrefix(left, right+`\`) || strings.HasPrefix(right, left+`\`)
+}
+
+func comparableWindowsPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	path = filepath.Clean(path)
+	path = strings.ReplaceAll(path, "/", `\`)
+	path = strings.TrimRight(path, `\`)
+	return strings.ToLower(path)
 }
 
 func isWSL() bool {

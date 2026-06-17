@@ -56,6 +56,7 @@ mutators:
   profile: aggressive
 execution:
   workers: 2
+  temp_root: C:/cervomut-tmp
   budget: 10m
   checkpoint_includes: ["testdata/**", "golden/**"]
 selection:
@@ -79,6 +80,9 @@ ci:
 	}
 	if cfg.Mutators.Profile != "aggressive" || cfg.Execution.Workers != 2 || cfg.Selection.Mode != "coverage" || cfg.CI.FailUnder != 80 {
 		t.Fatalf("overrides not loaded: %+v", cfg)
+	}
+	if cfg.Execution.TempRoot != "C:/cervomut-tmp" {
+		t.Fatalf("temp_root not loaded: %+v", cfg.Execution)
 	}
 	if len(cfg.Execution.CheckpointIncludes) != 2 || cfg.Execution.CheckpointIncludes[1] != "golden/**" {
 		t.Fatalf("checkpoint includes not loaded: %+v", cfg.Execution.CheckpointIncludes)

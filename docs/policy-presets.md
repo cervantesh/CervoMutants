@@ -57,6 +57,16 @@ Use `campaign` only when review time is available:
 cervomut run ./... --policy campaign --out .cervomut/campaign
 ```
 
+Windows-native note:
+
+- `temp-workdir` execution applies an effective worker cap of `2`;
+- Windows `go test` runs are forced into conservative internal parallelism with
+  `GOFLAGS=-p=1`;
+- when `TEMP` is risky, set `execution.temp_root` or `--temp-root` to a short
+  local path such as `%LOCALAPPDATA%\CervoMutants\tmp`;
+- `doctor` warnings and report metadata will surface the effective temp root and
+  path-risk hints.
+
 ## Governance Defaults
 
 - `ci.fail_under` remains `0`; adoption is baseline-first.

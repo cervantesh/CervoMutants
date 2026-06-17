@@ -67,6 +67,14 @@ cervomut fast ./... --budget 10m --sample deterministic
 
 The default output directory is `.cervomut/reports`.
 
+On Windows, `temp-workdir` runs now harden themselves automatically:
+
+- they cap effective workers to `2`;
+- they inject conservative `go test` settings such as `GOFLAGS=-p=1`;
+- they prefer a temp root outside risky OneDrive-backed `TEMP` locations when
+  possible;
+- they expose the selected temp root and warnings in report metadata.
+
 Important files:
 
 | File | Purpose |
@@ -161,6 +169,7 @@ cervomut run ./... `
   --sample deterministic `
   --workers 2 `
   --isolation overlay `
+  --temp-root C:\Users\me\AppData\Local\CervoMutants\tmp `
   --test-timeout 20s `
   --coverage-prefilter `
   --resume `
@@ -186,7 +195,9 @@ tests:
 mutators:
   profile: conservative
 execution:
+  workers: 4
   isolation: temp-workdir
+  temp_root: ""
 selection:
   mode: package
 cache:
@@ -215,8 +226,17 @@ Supported selection modes:
 Supported isolation modes:
 
 - `temp-workdir`: copy the module to a marked temporary workdir and mutate the
-  copy.
+  copy. On Windows this mode uses a conservative worker cap and prefers a safe
+  local temp root when the system `TEMP` is risky.
 - `overlay`: use Go's `-overlay` support to avoid copying the module.
+
+Windows note:
+
+- use `cervomut doctor` before large native runs;
+- override the temp root with `execution.temp_root` or `--temp-root` when
+  `TEMP` is inside OneDrive or the repo tree;
+- prefer `overlay` for broader CI and `temp-workdir` for deeper local/manual
+  campaigns.
 
 ## Mutator Profiles
 

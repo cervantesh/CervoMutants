@@ -14,11 +14,15 @@ import (
 const markerFile = ".cervomut-workdir"
 
 func CopyModule(moduleDir string) (string, error) {
+	return CopyModuleWithRoot(moduleDir, "")
+}
+
+func CopyModuleWithRoot(moduleDir, tempRoot string) (string, error) {
 	abs, err := filepath.Abs(moduleDir)
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.MkdirTemp("", "cervomut-"+safePathToken(abs)+"-*")
+	tmp, err := CreateTempDir(abs, tempRoot, "cervomut-"+safePathToken(abs)+"-*")
 	if err != nil {
 		return "", err
 	}

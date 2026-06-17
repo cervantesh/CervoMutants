@@ -188,6 +188,7 @@ type runOptions struct {
 	out              string
 	workers          int
 	isolation        string
+	tempRoot         string
 	policy           string
 	profile          string
 	prefilter        bool
@@ -214,13 +215,14 @@ func parseRunOptions(args []string) (runOptions, []string, error) {
 	out := fs.String("out", "", reportOutputDirectoryDoc)
 	workers := fs.Int("workers", 0, "parallel mutation workers")
 	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
+	tempRoot := fs.String("temp-root", "", "temporary work root override")
 	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, comparison-safe, nightly, or campaign")
 	profile := fs.String("profile", "", "mutator profile")
 	prefilter := fs.Bool("coverage-prefilter", false, "use coverage profile as a prefilter")
 	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
 	maxProcessMemory := fs.Int(flagMaxProcessMemoryMB, 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"scope": true, "since": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "policy": true, "profile": true, flagMaxProcessMemoryMB: true,
+		"scope": true, "since": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "report": true, "out": true, "workers": true, "isolation": true, "temp-root": true, "policy": true, "profile": true, flagMaxProcessMemoryMB: true,
 	})); err != nil {
 		return runOptions{}, nil, err
 	}
@@ -234,6 +236,7 @@ func parseRunOptions(args []string) (runOptions, []string, error) {
 	opts.out = *out
 	opts.workers = *workers
 	opts.isolation = *isolation
+	opts.tempRoot = *tempRoot
 	opts.policy = *policy
 	opts.profile = *profile
 	opts.prefilter = *prefilter
@@ -256,6 +259,7 @@ func applyRunOverrides(cfg *config.Config, opts runOptions) {
 	setString(&cfg.Mutators.Profile, opts.profile)
 	setString(&cfg.Limits.Sample, opts.sample)
 	setString(&cfg.Execution.Isolation, opts.isolation)
+	setString(&cfg.Execution.TempRoot, opts.tempRoot)
 	if opts.prefilter {
 		cfg.Selection.Prefilter = true
 	}
@@ -438,11 +442,12 @@ func cmdEval(args []string) (err error) {
 	sample := fs.String("sample", "", "sampling mode")
 	workers := fs.Int("workers", 0, "parallel mutation workers")
 	isolation := fs.String("isolation", "", "isolation backend: temp-workdir or overlay")
+	tempRoot := fs.String("temp-root", "", "temporary work root override")
 	policy := fs.String("policy", "", "policy preset: ci-fast, ci-balanced, comparison-safe, nightly, or campaign")
 	resume := fs.Bool("resume", false, "resume from partial-mutation-report.json in the output directory")
 	maxProcessMemory := fs.Int(flagMaxProcessMemoryMB, 0, "best-effort process-tree memory cap in MB")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"out": true, "framework": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "workers": true, "isolation": true, "policy": true, flagMaxProcessMemoryMB: true,
+		"out": true, "framework": true, "budget": true, flagTestTimeout: true, flagMaxMutants: true, "sample": true, "workers": true, "isolation": true, "temp-root": true, "policy": true, flagMaxProcessMemoryMB: true,
 	})); err != nil {
 		return err
 	}
@@ -488,6 +493,9 @@ func cmdEval(args []string) (err error) {
 	}
 	if *isolation != "" {
 		cfg.Execution.Isolation = *isolation
+	}
+	if *tempRoot != "" {
+		cfg.Execution.TempRoot = *tempRoot
 	}
 	targets := fs.Args()
 	defer func() {
@@ -820,6 +828,7 @@ mutators:
 execution:
   workers: 4
   isolation: temp-workdir
+  temp_root: ""
   budget: 0s
   fail_fast: false
   resume: false
