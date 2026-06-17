@@ -77,7 +77,17 @@ func (e *Engine) Run(ctx context.Context, req RunRequest) (result RunResult, err
 		Checkpoint:    e.checkpoint(mutants, "final"),
 		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder},
 		Mutants:       []MutantResult{},
-		Quarantine:    QuarantineStats{Active: len(quarantined), Expired: expired},
+		Quarantine: QuarantineStats{
+			Active:        len(quarantined),
+			Expired:       expired,
+			Path:          e.cfg.Quarantine.Path,
+			ExpireAfter:   e.cfg.Quarantine.ExpireAfter.String(),
+			RequireReason: e.cfg.Quarantine.RequireReason,
+			RequireOwner:  e.cfg.Quarantine.RequireOwner,
+			RequireIssue:  e.cfg.Quarantine.RequireIssue,
+			FailOnExpired: e.cfg.Quarantine.FailOnExpired,
+			MaxRenewals:   e.cfg.Quarantine.MaxRenewals,
+		},
 	}
 	if req.DryRun {
 		return dryRunResult(result, mutants), nil

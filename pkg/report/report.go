@@ -1181,6 +1181,12 @@ func WriteFormatsWithOptions(dir string, result engine.RunResult, formats []stri
 		files["survivors-actionable.txt"] = []byte(SurvivorsWithOptions(result, SurvivorsOptions{ActionableOnly: true}))
 	}
 	files["test-recommendations.md"] = []byte(TestRecommendations(result))
+	files["governance-review.md"] = []byte(GovernanceReviewMarkdown(result))
+	governanceJSON, err := GovernanceReviewJSON(result)
+	if err != nil {
+		return err
+	}
+	files["governance-review.json"] = governanceJSON
 	ledgerData, err := SemanticTriageLedger(result)
 	if err != nil {
 		return err

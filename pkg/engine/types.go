@@ -213,8 +213,15 @@ type CacheStats struct {
 }
 
 type QuarantineStats struct {
-	Active  int `json:"active"`
-	Expired int `json:"expired"`
+	Active        int    `json:"active"`
+	Expired       int    `json:"expired"`
+	Path          string `json:"path,omitempty"`
+	ExpireAfter   string `json:"expire_after,omitempty"`
+	RequireReason bool   `json:"require_reason,omitempty"`
+	RequireOwner  bool   `json:"require_owner,omitempty"`
+	RequireIssue  bool   `json:"require_issue,omitempty"`
+	FailOnExpired bool   `json:"fail_on_expired,omitempty"`
+	MaxRenewals   int    `json:"max_renewals,omitempty"`
 }
 
 type HistoryStats struct {

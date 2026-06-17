@@ -89,6 +89,17 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			HistoryStatus:       "long_standing_survivor",
 			OperatorYield:       0.5,
 		}},
+		Quarantine: engine.QuarantineStats{
+			Active:        1,
+			Expired:       0,
+			Path:          ".cervomut/quarantine.json",
+			ExpireAfter:   "720h0m0s",
+			RequireReason: true,
+			RequireOwner:  true,
+			RequireIssue:  true,
+			FailOnExpired: true,
+			MaxRenewals:   1,
+		},
 	}
 
 	data, err := JSON(run)
@@ -103,7 +114,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "test_recommendation", "candidate_tests", "suggested_assertions", "rationale", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "expire_after", "require_owner", "require_issue", "max_renewals", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "test_recommendation", "candidate_tests", "suggested_assertions", "rationale", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -367,7 +378,7 @@ func TestWriteFormatsHonorsConfiguredFormats(t *testing.T) {
 	if err := WriteFormats(dir, run, []string{"summary", "json"}); err != nil {
 		t.Fatalf("WriteFormats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("missing %s: %v", want, err)
 		}
@@ -383,7 +394,7 @@ func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
 	if err := WriteFormats(dir, run, nil); err != nil {
 		t.Fatalf("WriteFormats default formats returned error: %v", err)
 	}
-	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md"} {
+	for _, want := range []string{"summary.txt", "survivors.txt", "mutation-report.json", "semantic-triage-ledger.json", "test-recommendations.md", "governance-review.md", "governance-review.json"} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Fatalf("default formats missing %s: %v", want, err)
 		}
@@ -428,6 +439,96 @@ func TestWriteFormatsWithActionableViewWritesExtraArtifact(t *testing.T) {
 	}
 	if !strings.Contains(string(recommendations), "# CervoMutants Test Recommendations") || !strings.Contains(string(recommendations), "pkg/a_test.go") {
 		t.Fatalf("unexpected recommendation artifact:\n%s", recommendations)
+	}
+	governance, err := os.ReadFile(filepath.Join(dir, "governance-review.md"))
+	if err != nil {
+		t.Fatalf("governance-review.md missing: %v", err)
+	}
+	if !strings.Contains(string(governance), "# CervoMutants Governance Review") {
+		t.Fatalf("unexpected governance artifact:\n%s", governance)
+	}
+}
+
+func TestGovernanceReviewExportsTemplatesAndPolicy(t *testing.T) {
+	now := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	run := engine.RunResult{
+		Quarantine: engine.QuarantineStats{
+			Active:        1,
+			Expired:       0,
+			Path:          ".cervomut/quarantine.json",
+			ExpireAfter:   "720h0m0s",
+			RequireReason: true,
+			RequireOwner:  true,
+			RequireIssue:  true,
+			FailOnExpired: true,
+			MaxRenewals:   1,
+		},
+		Mutants: []engine.MutantResult{
+			{
+				MutantID:            "timeout",
+				Status:              engine.StatusTimedOut,
+				FailureKind:         "non_progress_loop",
+				StatusReason:        "loop variable stopped making progress",
+				SuggestedSkipReason: "reviewed-skip or quarantine if timeout confirms the loop is non-progress",
+				Mutant: engine.Mutant{
+					File:            "pkg/loop.go",
+					Line:            12,
+					Operator:        "inc-dec",
+					Original:        "i++",
+					Mutated:         "i--",
+					NonProgressRisk: "high",
+				},
+			},
+			{
+				MutantID: "suppression",
+				Status:   engine.StatusSurvived,
+				Mutant: engine.Mutant{
+					File:           "pkg/review.go",
+					Line:           19,
+					Operator:       "conditionals-boundary",
+					Original:       "<",
+					Mutated:        "<=",
+					EquivalentRisk: "high",
+					SuppressionAudit: []engine.SuppressionAudit{{
+						Name:          "audit-high-equivalent-risk",
+						Action:        "report-only",
+						Reason:        "High equivalent-mutant risk must be visible before suppression is allowed.",
+						EvidenceLevel: "heuristic",
+						ReviewerCount: 1,
+					}},
+				},
+			},
+		},
+	}
+
+	review := buildGovernanceReview(run, now)
+	if review.QuarantinePolicy.Path != ".cervomut/quarantine.json" || review.QuarantinePolicy.MaxRenewals != 1 {
+		t.Fatalf("quarantine policy missing from governance review: %+v", review.QuarantinePolicy)
+	}
+	if len(review.QuarantineTemplates) != 1 || review.QuarantineTemplates[0].MutantID != "timeout" {
+		t.Fatalf("unexpected quarantine templates: %+v", review.QuarantineTemplates)
+	}
+	if review.QuarantineTemplates[0].Template.ExpiresAt != now.Add(30*24*time.Hour).Format(time.RFC3339) {
+		t.Fatalf("unexpected suggested quarantine expiry: %+v", review.QuarantineTemplates[0])
+	}
+	if len(review.SuppressionTemplates) != 1 || review.SuppressionTemplates[0].Rule.Name != "audit-high-equivalent-risk" {
+		t.Fatalf("unexpected suppression templates: %+v", review.SuppressionTemplates)
+	}
+
+	jsonData, err := GovernanceReviewJSON(run)
+	if err != nil {
+		t.Fatalf("GovernanceReviewJSON returned error: %v", err)
+	}
+	for _, want := range []string{`"quarantine_policy"`, `"suppression_templates"`, `"quarantine_templates"`} {
+		if !strings.Contains(string(jsonData), want) {
+			t.Fatalf("governance json missing %q:\n%s", want, jsonData)
+		}
+	}
+	markdown := GovernanceReviewMarkdown(run)
+	for _, want := range []string{"# CervoMutants Governance Review", "## Quarantine Templates", "## Suppression Templates", "timeout", "audit-high-equivalent-risk"} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("governance markdown missing %q:\n%s", want, markdown)
+		}
 	}
 }
 
