@@ -1,0 +1,38 @@
+{
+  "schema_version": "1",
+  "tracking_issue": "#89",
+  "description": "Example mixed pool campaign for smoke, compare, and benchmark orchestration.",
+  "jobs": [
+    {
+      "name": "pool-smoke-shared",
+      "kind": "smoke",
+      "manifest_path": "go-repo-pool-40.json",
+      "work_root": "../../.cervomut/pool-campaign/shared-work",
+      "names": ["cobra", "pflag", "logrus"],
+      "max_mutants": 10,
+      "workers": 2
+    },
+    {
+      "name": "pool-compare-small",
+      "kind": "compare",
+      "manifest_path": "go-repo-pool-40.json",
+      "work_root": "../../.cervomut/pool-campaign/shared-work",
+      "output_root": "../../.cervomut/pool-campaign/compare-small",
+      "names": ["cobra", "pflag", "logrus"],
+      "tools": ["cervomut", "gremlins"],
+      "compare_target_mode": "package-root",
+      "gremlins_target_mode": "package-root",
+      "workers": 2,
+      "timeout_seconds": 600,
+      "resume": true
+    },
+    {
+      "name": "benchmark-release-gate",
+      "kind": "benchmark",
+      "corpus_path": "benchmark-corpus.json",
+      "output_root": "../../.cervomut/pool-campaign/benchmark",
+      "names": ["cobra-doc", "logrus"],
+      "resume": true
+    }
+  ]
+}

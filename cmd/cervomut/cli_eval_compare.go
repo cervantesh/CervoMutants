@@ -148,7 +148,7 @@ func cmdCompare(args []string) error {
 
 func cmdPool(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("pool requires smoke, compare, or benchmark")
+		return fmt.Errorf("pool requires smoke, compare, benchmark, or campaign")
 	}
 	switch args[0] {
 	case "smoke":
@@ -157,6 +157,8 @@ func cmdPool(args []string) error {
 		return cmdPoolCompare(args[1:])
 	case "benchmark":
 		return cmdPoolBenchmark(args[1:])
+	case "campaign":
+		return cmdPoolCampaign(args[1:])
 	default:
 		return fmt.Errorf("unknown pool command %q", args[0])
 	}

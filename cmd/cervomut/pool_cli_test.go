@@ -96,3 +96,32 @@ func TestPoolBenchmarkCommandDispatches(t *testing.T) {
 		t.Fatal("pool benchmark handler was not called")
 	}
 }
+
+func TestPoolCampaignCommandDispatches(t *testing.T) {
+	original := runPoolCampaignFn
+	defer func() { runPoolCampaignFn = original }()
+
+	called := false
+	runPoolCampaignFn = func(_ context.Context, opts pool.CampaignOptions) (pool.RunSummary[pool.CampaignJobResult], error) {
+		called = true
+		if opts.Path != "campaign.json" || opts.WorkRoot != "work" || opts.OutputRoot != "out" || !opts.Resume || opts.CervoBinary != "cervomut.exe" {
+			t.Fatalf("unexpected campaign options: %+v", opts)
+		}
+		if opts.GremlinsBinary != "gremlins.exe" || opts.GomuBinary != "gomu.exe" || opts.GoMutestingBinary != "go-mutesting.exe" {
+			t.Fatalf("unexpected campaign binary options: %+v", opts)
+		}
+		return pool.RunSummary[pool.CampaignJobResult]{SummaryPath: "out/campaign-summary.json"}, nil
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"pool", "campaign", "--file", "campaign.json", "--work-root", "work", "--output-root", "out", "--resume", "--cervomutants", "cervomut.exe", "--gremlins", "gremlins.exe", "--gomu", "gomu.exe", "--go-mutesting", "go-mutesting.exe"}); err != nil {
+			t.Fatalf("pool campaign returned error: %v", err)
+		}
+	})
+	if !strings.Contains(output, "Pool campaign summary: out/campaign-summary.json") {
+		t.Fatalf("campaign output missing:\n%s", output)
+	}
+	if !called {
+		t.Fatal("pool campaign handler was not called")
+	}
+}
