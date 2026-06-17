@@ -213,7 +213,7 @@ Additional findings:
 - `go-mutesting` is not a useful Go 1.25 reference without a compatibility pass.
   Its failure here is not mutation performance; it crashes before mutation due
   to stale package-loading dependencies. A follow-up comparison can test it with
-  older Go toolchains, but for modern CervoSoft defaults this is a real adoption
+  older Go toolchains, but for modern supported defaults this is a real adoption
   risk.
 - `gomu` degraded better in WSL2 than in Windows-native retries because the
   machine stayed healthy, but it still failed to return comparable final metrics
@@ -314,7 +314,7 @@ Windows Job Object validation was expanded with local smoke tests:
   Compile errors: 0
   Mutation score: 75.00%
   ```
-- A CervoSoft module validation on `cervo-retry` with `GOWORK=off`,
+- A first-party shared-library validation with `GOWORK=off`,
   `--max-process-memory-mb 1024`, `--max-mutants 20`, `--workers 1`, and
   `policy=ci-fast` completed with exit 0 in about 17 seconds:
 
@@ -329,8 +329,8 @@ Windows Job Object validation was expanded with local smoke tests:
   Compile errors: 0
   Mutation score: 41.67%
   ```
-- A heavier CervoClaw module validation on `CervoWorkers` required a longer
-  timeout than `ci-fast` because its coverage baseline takes about 55 seconds.
+- A heavier first-party application-module validation required a longer timeout
+  than `ci-fast` because its coverage baseline takes about 55 seconds.
   With `GOWORK=off`, `policy=campaign`, `--max-process-memory-mb 2048`,
   `--max-mutants 5`, and `--workers 1`, it completed with exit 0 in about
   194 seconds:
@@ -350,12 +350,12 @@ Windows Job Object validation was expanded with local smoke tests:
 
   | Module | Policy | Memory cap | Max mutants | Result |
   | --- | --- | ---: | ---: | --- |
-  | `cervo-retry` | `ci-fast` | 1024MB | 20 | exit 0; 20 generated; 12 executed; 5 killed; 7 survived; 0 timeout/compile errors |
-  | `cervo-config` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated/executed; 14 killed; 1 survived; 0 timeout/compile errors |
-  | `cervo-httpkit` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated; 7 executed; 3 killed; 4 survived; 0 timeout/compile errors |
-  | `CervoWorkers` | `campaign` + `--test-timeout 180s` | 2048MB | 5 | exit 0; 5 generated/executed; 2 killed; 3 survived; 0 timeout/compile errors |
+  | `shared retry library` | `ci-fast` | 1024MB | 20 | exit 0; 20 generated; 12 executed; 5 killed; 7 survived; 0 timeout/compile errors |
+  | `shared config library` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated/executed; 14 killed; 1 survived; 0 timeout/compile errors |
+  | `shared HTTP utility library` | `ci-fast` | 1024MB | 15 | exit 0; 15 generated; 7 executed; 3 killed; 4 survived; 0 timeout/compile errors |
+  | `large workers module` | `campaign` + `--test-timeout 180s` | 2048MB | 5 | exit 0; 5 generated/executed; 2 killed; 3 survived; 0 timeout/compile errors |
 
-  The first `CervoWorkers` attempt under the default `campaign` 2-minute test
+  The first `large workers module` attempt under the default `campaign` 2-minute test
   timeout failed during baseline. Adding explicit `--test-timeout 180s` made the
   limit visible and repeatable, which supports keeping timeout override in the
   CLI for larger Windows-native runs.
@@ -367,7 +367,8 @@ Remaining limitations after this pass:
   checkpoint_includes` now covers common fixture directories such as
   `testdata/**` and `fixtures/**`; projects with other fixture layouts should
   extend that list.
-- Windows Job Object validation now covers Cobra, three CervoSoft modules, and
-  a heavier CervoWorkers slice. It is credible for controlled local runs, but a
-  full production-grade claim still needs a longer campaign across all CervoClaw
-  modules that have clean baselines on the selected Go version.
+- Windows Job Object validation now covers Cobra, three first-party modules,
+  and a heavier workers-oriented slice. It is credible for controlled local
+  runs, but a full production-grade claim still needs a longer campaign across
+  a broader set of first-party application modules that have clean baselines on
+  the selected Go version.

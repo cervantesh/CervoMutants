@@ -36,7 +36,7 @@ func TestBuildCreatesDecisionCompleteEvaluation(t *testing.T) {
 		Target:     "fixture",
 		Commit:     "abc123",
 		Command:    []string{"cervomut", "eval", "./..."},
-		Framework:  "cervosoft",
+		Framework:  "generic-go",
 		Run:        run,
 		ManualMode: true,
 	})
@@ -79,7 +79,7 @@ func TestWriteOutputsJSONMarkdownAndSchema(t *testing.T) {
 		Target:    "fixture",
 		Commit:    "abc123",
 		Command:   []string{"cervomut", "eval", "./..."},
-		Framework: "cervosoft",
+		Framework: "generic-go",
 		Run:       engine.RunResult{SchemaVersion: "1", Summary: engine.Summary{Total: 1, Killed: 1, Score: 100}},
 	})
 

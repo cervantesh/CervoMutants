@@ -104,7 +104,7 @@ func Build(req BuildRequest) Evaluation {
 	decision := decide(scorecard, req.ManualMode)
 	return Evaluation{
 		SchemaVersion:        "1",
-		Framework:            defaultString(req.Framework, "cervosoft"),
+		Framework:            defaultString(req.Framework, "generic-go"),
 		GeneratedAt:          time.Now().UTC(),
 		Tool:                 defaultString(req.Tool, "cervo-mutant"),
 		Target:               req.Target,

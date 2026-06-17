@@ -10,7 +10,7 @@ profiles for test selection.
 
 | Go version | Status | Notes |
 | --- | --- | --- |
-| `1.25.x` | Tested | Matches the current CervoSoft target toolchain. |
+| `1.25.x` | Tested | Matches the current supported target toolchain. |
 | `1.24.x` | Compatible | Expected to work for normal runs; keep CI coverage if used by a project. |
 | `< 1.24` | Unsupported | `cervomut doctor` fails the compatibility check. |
 | `> 1.25` | Untested future | `cervomut doctor` warns until validated. |

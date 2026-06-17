@@ -340,7 +340,7 @@ func TestResumeRejectsConfiguredFixtureChangedAfterCheckpoint(t *testing.T) {
 }
 
 func TestRunHandlesOneDriveStyleModulePathWithSpaces(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "OneDrive - Personal", "Documents", "CervoSoft", "cobra doc")
+	dir := filepath.Join(t.TempDir(), "OneDrive - Personal", "Documents", "Workspace", "cobra doc")
 	writeFixtureFiles(t, dir)
 	before, err := os.ReadFile(filepath.Join(dir, "calc.go"))
 	if err != nil {

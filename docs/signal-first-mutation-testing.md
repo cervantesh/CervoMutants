@@ -312,7 +312,7 @@ more operators.
 | Baseline | Track survivor age, first seen commit, last seen commit, and whether the survivor is new in changed code. |
 | Equivalence | Add auditable suppression rules and evidence levels. |
 | CI | Add policy presets: `ci-fast`, `ci-balanced`, `nightly`, and `campaign`. |
-| Evaluation | Keep apples-to-apples benchmark fixtures for Cobra and at least one CervoSoft module. |
+| Evaluation | Keep apples-to-apples benchmark fixtures for Cobra and at least one first-party Go module. |
 | Agent UX | Add direct test-generation hints, nearest test files, and assertion suggestions in `explain`. |
 
 Issue #11 implementation status:

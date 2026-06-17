@@ -297,7 +297,7 @@ func cmdFast(args []string) error {
 func cmdEval(args []string) error {
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
 	out := fs.String("out", ".cervomut/evaluation", "evaluation output directory")
-	framework := fs.String("framework", "cervosoft", "evaluation framework")
+	framework := fs.String("framework", "generic-go", "evaluation framework")
 	budget := fs.Duration("budget", 0, "run budget")
 	testTimeout := fs.Duration(flagTestTimeout, 0, "per-mutant go test timeout")
 	maxMutants := fs.Int(flagMaxMutants, 0, "max mutants")

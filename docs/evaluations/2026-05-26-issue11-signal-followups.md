@@ -96,20 +96,20 @@ Results:
 | Repository | Target | Generated | Killed | Survived | Not covered | Timed out | Compile errors | Score | Mutation coverage | Wall time |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Cobra | `./doc` | 100 | 46 | 39 | 15 | 0 | 0 | 54.12% | 85.00% | 31.75s |
-| CervoCore | `./...` | 100 | 12 | 28 | 60 | 0 | 0 | 30.00% | 40.00% | 50.46s |
-| CervoRetry | `./...` | 52 | 18 | 10 | 24 | 0 | 0 | 64.29% | 53.85% | 16.09s |
+| First-party application core | `./...` | 100 | 12 | 28 | 60 | 0 | 0 | 30.00% | 40.00% | 50.46s |
+| First-party shared library | `./...` | 52 | 18 | 10 | 24 | 0 | 0 | 64.29% | 53.85% | 16.09s |
 | pflag | `./...` | 100 | 60 | 14 | 26 | 0 | 0 | 81.08% | 74.00% | 66.30s |
 
 Findings:
 
 - `ci-balanced` is reliable across the four repos: no timeouts and no compile
   errors in this 352-mutant sample.
-- Coverage prefiltering changes score interpretation. CervoCore and CervoRetry
-  show large `not_covered` buckets, so the main next question is test reach, not
-  only assertion strength.
+- Coverage prefiltering changes score interpretation. The first-party
+  application core and shared library show large `not_covered` buckets, so the
+  main next question is test reach, not only assertion strength.
 - pflag remains a useful external high-signal control.
-- CervoRetry is small enough that the 100-mutant cap does not apply; it produced
-  52 mutants under the selected profile.
+- The first-party shared library is small enough that the 100-mutant cap does
+  not apply; it produced 52 mutants under the selected profile.
 
 Raw artifacts:
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestSafePathTokenRejectsWindowsInvalidFilenameCharacters(t *testing.T) {
-	token := safePathToken(`C:\Users\c___h\OneDrive\Documents\CervoSoft\cobra doc`)
+	token := safePathToken(`C:\Users\c___h\OneDrive\Documents\Workspace\cobra doc`)
 
 	for _, invalid := range []string{":", "\\", "/", "*", "?", "\"", "<", ">", "|", " "} {
 		if strings.Contains(token, invalid) {

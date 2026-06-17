@@ -6,11 +6,11 @@ Tracking issues:
 - https://github.com/cervantesh/cervo-mutants/issues/6
 - https://github.com/cervantesh/cervo-mutants/issues/7
 
-This framework evaluates mutation testing tools for CervoSoft and decides
-whether `cervo-mutant` should be the default for CervoClaw and related Go
-libraries. It combines published mutation-testing tool comparison work with
-engineering criteria needed for CI, large Go modules, and agent-driven test
-improvement.
+This framework evaluates mutation testing tools for first-party Go repositories
+and decides whether `cervo-mutant` should be the default for application repos
+and shared libraries. It combines published mutation-testing tool comparison
+work with engineering criteria needed for CI, large Go modules, and
+agent-driven test improvement.
 
 For the product framework CervoMutant should use after evaluation, see
 [Signal-First Mutation Testing Framework](signal-first-mutation-testing.md).
@@ -142,7 +142,7 @@ Based on commit-relevant mutant research.
 
 ### Actionability And Agent Utility - 15
 
-This layer is CervoSoft-specific because `cervo-mutant` is intended for both
+This layer is product-specific because `cervo-mutant` is intended for both
 humans and coding agents.
 
 | Criterion | Points | Evidence |
@@ -261,9 +261,10 @@ For each tool:
 5. Manually classify a representative survivor sample.
 6. Record setup friction, failures, unsupported cases, and workspace artifacts.
 
-### Level 2: CervoClaw Adoption Study
+### Level 2: First-Party Adoption Study
 
-Use CervoClaw and at least one CervoSoft library as target projects.
+Use one first-party application repository and at least one shared-library
+repository as target projects.
 
 For each target:
 
@@ -280,7 +281,8 @@ For each target:
 
 ### Level 3: Longitudinal Default-Readiness Study
 
-Use this level before declaring `cervo-mutant` the default across CervoSoft.
+Use this level before declaring `cervo-mutant` the default across your
+first-party Go repositories.
 
 1. Keep stable mutant identities across releases when source locations shift
    only minimally.
