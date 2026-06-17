@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"github.com/cervantesh/cervo-mutants/internal/testharness"
 	"github.com/cervantesh/cervo-mutants/pkg/baseline"
 	"github.com/cervantesh/cervo-mutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/daemon"
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
 	evalpkg "github.com/cervantesh/cervo-mutants/pkg/eval"
 )
@@ -40,6 +42,45 @@ func TestHelpCommandDoesNotError(t *testing.T) {
 	}
 	if err := run([]string{"help"}); err != nil {
 		t.Fatalf("help returned error: %v", err)
+	}
+}
+
+func TestDaemonCommandRequiresExperimentalOptIn(t *testing.T) {
+	oldServeDaemon := serveDaemonFn
+	serveDaemonFn = func(context.Context, io.Reader, io.Writer, engine.Runner) error {
+		t.Fatal("serveDaemonFn should not be called without experimental opt-in")
+		return nil
+	}
+	t.Cleanup(func() { serveDaemonFn = oldServeDaemon })
+
+	err := run([]string{"daemon"})
+	if err == nil || !strings.Contains(err.Error(), "experimental") || !strings.Contains(err.Error(), daemonExperimentalEnvVar) {
+		t.Fatalf("daemon error = %v, want experimental opt-in guidance", err)
+	}
+}
+
+func TestDaemonAndWorkerCommandsAcceptExperimentalOptIn(t *testing.T) {
+	oldServeDaemon := serveDaemonFn
+	var calls []int
+	serveDaemonFn = func(_ context.Context, _ io.Reader, _ io.Writer, runner engine.Runner) error {
+		workerRunner, ok := runner.(daemon.WorkerRunner)
+		if !ok {
+			t.Fatalf("runner type = %T, want daemon.WorkerRunner", runner)
+		}
+		calls = append(calls, workerRunner.MaxOutputBytes)
+		return nil
+	}
+	t.Cleanup(func() { serveDaemonFn = oldServeDaemon })
+
+	if err := run([]string{"daemon", "--experimental", "--max-output-bytes", "321"}); err != nil {
+		t.Fatalf("daemon command returned error: %v", err)
+	}
+	t.Setenv(daemonExperimentalEnvVar, "1")
+	if err := run([]string{"worker"}); err != nil {
+		t.Fatalf("worker command returned error with env opt-in: %v", err)
+	}
+	if len(calls) != 2 || calls[0] != 321 || calls[1] != 12000 {
+		t.Fatalf("daemon calls = %+v, want [321 12000]", calls)
 	}
 }
 

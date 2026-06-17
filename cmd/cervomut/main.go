@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/cervantesh/cervo-mutants/pkg/config"
-	"github.com/cervantesh/cervo-mutants/pkg/daemon"
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
 	evalpkg "github.com/cervantesh/cervo-mutants/pkg/eval"
 	"github.com/cervantesh/cervo-mutants/pkg/pool"
@@ -24,7 +22,7 @@ const (
 
 var (
 	runEngineFn = func(cfg config.Config, req engine.RunRequest) (engine.RunResult, error) {
-		return engine.New(cfg).Run(context.Background(), req)
+		return engine.New(cfg).Run(backgroundContext(), req)
 	}
 	writeRunResultFn   = writeRunResult
 	writeEvalFn        = evalpkg.Write
@@ -82,8 +80,10 @@ func run(args []string) (err error) {
 		return cmdExplain(args[1:])
 	case "list-mutators":
 		return cmdListMutators()
-	case "daemon", "worker":
-		return daemon.ServeJSONLines(context.Background(), os.Stdin, os.Stdout, daemon.WorkerRunner{MaxOutputBytes: 12000})
+	case "daemon":
+		return cmdDaemonMode("daemon", args[1:])
+	case "worker":
+		return cmdDaemonMode("worker", args[1:])
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", args[0])
@@ -92,4 +92,5 @@ func run(args []string) (err error) {
 
 func usage() {
 	fmt.Println("usage: cervomut <init|doctor|affected|run|fast|eval|compare|pool|baseline|report|show|explain|list-mutators|daemon|worker>")
+	fmt.Println("note: daemon and worker are experimental protocol modes and require explicit opt-in")
 }
