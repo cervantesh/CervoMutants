@@ -56,4 +56,6 @@ It should not yet be presented as:
 
 Those claims require follow-up work such as explicit protocol versioning,
 durable coordination, retries, and compatibility policy. That later policy work
-is tracked separately under the roadmap compatibility issue.
+is now reflected in [compatibility-policy.md](compatibility-policy.md), which
+keeps daemon/worker explicitly outside the supported compatibility surface until
+the protocol is versioned and promoted.

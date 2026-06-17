@@ -645,6 +645,9 @@ Latest local Sonar pass after issue #31:
 - [docs/sonar.md](docs/sonar.md): local and CI Sonar workflow.
 - [docs/go-toolchain-compatibility.md](docs/go-toolchain-compatibility.md):
   official OS/Go support matrix and `doctor` checks.
+- [docs/compatibility-policy.md](docs/compatibility-policy.md): formal
+  compatibility contract for CLI, report schema, and experimental protocol
+  surfaces.
 - [docs/releasing.md](docs/releasing.md): tag-driven release workflow, assets,
   checksums, and upgrade-note requirements.
 - [docs/example-repos.md](docs/example-repos.md): maintained example workspaces

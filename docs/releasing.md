@@ -13,7 +13,10 @@ The release workflow publishes:
 
 1. Update `CHANGELOG.md` with a new `## [vX.Y.Z] - YYYY-MM-DD` section.
 2. Add `docs/upgrade-notes/vX.Y.Z.md`.
-3. Ensure `main` is green.
+3. If the release changes a supported CLI or report surface, update
+   [compatibility-policy.md](compatibility-policy.md) or confirm the change is
+   already covered by that policy.
+4. Ensure `main` is green.
 
 ## Create The Release
 
