@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CervoMutants | Signal-first mutation testing for Go</title>
+    <meta
+      name="description"
+      content="CervoMutants is a Go mutation testing toolkit for CI, large Go modules, and AI-assisted test improvement."
+    >
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="https://github.com/cervantesh/CervoMutants">CervoMutants</a>
+        <nav class="topnav" aria-label="Project">
+          <a href="https://github.com/cervantesh/CervoMutants">Repository</a>
+          <a href="https://github.com/cervantesh/CervoMutants/wiki">Wiki</a>
+          <a href="https://github.com/cervantesh/CervoMutants/releases">Releases</a>
+          <a href="https://github.com/cervantesh/CervoMutants/issues">Issues</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Mutation testing for modern Go teams</p>
+            <h1>Signal-first mutation testing built for real CI pressure.</h1>
+            <p class="lede">
+              CervoMutants helps Go teams find weak tests, rank survivors, preserve
+              denominator health, and compare mutation runs without pretending noisy
+              signal is useful signal.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="https://github.com/cervantesh/CervoMutants">Open repository</a>
+              <a class="button button-secondary" href="https://github.com/cervantesh/CervoMutants/releases">Download releases</a>
+            </div>
+          </div>
+
+          <aside class="hero-panel">
+            <p class="panel-title">Quick start</p>
+            <pre><code>go install github.com/cervantesh/CervoMutants/cmd/cervomut@latest
+
+cervomut init
+cervomut doctor
+cervomut fast ./... --budget 10m --sample deterministic</code></pre>
+            <ul class="panel-list">
+              <li>Stable JSON, JUnit, and HTML reports</li>
+              <li>Baseline-first adoption for existing repositories</li>
+              <li>External-tool normalization for fair comparisons</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="stats-grid" aria-label="Project highlights">
+          <article class="stat-card">
+            <span class="stat-label">Use case</span>
+            <strong>CI and large Go modules</strong>
+            <p>Built for guarded rollout instead of brute-force mutation counts.</p>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Surface</span>
+            <strong>CLI plus importable Go packages</strong>
+            <p>Use the `cervomut` CLI or embed the engine in Go automation.</p>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Output</span>
+            <strong>Actionable survivor diagnostics</strong>
+            <p>Focus attention on what should be tested next, not just what survived.</p>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="content-card">
+            <h2>What CervoMutants ships today</h2>
+            <ul class="feature-list">
+              <li>Stable mutant IDs and AST-based source rewrites</li>
+              <li>Overlay and temp-workdir isolation modes</li>
+              <li>Incremental cache, history, baseline, and quarantine support</li>
+              <li>Coverage-aware selection, budgeted runs, resume, and sharding</li>
+              <li>Structured reports for CI, dashboards, and AI agents</li>
+            </ul>
+          </article>
+
+          <article class="content-card">
+            <h2>Why teams use it</h2>
+            <ul class="feature-list">
+              <li>Catch tests that execute code but do not assert behavior</li>
+              <li>Adopt mutation testing without breaking every existing pipeline</li>
+              <li>Compare against Gremlins, gomu, and go-mutesting fairly</li>
+              <li>Keep partial results when long runs hit time or resource limits</li>
+            </ul>
+          </article>
+        </section>
+
+        <section class="resource-section">
+          <div class="section-heading">
+            <p class="eyebrow">Documentation</p>
+            <h2>Start with the right path</h2>
+          </div>
+          <div class="resource-grid">
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/blob/main/README.md">
+              <h3>README</h3>
+              <p>Install, run, policies, configuration, and command reference.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/wiki">
+              <h3>Wiki</h3>
+              <p>Project-level documentation and longer-form operating notes.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/blob/main/docs/policy-presets.md">
+              <h3>Policy presets</h3>
+              <p>Understand `ci-fast`, `ci-balanced`, `nightly`, and `campaign`.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/blob/main/docs/evaluations/tool-comparison-protocol.md">
+              <h3>Comparison protocol</h3>
+              <p>Normalize targets and denominators before comparing mutation tools.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/releases">
+              <h3>Releases</h3>
+              <p>Binary drops, changelog checkpoints, and versioned adoption points.</p>
+            </a>
+            <a class="resource-card" href="https://github.com/cervantesh/CervoMutants/issues">
+              <h3>Issues</h3>
+              <p>Roadmap, proposals, bugs, and implementation tracking.</p>
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>
+          Source code is licensed under Apache License 2.0.
+          Project name and branding remain reserved under the repository trademark policy.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
