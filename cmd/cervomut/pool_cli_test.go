@@ -1,0 +1,56 @@
+package main
+
+import (
+	"context"
+	"testing"
+
+	"github.com/cervantesh/CervoMutants/pkg/pool"
+)
+
+func TestPoolSmokeCommandDispatches(t *testing.T) {
+	original := runPoolSmokeFn
+	defer func() { runPoolSmokeFn = original }()
+
+	called := false
+	runPoolSmokeFn = func(_ context.Context, opts pool.SmokeOptions) (pool.RunSummary[pool.SmokeResult], error) {
+		called = true
+		if opts.ManifestPath != "manifest.json" || opts.WorkRoot != "work" || opts.MaxMutants != 7 || opts.Workers != 3 || opts.CervoBinary != "cervomut.exe" {
+			t.Fatalf("unexpected smoke options: %+v", opts)
+		}
+		if len(opts.Names) != 2 || opts.Names[0] != "cobra" || opts.Names[1] != "pflag" {
+			t.Fatalf("unexpected names: %+v", opts.Names)
+		}
+		return pool.RunSummary[pool.SmokeResult]{SummaryPath: "work/summary.json"}, nil
+	}
+
+	if err := run([]string{"pool", "smoke", "--manifest", "manifest.json", "--work-root", "work", "--names", "cobra,pflag", "--max-mutants", "7", "--workers", "3", "--cervomutants", "cervomut.exe"}); err != nil {
+		t.Fatalf("pool smoke returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("pool smoke handler was not called")
+	}
+}
+
+func TestPoolCompareCommandDispatches(t *testing.T) {
+	original := runPoolCompareFn
+	defer func() { runPoolCompareFn = original }()
+
+	called := false
+	runPoolCompareFn = func(_ context.Context, opts pool.CompareOptions) (pool.RunSummary[pool.CompareResult], error) {
+		called = true
+		if opts.ManifestPath != "manifest.json" || opts.WorkRoot != "work" || opts.OutputRoot != "out" || opts.CompareTargetMode != "package-root" {
+			t.Fatalf("unexpected compare options: %+v", opts)
+		}
+		if len(opts.Tools) != 2 || opts.Tools[0] != "cervomut" || opts.Tools[1] != "gremlins" {
+			t.Fatalf("unexpected tools: %+v", opts.Tools)
+		}
+		return pool.RunSummary[pool.CompareResult]{SummaryPath: "out/summary.json"}, nil
+	}
+
+	if err := run([]string{"pool", "compare", "--manifest", "manifest.json", "--work-root", "work", "--output-root", "out", "--tools", "cervomut,gremlins", "--compare-target-mode", "package-root"}); err != nil {
+		t.Fatalf("pool compare returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("pool compare handler was not called")
+	}
+}

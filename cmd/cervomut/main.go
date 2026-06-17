@@ -22,6 +22,7 @@ import (
 	evalpkg "github.com/cervantesh/CervoMutants/pkg/eval"
 	"github.com/cervantesh/CervoMutants/pkg/extcompare"
 	"github.com/cervantesh/CervoMutants/pkg/mutator"
+	"github.com/cervantesh/CervoMutants/pkg/pool"
 	"github.com/cervantesh/CervoMutants/pkg/report"
 )
 
@@ -42,6 +43,8 @@ var (
 	writeRunResultFn = writeRunResult
 	writeEvalFn      = evalpkg.Write
 	buildEvalFn      = evalpkg.Build
+	runPoolSmokeFn   = pool.RunSmoke
+	runPoolCompareFn = pool.RunCompare
 )
 
 func main() {
@@ -79,6 +82,8 @@ func run(args []string) (err error) {
 		return cmdEval(args[1:])
 	case "compare":
 		return cmdCompare(args[1:])
+	case "pool":
+		return cmdPool(args[1:])
 	case "baseline":
 		return cmdBaseline(args[1:])
 	case "report":
@@ -98,7 +103,7 @@ func run(args []string) (err error) {
 }
 
 func usage() {
-	fmt.Println("usage: cervomut <init|doctor|affected|run|fast|eval|compare|baseline|report|show|explain|list-mutators|daemon|worker>")
+	fmt.Println("usage: cervomut <init|doctor|affected|run|fast|eval|compare|pool|baseline|report|show|explain|list-mutators|daemon|worker>")
 }
 
 func cmdInit() error {
@@ -620,6 +625,136 @@ func cmdCompare(args []string) error {
 	return nil
 }
 
+func cmdPool(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("pool requires smoke or compare")
+	}
+	switch args[0] {
+	case "smoke":
+		return cmdPoolSmoke(args[1:])
+	case "compare":
+		return cmdPoolCompare(args[1:])
+	default:
+		return fmt.Errorf("unknown pool command %q", args[0])
+	}
+}
+
+func cmdPoolSmoke(args []string) error {
+	fs := flag.NewFlagSet("pool smoke", flag.ContinueOnError)
+	manifest := fs.String("manifest", "docs/evaluations/go-repo-pool-40.json", "repository pool manifest")
+	workRoot := fs.String("work-root", filepath.Join(os.TempDir(), "cervomut-go-pool-40"), "working root for cloned repositories and reports")
+	names := fs.String("names", "", "comma-separated repository names to include")
+	limit := fs.Int("limit", 0, "limit repositories after filtering")
+	runMutation := fs.Bool("run-mutation", false, "run bounded mutation after baseline and dry-run")
+	maxMutants := fs.Int(flagMaxMutants, 10, "max mutants per target")
+	workers := fs.Int("workers", 2, "parallel mutation workers")
+	cloneTimeout := fs.Int("clone-timeout-seconds", 180, "git clone timeout in seconds")
+	testTimeout := fs.Int("test-timeout-seconds", 120, "baseline go test timeout in seconds")
+	dryRunTimeout := fs.Int("dry-run-timeout-seconds", 120, "cervomut dry-run timeout in seconds")
+	mutationTimeout := fs.Int("mutation-timeout-seconds", 300, "mutation run timeout in seconds")
+	cervoBinary := fs.String("cervomutants", currentExecutable(), "path to the cervomut binary used for nested runs")
+	gitBinary := fs.String("git", "git", "path to git")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"manifest": true, "work-root": true, "names": true, "limit": true, "run-mutation": true, flagMaxMutants: true, "workers": true, "clone-timeout-seconds": true, "test-timeout-seconds": true, "dry-run-timeout-seconds": true, "mutation-timeout-seconds": true, "cervomutants": true, "git": true,
+	})); err != nil {
+		return err
+	}
+	run, err := runPoolSmokeFn(context.Background(), pool.SmokeOptions{
+		ManifestPath:           *manifest,
+		WorkRoot:               *workRoot,
+		Names:                  splitList(*names),
+		Limit:                  *limit,
+		RunMutation:            *runMutation,
+		MaxMutants:             *maxMutants,
+		Workers:                *workers,
+		CloneTimeoutSeconds:    *cloneTimeout,
+		TestTimeoutSeconds:     *testTimeout,
+		DryRunTimeoutSeconds:   *dryRunTimeout,
+		MutationTimeoutSeconds: *mutationTimeout,
+		CervoBinary:            *cervoBinary,
+		GitBinary:              *gitBinary,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Pool smoke summary: %s\n", run.SummaryPath)
+	return nil
+}
+
+func cmdPoolCompare(args []string) error {
+	fs := flag.NewFlagSet("pool compare", flag.ContinueOnError)
+	manifest := fs.String("manifest", "docs/evaluations/go-repo-pool-40.json", "repository pool manifest")
+	workRoot := fs.String("work-root", filepath.Join(os.TempDir(), "cervomut-go-pool-40"), "working root containing checked-out repositories")
+	outputRoot := fs.String("output-root", filepath.Join(os.TempDir(), "cervomut-tool-comparison-12"), "output directory for logs and summary")
+	names := fs.String("names", "", "comma-separated repository names to include")
+	tools := fs.String("tools", "", "comma-separated tools to run")
+	workers := fs.Int("workers", 2, "parallel mutation workers")
+	compareTargetMode := fs.String("compare-target-mode", "manifest", "target normalization mode: manifest or package-root")
+	gremlinsTargetMode := fs.String("gremlins-target-mode", "manifest", "Gremlins target normalization mode: manifest or package-root")
+	gremlinsTimeoutCoefficient := fs.Int("gremlins-timeout-coefficient", 1, "Gremlins timeout coefficient")
+	gomuWorkers := fs.Int("gomu-workers", 1, "gomu workers")
+	goMutestingWorkers := fs.Int("go-mutesting-workers", 1, "go-mutesting workers")
+	timeoutSeconds := fs.Int("timeout-seconds", 600, "per tool/repo timeout in seconds")
+	minFreeMemoryMB := fs.Int("min-free-memory-mb", 4096, "wait until this much physical memory is free before launch")
+	minFreeCommitMB := fs.Int("min-free-commit-mb", 8192, "wait until this much commit headroom is free before launch")
+	killBelowFreeMemoryMB := fs.Int("kill-below-free-memory-mb", 2048, "kill the tool when free physical memory drops below this value")
+	killBelowFreeCommitMB := fs.Int("kill-below-free-commit-mb", 4096, "kill the tool when free commit headroom drops below this value")
+	maxUsedMemoryMB := fs.Int("max-used-memory-mb", 0, "derive free-memory thresholds from a maximum used-memory cap")
+	maxCommittedMemoryMB := fs.Int("max-committed-memory-mb", 0, "derive free-commit thresholds from a maximum committed-memory cap")
+	maxProcessTreeMemoryMB := fs.Int("max-process-tree-memory-mb", 0, "best-effort process-tree memory cap in MB")
+	memoryWaitSeconds := fs.Int("memory-wait-seconds", 900, "maximum seconds to wait for free memory before skipping")
+	memoryPollSeconds := fs.Int("memory-poll-seconds", 5, "memory watchdog poll interval in seconds")
+	goMemoryLimit := fs.String("go-memory-limit", "", "optional GOMEMLIMIT value for child processes")
+	goMaxProcs := fs.Int("go-max-procs", 0, "optional GOMAXPROCS value for child processes")
+	goFlags := fs.String("go-flags", "", "optional GOFLAGS value for child processes")
+	resume := fs.Bool("resume", false, "resume using the existing summary.json")
+	cervoBinary := fs.String("cervomutants", currentExecutable(), "path to the cervomut binary used for nested runs")
+	gremlinsBinary := fs.String("gremlins", filepath.Join(os.TempDir(), "cervomut-study-cobra", "tools", "gremlins.exe"), "path to Gremlins")
+	gomuBinary := fs.String("gomu", filepath.Join(os.TempDir(), "cervomut-study-cobra", "tools", "gomu-patched.exe"), "path to gomu")
+	goMutestingBinary := fs.String("go-mutesting", filepath.Join(os.TempDir(), "cervomut-study-cobra", "tools", "go-mutesting-patched.exe"), "path to go-mutesting")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"manifest": true, "work-root": true, "output-root": true, "names": true, "tools": true, "workers": true, "compare-target-mode": true, "gremlins-target-mode": true, "gremlins-timeout-coefficient": true, "gomu-workers": true, "go-mutesting-workers": true, "timeout-seconds": true, "min-free-memory-mb": true, "min-free-commit-mb": true, "kill-below-free-memory-mb": true, "kill-below-free-commit-mb": true, "max-used-memory-mb": true, "max-committed-memory-mb": true, "max-process-tree-memory-mb": true, "memory-wait-seconds": true, "memory-poll-seconds": true, "go-memory-limit": true, "go-max-procs": true, "go-flags": true, "resume": true, "cervomutants": true, "gremlins": true, "gomu": true, "go-mutesting": true,
+	})); err != nil {
+		return err
+	}
+	run, err := runPoolCompareFn(context.Background(), pool.CompareOptions{
+		ManifestPath:               *manifest,
+		WorkRoot:                   *workRoot,
+		OutputRoot:                 *outputRoot,
+		Names:                      splitList(*names),
+		Tools:                      splitList(*tools),
+		Workers:                    *workers,
+		CompareTargetMode:          *compareTargetMode,
+		GremlinsTargetMode:         *gremlinsTargetMode,
+		GremlinsTimeoutCoefficient: *gremlinsTimeoutCoefficient,
+		GomuWorkers:                *gomuWorkers,
+		GoMutestingWorkers:         *goMutestingWorkers,
+		TimeoutSeconds:             *timeoutSeconds,
+		MinFreeMemoryMB:            *minFreeMemoryMB,
+		MinFreeCommitMB:            *minFreeCommitMB,
+		KillBelowFreeMemoryMB:      *killBelowFreeMemoryMB,
+		KillBelowFreeCommitMB:      *killBelowFreeCommitMB,
+		MaxUsedMemoryMB:            *maxUsedMemoryMB,
+		MaxCommittedMemoryMB:       *maxCommittedMemoryMB,
+		MaxProcessTreeMemoryMB:     *maxProcessTreeMemoryMB,
+		MemoryWaitSeconds:          *memoryWaitSeconds,
+		MemoryPollSeconds:          *memoryPollSeconds,
+		GoMemoryLimit:              *goMemoryLimit,
+		GoMaxProcs:                 *goMaxProcs,
+		GoFlags:                    *goFlags,
+		Resume:                     *resume,
+		CervoBinary:                *cervoBinary,
+		GremlinsBinary:             *gremlinsBinary,
+		GomuBinary:                 *gomuBinary,
+		GoMutestingBinary:          *goMutestingBinary,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Pool comparison summary: %s\n", run.SummaryPath)
+	return nil
+}
+
 type compareOptions struct {
 	cervo                   string
 	cervoTarget             string
@@ -992,6 +1127,28 @@ func currentCommit() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func currentExecutable() string {
+	path, err := os.Executable()
+	if err != nil {
+		return "cervomut"
+	}
+	return path
+}
+
+func splitList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func exitCode(err error) int {

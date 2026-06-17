@@ -103,12 +103,12 @@ mark `partial_report_used=true`.
 For future CervoMutants-vs-Gremlins studies:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Tools cervomut,gremlins `
-  -CompareTargetMode package-root `
-  -GremlinsTargetMode package-root `
-  -Workers 2 `
-  -TimeoutSeconds 600
+cervomut pool compare `
+  --tools cervomut,gremlins `
+  --compare-target-mode package-root `
+  --gremlins-target-mode package-root `
+  --workers 2 `
+  --timeout-seconds 600
 ```
 
 For all-tool studies, use the same `CompareTargetMode` for CervoMutants, gomu,

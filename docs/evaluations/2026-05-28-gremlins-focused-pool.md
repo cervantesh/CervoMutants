@@ -63,17 +63,17 @@ Gremlins-vs-CervoMutants comparison.
 Run command:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
-  -Tools cervomut,gremlins `
-  -OutputRoot "$env:TEMP\cervomut-gremlins-small-10" `
-  -TimeoutSeconds 600 `
-  -Workers 2 `
-  -Resume `
-  -MaxProcessTreeMemoryMB 6144 `
-  -GoMemoryLimit 3GiB `
-  -GoMaxProcs 2 `
-  -GoFlags "-p=2"
+cervomut pool compare `
+  --names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
+  --tools cervomut,gremlins `
+  --output-root "$env:TEMP\cervomut-gremlins-small-10" `
+  --timeout-seconds 600 `
+  --workers 2 `
+  --resume `
+  --max-process-tree-memory-mb 6144 `
+  --go-memory-limit 3GiB `
+  --go-max-procs 2 `
+  --go-flags "-p=2"
 ```
 
 Artifacts:
@@ -135,17 +135,17 @@ First run completed on Windows/OneDrive.
 Command:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
-  -Tools cervomut,gremlins `
-  -OutputRoot "$env:TEMP\cervomut-gremlins-small-10" `
-  -TimeoutSeconds 600 `
-  -Workers 2 `
-  -Resume `
-  -MaxProcessTreeMemoryMB 6144 `
-  -GoMemoryLimit 3GiB `
-  -GoMaxProcs 2 `
-  -GoFlags "-p=2"
+cervomut pool compare `
+  --names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
+  --tools cervomut,gremlins `
+  --output-root "$env:TEMP\cervomut-gremlins-small-10" `
+  --timeout-seconds 600 `
+  --workers 2 `
+  --resume `
+  --max-process-tree-memory-mb 6144 `
+  --go-memory-limit 3GiB `
+  --go-max-procs 2 `
+  --go-flags "-p=2"
 ```
 
 Artifacts:
@@ -481,12 +481,12 @@ Interpretation:
 Future Gremlins-focused small-pool runs should use:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Tools cervomut,gremlins `
-  -CompareTargetMode package-root `
-  -GremlinsTargetMode package-root `
-  -Workers 2 `
-  -TimeoutSeconds 600
+cervomut pool compare `
+  --tools cervomut,gremlins `
+  --compare-target-mode package-root `
+  --gremlins-target-mode package-root `
+  --workers 2 `
+  --timeout-seconds 600
 ```
 
 For all-tool studies, use the same `CompareTargetMode` for CervoMutants, gomu,

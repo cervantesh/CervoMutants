@@ -14,13 +14,13 @@ bounded mutation runs.
 Runner:
 
 ```powershell
-.\scripts\calibration-smoke.ps1 -Limit 40 -MaxMutants 10 -Workers 2 -CloneTimeoutSeconds 60 -TestTimeoutSeconds 30 -DryRunTimeoutSeconds 60
+cervomut pool smoke --limit 40 --max-mutants 10 --workers 2 --clone-timeout-seconds 60 --test-timeout-seconds 30 --dry-run-timeout-seconds 60
 ```
 
 Selected mutation sample:
 
 ```powershell
-.\scripts\calibration-smoke.ps1 -Names cobra,pflag,moby,hugo,prometheus,terraform,grpc-go,echo,logrus,validator,decimal,gjson -RunMutation -MaxMutants 25 -Workers 2 -CloneTimeoutSeconds 60 -TestTimeoutSeconds 60 -DryRunTimeoutSeconds 60 -MutationTimeoutSeconds 180
+cervomut pool smoke --names cobra,pflag,moby,hugo,prometheus,terraform,grpc-go,echo,logrus,validator,decimal,gjson --run-mutation --max-mutants 25 --workers 2 --clone-timeout-seconds 60 --test-timeout-seconds 60 --dry-run-timeout-seconds 60 --mutation-timeout-seconds 180
 ```
 
 Artifacts:

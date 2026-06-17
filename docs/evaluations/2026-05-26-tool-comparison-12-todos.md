@@ -62,21 +62,21 @@ C:\Users\c___h\AppData\Local\Temp\cervomut-tool-comparison-12\summary.json
 
 ## TODO
 
-1. Fix `scripts/compare-tools-pool.ps1` CervoMutants parser so cached/fast reports
+1. Fix the pool comparison runner CervoMutants parser so cached/fast reports
    do not show `killed=0` and `survived=0` when the report contains real results.
 2. Fix Gremlins parser for repos where Gremlins exits 0 but metrics are null.
 3. Re-run with `-Resume` after parser fixes:
 
    ```powershell
-   .\scripts\compare-tools-pool.ps1 -TimeoutSeconds 600 -Workers 2 -Resume
+   cervomut pool compare --timeout-seconds 600 --workers 2 --resume
    ```
 
 4. If the full 12-repo comparison remains too long, split by repo groups:
 
    ```powershell
-   .\scripts\compare-tools-pool.ps1 -Names cobra,pflag,moby,hugo -TimeoutSeconds 600 -Workers 2 -Resume
-   .\scripts\compare-tools-pool.ps1 -Names prometheus,terraform,grpc-go,echo -TimeoutSeconds 600 -Workers 2 -Resume
-   .\scripts\compare-tools-pool.ps1 -Names logrus,validator,decimal,gjson -TimeoutSeconds 600 -Workers 2 -Resume
+   cervomut pool compare --names cobra,pflag,moby,hugo --timeout-seconds 600 --workers 2 --resume
+   cervomut pool compare --names prometheus,terraform,grpc-go,echo --timeout-seconds 600 --workers 2 --resume
+   cervomut pool compare --names logrus,validator,decimal,gjson --timeout-seconds 600 --workers 2 --resume
    ```
 
 5. Convert `summary.json` into a Markdown comparison table with:
