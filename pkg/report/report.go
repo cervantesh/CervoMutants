@@ -28,6 +28,25 @@ type SurvivorViewStats struct {
 	CollapsedGroup int
 }
 
+type TriageLedger struct {
+	SchemaVersion string              `json:"schema_version"`
+	Entries       []TriageLedgerEntry `json:"entries"`
+}
+
+type TriageLedgerEntry struct {
+	MutantID        string        `json:"mutant_id"`
+	MutantIDs       []string      `json:"mutant_ids,omitempty"`
+	Status          engine.Status `json:"status"`
+	Risk            string        `json:"risk"`
+	SuggestedAction string        `json:"suggested_action"`
+	SuggestedReason string        `json:"suggested_reason"`
+	Evidence        []string      `json:"evidence"`
+	GroupKey        string        `json:"group_key,omitempty"`
+	GroupLabel      string        `json:"group_label,omitempty"`
+	GroupSize       int           `json:"group_size,omitempty"`
+	Actionability   string        `json:"actionability,omitempty"`
+}
+
 func JSON(result engine.RunResult) ([]byte, error) {
 	if result.SchemaVersion == "" {
 		result.SchemaVersion = "1"
@@ -267,6 +286,192 @@ func isActionableSurvivor(goos string, survivor engine.MutantResult) bool {
 	return true
 }
 
+func SemanticTriageLedger(result engine.RunResult) ([]byte, error) {
+	ledger := buildTriageLedger(result)
+	return json.MarshalIndent(ledger, "", "  ")
+}
+
+func buildTriageLedger(result engine.RunResult) TriageLedger {
+	entries := make([]TriageLedgerEntry, 0)
+	groupedMutants := map[string]bool{}
+	survivors := rankedSurvivors(result.Mutants)
+	groupOrder := make([]string, 0)
+	grouped := map[string][]engine.MutantResult{}
+
+	for _, survivor := range survivors {
+		group := survivor.Mutant.SemanticGroup
+		if group == "" {
+			continue
+		}
+		if len(grouped[group]) == 0 {
+			groupOrder = append(groupOrder, group)
+		}
+		grouped[group] = append(grouped[group], survivor)
+		groupedMutants[survivor.MutantID] = true
+	}
+
+	for _, group := range groupOrder {
+		mutants := grouped[group]
+		representative := mutants[0]
+		entries = append(entries, TriageLedgerEntry{
+			MutantID:        representative.MutantID,
+			MutantIDs:       ledgerMutantIDs(mutants),
+			Status:          representative.Status,
+			Risk:            "equivalence-risk",
+			SuggestedAction: "reviewed-skip",
+			SuggestedReason: ledgerSuggestedReason(representative, "review once for this semantic group before treating each survivor independently"),
+			Evidence:        semanticGroupEvidence(mutants),
+			GroupKey:        group,
+			GroupLabel:      representative.Mutant.GroupLabel,
+			GroupSize:       len(mutants),
+			Actionability:   representative.Actionability,
+		})
+	}
+
+	for _, mutant := range result.Mutants {
+		switch {
+		case groupedMutants[mutant.MutantID]:
+			continue
+		case strings.EqualFold(result.Environment.OS, "windows") && mutant.Status == engine.StatusSurvived && mutant.Mutant.PlatformSensitive:
+			entries = append(entries, TriageLedgerEntry{
+				MutantID:        mutant.MutantID,
+				MutantIDs:       []string{mutant.MutantID},
+				Status:          mutant.Status,
+				Risk:            "platform-sensitive",
+				SuggestedAction: "reviewed-skip",
+				SuggestedReason: ledgerSuggestedReason(mutant, "review on the target platform before treating permission-mode survivors as actionable"),
+				Evidence:        platformSensitiveEvidence(result.Environment.OS, mutant),
+				GroupKey:        "platform-sensitive:" + mutant.MutantID,
+				GroupLabel:      "platform-sensitive survivor",
+				GroupSize:       1,
+				Actionability:   mutant.Actionability,
+			})
+		case mutant.Status == engine.StatusTimedOut && mutant.FailureKind == "non_progress_loop":
+			entries = append(entries, TriageLedgerEntry{
+				MutantID:        mutant.MutantID,
+				MutantIDs:       []string{mutant.MutantID},
+				Status:          mutant.Status,
+				Risk:            "non-progress-timeout",
+				SuggestedAction: "quarantine",
+				SuggestedReason: ledgerSuggestedReason(mutant, "quarantine after review if the timeout confirms a non-progress loop"),
+				Evidence:        nonProgressTimeoutEvidence(mutant),
+				GroupKey:        "non-progress-timeout:" + mutant.MutantID,
+				GroupLabel:      "non-progress loop timeout",
+				GroupSize:       1,
+				Actionability:   mutant.Actionability,
+			})
+		case mutant.Status == engine.StatusSurvived && strings.EqualFold(mutant.Mutant.EquivalentRisk, "high"):
+			entries = append(entries, TriageLedgerEntry{
+				MutantID:        mutant.MutantID,
+				MutantIDs:       []string{mutant.MutantID},
+				Status:          mutant.Status,
+				Risk:            "equivalence-risk",
+				SuggestedAction: "reviewed-skip",
+				SuggestedReason: ledgerSuggestedReason(mutant, "reviewed-skip after confirming the high equivalent-risk pattern"),
+				Evidence:        highEquivalentRiskEvidence(mutant),
+				GroupKey:        "equivalence-risk:" + mutant.MutantID,
+				GroupLabel:      "high equivalent-risk survivor",
+				GroupSize:       1,
+				Actionability:   mutant.Actionability,
+			})
+		}
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Risk != entries[j].Risk {
+			return entries[i].Risk < entries[j].Risk
+		}
+		if entries[i].GroupSize != entries[j].GroupSize {
+			return entries[i].GroupSize > entries[j].GroupSize
+		}
+		return entries[i].MutantID < entries[j].MutantID
+	})
+
+	return TriageLedger{
+		SchemaVersion: "1",
+		Entries:       entries,
+	}
+}
+
+func ledgerMutantIDs(mutants []engine.MutantResult) []string {
+	ids := make([]string, 0, len(mutants))
+	for _, mutant := range mutants {
+		ids = append(ids, mutant.MutantID)
+	}
+	return ids
+}
+
+func ledgerSuggestedReason(mutant engine.MutantResult, fallback string) string {
+	if mutant.SuggestedSkipReason != "" {
+		return mutant.SuggestedSkipReason
+	}
+	if mutant.Mutant.SuggestedSkipReason != "" {
+		return mutant.Mutant.SuggestedSkipReason
+	}
+	return fallback
+}
+
+func semanticGroupEvidence(mutants []engine.MutantResult) []string {
+	representative := mutants[0]
+	evidence := []string{
+		fmt.Sprintf("semantic_group=%s", representative.Mutant.SemanticGroup),
+		fmt.Sprintf("group_size=%d", len(mutants)),
+	}
+	if representative.Mutant.GroupLabel != "" {
+		evidence = append(evidence, "group_label="+representative.Mutant.GroupLabel)
+	}
+	if representative.Mutant.GroupReason != "" {
+		evidence = append(evidence, "group_reason="+representative.Mutant.GroupReason)
+	}
+	if representative.Mutant.EquivalentRisk != "" {
+		evidence = append(evidence, "equivalent_risk="+representative.Mutant.EquivalentRisk)
+	}
+	if len(representative.Mutant.SemanticTags) > 0 {
+		evidence = append(evidence, "semantic_tags="+strings.Join(representative.Mutant.SemanticTags, ","))
+	}
+	return evidence
+}
+
+func platformSensitiveEvidence(goos string, mutant engine.MutantResult) []string {
+	evidence := []string{
+		"goos=" + goos,
+		"platform_sensitive=true",
+		"operator=" + mutant.Mutant.Operator,
+	}
+	if mutant.Mutant.EquivalentRisk != "" {
+		evidence = append(evidence, "equivalent_risk="+mutant.Mutant.EquivalentRisk)
+	}
+	return evidence
+}
+
+func nonProgressTimeoutEvidence(mutant engine.MutantResult) []string {
+	evidence := []string{
+		"failure_kind=non_progress_loop",
+		"status=timed_out",
+	}
+	if mutant.Mutant.NonProgressRisk != "" {
+		evidence = append(evidence, "non_progress_risk="+mutant.Mutant.NonProgressRisk)
+	}
+	if mutant.StatusReason != "" {
+		evidence = append(evidence, "status_reason="+mutant.StatusReason)
+	}
+	return evidence
+}
+
+func highEquivalentRiskEvidence(mutant engine.MutantResult) []string {
+	evidence := []string{
+		"equivalent_risk=high",
+		"operator=" + mutant.Mutant.Operator,
+	}
+	if len(mutant.Mutant.SemanticTags) > 0 {
+		evidence = append(evidence, "semantic_tags="+strings.Join(mutant.Mutant.SemanticTags, ","))
+	}
+	if mutant.Mutant.GroupReason != "" {
+		evidence = append(evidence, "group_reason="+mutant.Mutant.GroupReason)
+	}
+	return evidence
+}
+
 func HTML(result engine.RunResult) string {
 	var b strings.Builder
 	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>cervomut report</title></head><body>")
@@ -366,6 +571,11 @@ func WriteFormatsWithOptions(dir string, result engine.RunResult, formats []stri
 	if opts.ActionableOnly {
 		files["survivors-actionable.txt"] = []byte(SurvivorsWithOptions(result, SurvivorsOptions{ActionableOnly: true}))
 	}
+	ledgerData, err := SemanticTriageLedger(result)
+	if err != nil {
+		return err
+	}
+	files["semantic-triage-ledger.json"] = ledgerData
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			return err

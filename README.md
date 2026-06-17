@@ -88,6 +88,7 @@ Important files:
 | `.cervomut/reports/junit.xml` | CI test report format. |
 | `.cervomut/reports/index.html` | Human report for browsing survivors and diffs. |
 | `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
+| `.cervomut/reports/semantic-triage-ledger.json` | Auditable skip/quarantine suggestions for known noisy patterns. |
 | `.cervomut/reports/partial-mutation-report.json` | Checkpoint report for timeout/interrupted runs. |
 | `.cervomut/reports/partial-summary.json` | Small checkpoint summary. |
 | `.cervomut/history.json` | Historical survivor/cache signal. |
@@ -192,6 +193,10 @@ cervomut run ./... `
 and the normal `survivors.txt` remain complete; the actionable projection is
 printed to stdout for `run`, available in `report survivors --actionable-only`,
 and written to `.cervomut/reports/survivors-actionable.txt`.
+
+`semantic-triage-ledger.json` is a companion artifact. It groups equivalent-risk
+survivors, flags Windows-only permission-mode noise, and suggests quarantine
+review for confirmed non-progress loop timeouts without mutating the raw report.
 
 ## Configuration
 
