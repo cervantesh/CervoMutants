@@ -181,6 +181,8 @@ Three maintained example workspaces now live under [examples/](examples/README.m
 - `large-repo-ci`: slicing and matrix CI patterns for bounded large-repo rollout
 
 The public guide is [docs/example-repos.md](docs/example-repos.md).
+For repo fit, rollout guidance, limits, and tradeoffs, see
+[docs/adoption-guide.md](docs/adoption-guide.md).
 
 ## CLI Reference
 
@@ -660,6 +662,8 @@ Latest local Sonar pass after issue #31:
   contributors.
 - [docs/example-repos.md](docs/example-repos.md): maintained example workspaces
   for small, medium, and large-repo adoption patterns.
+- [docs/adoption-guide.md](docs/adoption-guide.md): public fit, rollout,
+  limitation, and tradeoff guidance grounded in current validation evidence.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
   for custom mutators, suppression evaluators, and survivor rankers.
 - [docs/daemon-worker.md](docs/daemon-worker.md): experimental daemon/worker
