@@ -24,8 +24,8 @@ rules.
 | File | Role |
 | --- | --- |
 | `docs/evaluations/go-repo-pool-40.json` | Repository manifest with name, URL, target, lane, domain, and reason. |
-| `scripts/compare-tools-pool.ps1` | Main multi-tool runner for Windows/PowerShell. Supports memory guards, resume, target normalization, and per-tool parsing. |
-| `scripts/calibration-smoke.ps1` | Lighter CervoMutants calibration smoke runner. Useful before expensive external comparisons. |
+| `cmd/cervomut` `pool compare` | Main multi-tool runner. Supports memory guards, resume, target normalization, and per-tool parsing. |
+| `cmd/cervomut` `pool smoke` | Lighter CervoMutants calibration smoke runner. Useful before expensive external comparisons. |
 | `cmd/cervomut` `compare` | Normalizes existing tool reports into one JSON schema. |
 | `pkg/extcompare` | Parser and comparability logic for CervoMutants, Gremlins, gomu, and go-mutesting reports. |
 | `docs/evaluations/tool-findings.md` | Ledger of lessons learned from each external tool. |
@@ -45,12 +45,12 @@ Default Windows paths are tuned for prior local experiments and may need to be
 overridden:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Manifest docs/evaluations/go-repo-pool-40.json `
-  -WorkRoot $env:TEMP/cervomut-go-pool-40 `
-  -OutputRoot $env:TEMP/cervomut-tool-comparison `
-  -CervoMutants $env:TEMP/cervomut-pool.exe `
-  -Gremlins $env:TEMP/cervomut-study-cobra/tools/gremlins.exe
+cervomut pool compare `
+  --manifest docs/evaluations/go-repo-pool-40.json `
+  --work-root $env:TEMP/cervomut-go-pool-40 `
+  --output-root $env:TEMP/cervomut-tool-comparison `
+  --cervomutants $env:TEMP/cervomut-pool.exe `
+  --gremlins $env:TEMP/cervomut-study-cobra/tools/gremlins.exe
 ```
 
 ## Target Semantics
@@ -67,14 +67,14 @@ Use `CompareTargetMode package-root` for fair Gremlins comparisons when a
 manifest target is `./...`:
 
 ```powershell
-.\scripts\compare-tools-pool.ps1 `
-  -Tools cervomut,gremlins `
-  -Names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
-  -CompareTargetMode package-root `
-  -GremlinsTargetMode package-root `
-  -Workers 2 `
-  -TimeoutSeconds 600 `
-  -Resume
+cervomut pool compare `
+  --tools cervomut,gremlins `
+  --names cobra,pflag,logrus,uuid,decimal,gjson,sjson,jsonparser,burntsushi-toml,urfave-cli `
+  --compare-target-mode package-root `
+  --gremlins-target-mode package-root `
+  --workers 2 `
+  --timeout-seconds 600 `
+  --resume
 ```
 
 That makes CervoMutants and Gremlins both receive `.` instead of comparing
@@ -105,7 +105,7 @@ sampling, a 10 minute run budget, a 20 second per-mutant timeout, and a default
 
 ## Memory And Timeout Guards
 
-`scripts/compare-tools-pool.ps1` includes several guards because previous gomu
+`cervomut pool compare` includes several guards because previous gomu
 and go-mutesting runs exhausted memory.
 
 Important knobs:

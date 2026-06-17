@@ -44,13 +44,13 @@ The pool prioritizes repositories that are either:
 Runner:
 
 ```powershell
-.\scripts\calibration-smoke.ps1 -Limit 40
+cervomut pool smoke --limit 40
 ```
 
 Optional bounded mutation run for selected repos:
 
 ```powershell
-.\scripts\calibration-smoke.ps1 -Limit 12 -RunMutation -MaxMutants 25 -Workers 2
+cervomut pool smoke --limit 12 --run-mutation --max-mutants 25 --workers 2
 ```
 
 ## Initial 40-Repos
