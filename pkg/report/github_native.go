@@ -178,11 +178,30 @@ func GitHubSummary(result engine.RunResult) string {
 	}
 	topSurvivors := githubTopSurvivors(result.Mutants, 5)
 	if len(topSurvivors) > 0 {
+		includeOwnership := hasOwnershipRoutes(topSurvivors)
 		b.WriteString("\n### Top Survivor Queue\n\n")
-		b.WriteString("| Rank | Mutant | Actionability | Operator | Location | Next test | Skip guidance |\n")
-		b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
+		if includeOwnership {
+			b.WriteString("| Rank | Mutant | Actionability | Owner route | Operator | Location | Next test | Skip guidance |\n")
+			b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- |\n")
+		} else {
+			b.WriteString("| Rank | Mutant | Actionability | Operator | Location | Next test | Skip guidance |\n")
+			b.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
+		}
 		for _, survivor := range topSurvivors {
 			location := fmt.Sprintf("%s:%d", sarifSlashPath(survivor.Mutant.File), survivor.Mutant.Line)
+			if includeOwnership {
+				fmt.Fprintf(&b, "| %d | `%s` | `%s` | `%s` | `%s` | `%s` | %s | %s |\n",
+					survivor.SurvivorRank,
+					escapeMarkdownCell(survivor.MutantID),
+					escapeMarkdownCell(survivor.Actionability),
+					escapeMarkdownCell(fallbackText(ownershipRouteSummary(survivor.Mutant.Ownership), "unassigned")),
+					escapeMarkdownCell(survivor.Mutant.Operator),
+					escapeMarkdownCell(location),
+					escapeMarkdownCell(githubRecommendationCell(survivor)),
+					escapeMarkdownCell(ledgerSuggestedReason(survivor, "review based on the mutation diff and nearby tests")),
+				)
+				continue
+			}
 			fmt.Fprintf(&b, "| %d | `%s` | `%s` | `%s` | `%s` | %s | %s |\n",
 				survivor.SurvivorRank,
 				escapeMarkdownCell(survivor.MutantID),
@@ -381,6 +400,20 @@ func sarifProperties(mutant engine.MutantResult) map[string]any {
 	}
 	if mutant.Mutant.SemanticGroup != "" {
 		properties["semantic_group"] = mutant.Mutant.SemanticGroup
+	}
+	if ownershipRouteConfigured(mutant.Mutant.Ownership) {
+		if value := ownershipRouteOwner(mutant.Mutant.Ownership); value != "" {
+			properties["owner"] = value
+		}
+		if value := ownershipRouteTeam(mutant.Mutant.Ownership); value != "" {
+			properties["team"] = value
+		}
+		if value := strings.TrimSpace(mutant.Mutant.Ownership.Contact); value != "" {
+			properties["contact"] = value
+		}
+		if value := strings.TrimSpace(mutant.Mutant.Ownership.Rule); value != "" {
+			properties["ownership_rule"] = value
+		}
 	}
 	return properties
 }

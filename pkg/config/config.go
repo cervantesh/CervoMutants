@@ -33,6 +33,7 @@ type Config struct {
 	CI          CI          `yaml:"ci" json:"ci"`
 	Ignore      Ignore      `yaml:"ignore" json:"ignore"`
 	Quarantine  Quarantine  `yaml:"quarantine" json:"quarantine"`
+	Ownership   Ownership   `yaml:"ownership" json:"ownership"`
 	Reports     Reports     `yaml:"reports" json:"reports"`
 }
 
@@ -153,6 +154,26 @@ type Quarantine struct {
 	RequireIssue  bool          `yaml:"require_issue" json:"require_issue"`
 	FailOnExpired bool          `yaml:"fail_on_expired" json:"fail_on_expired"`
 	MaxRenewals   int           `yaml:"max_renewals" json:"max_renewals"`
+}
+
+type Ownership struct {
+	Default OwnershipTarget `yaml:"default" json:"default"`
+	Rules   []OwnershipRule `yaml:"rules" json:"rules"`
+}
+
+type OwnershipTarget struct {
+	Owner   string `yaml:"owner" json:"owner"`
+	Team    string `yaml:"team" json:"team"`
+	Contact string `yaml:"contact" json:"contact"`
+}
+
+type OwnershipRule struct {
+	Name    string `yaml:"name" json:"name"`
+	Package string `yaml:"package" json:"package"`
+	File    string `yaml:"file" json:"file"`
+	Owner   string `yaml:"owner" json:"owner"`
+	Team    string `yaml:"team" json:"team"`
+	Contact string `yaml:"contact" json:"contact"`
 }
 
 type Reports struct {
@@ -289,6 +310,17 @@ func (cfg Config) Validate() error {
 		}
 		if rule.Action == "suppress" && (rule.Evidence != "confirmed" || rule.Reviewers < 1) {
 			return errors.New("suppress rules require confirmed evidence and at least one reviewer")
+		}
+	}
+	for _, rule := range cfg.Ownership.Rules {
+		if strings.TrimSpace(rule.Name) == "" {
+			return errors.New("ownership rules require name")
+		}
+		if strings.TrimSpace(rule.Package) == "" && strings.TrimSpace(rule.File) == "" {
+			return errors.New("ownership rules require package or file selector")
+		}
+		if strings.TrimSpace(rule.Owner) == "" && strings.TrimSpace(rule.Team) == "" && strings.TrimSpace(rule.Contact) == "" {
+			return errors.New("ownership rules require owner, team, or contact")
 		}
 	}
 	return nil

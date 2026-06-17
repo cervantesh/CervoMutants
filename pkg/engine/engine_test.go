@@ -1509,6 +1509,31 @@ func assertGlobBranches(t *testing.T) {
 	}
 }
 
+func TestOwnershipRouteMatchesPackageFileAndDefault(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Ownership.Default = config.OwnershipTarget{Owner: "default-owner", Team: "default-team"}
+	cfg.Ownership.Rules = []config.OwnershipRule{
+		{Name: "pkg-fs", Package: "./pkg/fs", Owner: "fs-owner", Team: "platform"},
+		{Name: "cmd-glob", File: "cmd/**/*.go", Owner: "cli-owner", Contact: "@cli"},
+	}
+	e := New(cfg)
+
+	route := e.ownershipRoute("./pkg/fs", "pkg/fs/fs.go")
+	if route == nil || route.Owner != "fs-owner" || route.Team != "platform" || route.Rule != "pkg-fs" {
+		t.Fatalf("package ownership route mismatch: %+v", route)
+	}
+
+	route = e.ownershipRoute("./cmd/cervomut", "cmd/cervomut/main.go")
+	if route == nil || route.Owner != "cli-owner" || route.Contact != "@cli" || route.Rule != "cmd-glob" {
+		t.Fatalf("file ownership route mismatch: %+v", route)
+	}
+
+	route = e.ownershipRoute("./pkg/other", "pkg/other/other.go")
+	if route == nil || route.Owner != "default-owner" || route.Rule != "default" {
+		t.Fatalf("default ownership route mismatch: %+v", route)
+	}
+}
+
 func assertClassificationBranches(t *testing.T) {
 	t.Helper()
 	if classifyFailure("panic: boom", nil) != "test_panic" {
