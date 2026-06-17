@@ -911,6 +911,72 @@ func TestRunErrorBranchesForQuarantineBaselineAndReports(t *testing.T) {
 	}
 }
 
+func TestRunRecoversDiscoveryPanic(t *testing.T) {
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, t.TempDir())
+	restoreRunHooks(t)
+	discoverMutantsForRun = func(_ *Engine, _ []string) ([]Mutant, error) {
+		panic("discover panic")
+	}
+
+	_, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{"./..."}})
+	assertPanicError(t, err, "discover panic")
+}
+
+func TestRunRecoversBaselinePanic(t *testing.T) {
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, t.TempDir())
+	restoreRunHooks(t)
+	discoverMutantsForRun = func(_ *Engine, _ []string) ([]Mutant, error) {
+		return []Mutant{{ID: "m1"}}, nil
+	}
+	runBaselineForRun = func(_ *Engine, _ context.Context, _ []string) (MutantResult, error) {
+		panic("baseline panic")
+	}
+
+	_, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{"./..."}})
+	assertPanicError(t, err, "baseline panic")
+}
+
+func TestRunRecoversMutantExecutionPanic(t *testing.T) {
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, t.TempDir())
+	restoreRunHooks(t)
+	discoverMutantsForRun = func(_ *Engine, _ []string) ([]Mutant, error) {
+		return []Mutant{{ID: "m1"}}, nil
+	}
+	runBaselineForRun = func(_ *Engine, _ context.Context, _ []string) (MutantResult, error) {
+		return MutantResult{}, nil
+	}
+	runMutantsForRun = func(_ *Engine, _ context.Context, _ []Mutant, _ map[string]bool) ([]MutantResult, error) {
+		panic("mutant panic")
+	}
+
+	_, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{"./..."}})
+	assertPanicError(t, err, "mutant panic")
+}
+
+func TestRunRecoversReportPanic(t *testing.T) {
+	cfg := config.Defaults()
+	isolateArtifacts(&cfg, t.TempDir())
+	restoreRunHooks(t)
+	discoverMutantsForRun = func(_ *Engine, _ []string) ([]Mutant, error) {
+		return []Mutant{{ID: "m1"}}, nil
+	}
+	runBaselineForRun = func(_ *Engine, _ context.Context, _ []string) (MutantResult, error) {
+		return MutantResult{}, nil
+	}
+	runMutantsForRun = func(_ *Engine, _ context.Context, _ []Mutant, _ map[string]bool) ([]MutantResult, error) {
+		return []MutantResult{{MutantID: "m1", Status: StatusKilled, Mutant: Mutant{ID: "m1"}}}, nil
+	}
+	writeReportsForRun = func(_ *Engine, _ RunResult) error {
+		panic("report panic")
+	}
+
+	_, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{"./..."}})
+	assertPanicError(t, err, "report panic")
+}
+
 func TestPartialCheckpointErrorBranches(t *testing.T) {
 	dir := writeFixture(t)
 	cfg := config.Defaults()
@@ -1584,4 +1650,38 @@ func statusStrings(statuses []Status) []string {
 		values = append(values, string(status))
 	}
 	return values
+}
+
+func restoreRunHooks(t *testing.T) {
+	t.Helper()
+	oldDiscover := discoverMutantsForRun
+	oldBaseline := runBaselineForRun
+	oldRunMutants := runMutantsForRun
+	oldWriteReports := writeReportsForRun
+	t.Cleanup(func() {
+		discoverMutantsForRun = oldDiscover
+		runBaselineForRun = oldBaseline
+		runMutantsForRun = oldRunMutants
+		writeReportsForRun = oldWriteReports
+	})
+}
+
+func assertPanicError(t *testing.T, err error, recovered string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected panic error")
+	}
+	var panicErr *PanicError
+	if !errors.As(err, &panicErr) {
+		t.Fatalf("error = %T %v, want PanicError", err, err)
+	}
+	if panicErr.Stage != "run" {
+		t.Fatalf("panic stage = %q, want run", panicErr.Stage)
+	}
+	if !strings.Contains(panicErr.Recovered, recovered) {
+		t.Fatalf("recovered = %q, want substring %q", panicErr.Recovered, recovered)
+	}
+	if panicErr.Stack == "" {
+		t.Fatal("panic stack trace was empty")
+	}
 }
