@@ -94,7 +94,7 @@ young testing tools.
   for CI, large Go modules, and AI-assisted test improvement.
 - The CLI surface is broad enough to support real usage, not just demos:
   `run`, `fast`, `doctor`, `affected`, `eval`, `compare`, `baseline`, `report`,
-  `show`, `explain`, `list-mutators`, and daemon/worker commands.
+  `show`, `explain`, `list-mutators`, and experimental daemon/worker commands.
 - Reporting is meaningfully structured. The tool distinguishes `survived`,
   `killed`, `timed_out`, `memory_killed`, `compile_error`, `not_covered`,
   `pending_budget`, `skipped_resource`, `quarantined`, and `cached`.
@@ -104,9 +104,10 @@ young testing tools.
 
 #### Functional gaps keeping it in beta
 
-- The daemon/worker surface exists, but the public positioning still describes
-  it as contracts for future distributed execution rather than a mature
-  distributed system.
+- The daemon/worker surface now has an explicit experimental status, which is
+  the right current claim. Graduating it still requires protocol versioning,
+  durable coordination, and retry semantics before it can count as mature
+  distributed execution.
 - The higher-order semantic triage layer is not yet a first-class shipped
   feature. Survivor ranking exists, but semantic equivalence-risk grouping,
   actionable-only filtering, and richer triage heuristics are still gaps.
@@ -212,8 +213,8 @@ This is currently the weakest part of the project.
 
 1. Implement semantic triage features that reduce equivalent-mutant noise.
 2. Add stronger actionable grouping and weighting to survivor review.
-3. Turn daemon/worker from contract surface into a clearly supported execution mode,
-   or narrow the public claim.
+3. Keep daemon/worker explicitly experimental until protocol versioning,
+   durable coordination, and retries exist.
 
 ## Current Maturity Classification
 

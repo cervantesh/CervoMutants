@@ -43,7 +43,7 @@ platform. The project currently includes:
 - Semantic actionability heuristics extracted into `pkg/triage` for shared use across engine, runner, and reporting.
 - Engine orchestration split across dedicated files for execution, checkpointing, history, summary, slicing, and mutation scheduling.
 - CLI orchestration split across command-family files for run/eval, compare/pool, baseline/report, and shared entrypoint dispatch.
-- Daemon/worker JSON-lines contracts for future distributed execution.
+- Experimental daemon/worker JSON-lines mode for internal protocol exploration.
 - External-tool comparison normalization for apples-to-apples studies.
 - Benchmark corpus harness for runtime, peak-memory, and mutation-throughput regression tracking.
 - Pool campaign manifests that orchestrate smoke, compare, and benchmark jobs under one resumable summary.
@@ -210,8 +210,12 @@ The public guide is [docs/example-repos.md](docs/example-repos.md).
 | `cervomut show MUTANT_ID --out DIR` | Show a mutant diff/context. |
 | `cervomut explain MUTANT_ID --format text\|json` | Explain what a survivor means. |
 | `cervomut list-mutators` | List operators and risk metadata. |
-| `cervomut daemon` | JSON-lines daemon mode. |
-| `cervomut worker` | JSON-lines worker mode. |
+| `cervomut daemon --experimental` | Experimental JSON-lines daemon mode. |
+| `cervomut worker --experimental` | Experimental JSON-lines worker mode. |
+
+`daemon` and `worker` are intentionally not treated as a stable compatibility
+surface yet. They require explicit opt-in and are documented in
+[docs/daemon-worker.md](docs/daemon-worker.md).
 
 Common run flags:
 
@@ -594,7 +598,7 @@ Important packages:
 | `pkg/runner` | Test execution and status classification. |
 | `pkg/report` | Summary, JSON, JUnit, HTML. |
 | `pkg/extcompare` | External tool normalization. |
-| `pkg/daemon` | JSON-lines worker/daemon contracts. |
+| `pkg/daemon` | Experimental JSON-lines worker/daemon protocol code. |
 
 ## Development
 
@@ -645,6 +649,8 @@ Latest local Sonar pass after issue #31:
   for small, medium, and large-repo adoption patterns.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
   for custom mutators, suppression evaluators, and survivor rankers.
+- [docs/daemon-worker.md](docs/daemon-worker.md): experimental daemon/worker
+  mode, current guarantees, and explicit non-guarantees.
 - [docs/evaluations/multi-repo-calibration.md](docs/evaluations/multi-repo-calibration.md):
   multi-repo calibration plan.
 - [docs/evaluations/tool-comparison-protocol.md](docs/evaluations/tool-comparison-protocol.md):
