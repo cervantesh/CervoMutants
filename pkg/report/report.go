@@ -13,6 +13,21 @@ import (
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
 )
 
+type SurvivorsOptions struct {
+	ActionableOnly bool
+}
+
+type WriteOptions struct {
+	ActionableOnly bool
+}
+
+type SurvivorViewStats struct {
+	Total          int
+	Shown          int
+	Filtered       int
+	CollapsedGroup int
+}
+
 func JSON(result engine.RunResult) ([]byte, error) {
 	if result.SchemaVersion == "" {
 		result.SchemaVersion = "1"
@@ -164,9 +179,38 @@ func Summary(result engine.RunResult) string {
 }
 
 func Survivors(result engine.RunResult) string {
+	return SurvivorsWithOptions(result, SurvivorsOptions{})
+}
+
+func SurvivorsWithOptions(result engine.RunResult, opts SurvivorsOptions) string {
 	var b strings.Builder
+	survivors := rankedSurvivors(result.Mutants)
+	visible, stats := filterSurvivors(result, survivors, opts)
+	if opts.ActionableOnly {
+		fmt.Fprintf(&b, "Actionable-only view: showing %d of %d survivors (filtered=%d collapsed=%d)\n", stats.Shown, stats.Total, stats.Filtered, stats.CollapsedGroup)
+	}
+	seenGroups := map[string]bool{}
+	for _, mutant := range visible {
+		groupSize := mutant.SemanticGroupSize
+		if groupSize <= 0 {
+			groupSize = 1
+		}
+		if group := mutant.Mutant.SemanticGroup; group != "" && groupSize > 1 && !seenGroups[group] {
+			label := mutant.Mutant.GroupLabel
+			if label == "" {
+				label = group
+			}
+			fmt.Fprintf(&b, "Group %s (%d mutants): %s\n", label, groupSize, mutant.Mutant.GroupReason)
+			seenGroups[group] = true
+		}
+		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
+	}
+	return b.String()
+}
+
+func rankedSurvivors(mutants []engine.MutantResult) []engine.MutantResult {
 	survivors := make([]engine.MutantResult, 0)
-	for _, item := range result.Mutants {
+	for _, item := range mutants {
 		if item.Status != engine.StatusSurvived {
 			continue
 		}
@@ -181,25 +225,46 @@ func Survivors(result engine.RunResult) string {
 		}
 		return survivors[i].SurvivorRank < survivors[j].SurvivorRank
 	})
-	groupSizes := map[string]int{}
-	for _, mutant := range survivors {
-		if mutant.Mutant.SemanticGroup != "" {
-			groupSizes[mutant.Mutant.SemanticGroup]++
-		}
+	return survivors
+}
+
+func filterSurvivors(result engine.RunResult, survivors []engine.MutantResult, opts SurvivorsOptions) ([]engine.MutantResult, SurvivorViewStats) {
+	stats := SurvivorViewStats{Total: len(survivors)}
+	if !opts.ActionableOnly {
+		stats.Shown = len(survivors)
+		return survivors, stats
 	}
+	filtered := make([]engine.MutantResult, 0, len(survivors))
 	seenGroups := map[string]bool{}
-	for _, mutant := range survivors {
-		if group := mutant.Mutant.SemanticGroup; group != "" && groupSizes[group] > 1 && !seenGroups[group] {
-			label := mutant.Mutant.GroupLabel
-			if label == "" {
-				label = group
+	for _, survivor := range survivors {
+		if group := survivor.Mutant.SemanticGroup; group != "" {
+			if seenGroups[group] {
+				stats.CollapsedGroup++
+				continue
 			}
-			fmt.Fprintf(&b, "Group %s (%d mutants): %s\n", label, groupSizes[group], mutant.Mutant.GroupReason)
 			seenGroups[group] = true
 		}
-		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
+		if !isActionableSurvivor(result.Environment.OS, survivor) {
+			stats.Filtered++
+			continue
+		}
+		filtered = append(filtered, survivor)
 	}
-	return b.String()
+	stats.Shown = len(filtered)
+	return filtered, stats
+}
+
+func isActionableSurvivor(goos string, survivor engine.MutantResult) bool {
+	if survivor.Actionability == "low" {
+		return false
+	}
+	if strings.EqualFold(goos, "windows") && survivor.Mutant.PlatformSensitive {
+		return false
+	}
+	if survivor.Mutant.NonProgressRisk == "high" {
+		return false
+	}
+	return true
 }
 
 func HTML(result engine.RunResult) string {
@@ -266,6 +331,10 @@ func WriteAll(dir string, result engine.RunResult) error {
 }
 
 func WriteFormats(dir string, result engine.RunResult, formats []string) error {
+	return WriteFormatsWithOptions(dir, result, formats, WriteOptions{})
+}
+
+func WriteFormatsWithOptions(dir string, result engine.RunResult, formats []string, opts WriteOptions) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -293,6 +362,9 @@ func WriteFormats(dir string, result engine.RunResult, formats []string) error {
 		case "html":
 			files["index.html"] = []byte(HTML(result))
 		}
+	}
+	if opts.ActionableOnly {
+		files["survivors-actionable.txt"] = []byte(SurvivorsWithOptions(result, SurvivorsOptions{ActionableOnly: true}))
 	}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {

@@ -185,6 +185,7 @@ func cmdRun(args []string) (err error) {
 
 type runOptions struct {
 	dryRun           bool
+	actionableOnly   bool
 	scope            string
 	sliceBy          string
 	shardIndex       int
@@ -216,6 +217,7 @@ func parseRunOptions(args []string) (runOptions, []string, error) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	opts := runOptions{}
 	fs.BoolVar(&opts.dryRun, "dry-run", false, "only discover mutants")
+	fs.BoolVar(&opts.actionableOnly, "actionable-only", false, "show only actionable survivor views while preserving the raw report model")
 	scope := fs.String("scope", "", "scope mode")
 	sliceBy := fs.String("slice-by", "", "large-repo slicing key: mutant, package, file, function, or operator")
 	shard := fs.String("shard", "", "deterministic shard in the form index/count")
@@ -321,6 +323,9 @@ func applyRunOverrides(cfg *config.Config, opts runOptions) {
 	if opts.reportFormats != "" {
 		cfg.Reports.Formats = strings.Split(opts.reportFormats, ",")
 	}
+	if opts.actionableOnly {
+		cfg.Reports.ActionableOnly = true
+	}
 }
 
 func applyRunOutput(cfg *config.Config, out string) {
@@ -346,10 +351,13 @@ func writeRunResult(cfg config.Config, result engine.RunResult, dryRun bool) err
 		fmt.Println(string(data))
 		return nil
 	}
-	if err := report.WriteFormats(cfg.Reports.Output, result, cfg.Reports.Formats); err != nil {
+	if err := report.WriteFormatsWithOptions(cfg.Reports.Output, result, cfg.Reports.Formats, report.WriteOptions{ActionableOnly: cfg.Reports.ActionableOnly}); err != nil {
 		return err
 	}
 	fmt.Print(report.Summary(result))
+	if cfg.Reports.ActionableOnly {
+		fmt.Print(report.SurvivorsWithOptions(result, report.SurvivorsOptions{ActionableOnly: true}))
+	}
 	if cfg.CI.FailUnder > 0 && int(result.Summary.Score) < cfg.CI.FailUnder {
 		return fmt.Errorf("mutation score %.2f below threshold %d", result.Summary.Score, cfg.CI.FailUnder)
 	}
@@ -904,6 +912,7 @@ func readRunReport(path string) (engine.RunResult, error) {
 func cmdReport(args []string) error {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	out := fs.String("out", "", reportOutputDirectoryDoc)
+	actionableOnly := fs.Bool("actionable-only", false, "show only actionable survivor views while preserving the raw report model")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{"out": true})); err != nil {
 		return err
 	}
@@ -927,7 +936,7 @@ func cmdReport(args []string) error {
 	case "summary":
 		fmt.Print(report.Summary(result))
 	case "survivors":
-		fmt.Print(report.Survivors(result))
+		fmt.Print(report.SurvivorsWithOptions(result, report.SurvivorsOptions{ActionableOnly: *actionableOnly}))
 	case "open":
 		path := filepath.Join(cfg.Reports.Output, "index.html")
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
@@ -1114,6 +1123,7 @@ reports:
   output: .cervomut/reports
   formats: [summary, json, junit, html]
   detail: standard
+  actionable_only: false
   include_diff: true
   include_test_output: failed-only
   max_output_bytes: 12000

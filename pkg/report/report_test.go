@@ -179,9 +179,9 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 func TestSurvivorsReportIsRanked(t *testing.T) {
 	run := engine.RunResult{
 		Mutants: []engine.MutantResult{
-			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
-			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
-			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
+			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
+			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Actionability: "high", Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
+			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
 		},
 	}
 
@@ -191,6 +191,36 @@ func TestSurvivorsReportIsRanked(t *testing.T) {
 	}
 	if !strings.Contains(text, "Group sort comparator boundary (2 mutants)") {
 		t.Fatalf("survivors report missing semantic group header:\n%s", text)
+	}
+}
+
+func TestSurvivorsActionableOnlyFiltersAndCollapses(t *testing.T) {
+	run := engine.RunResult{
+		Environment: engine.Environment{OS: "windows"},
+		Mutants: []engine.MutantResult{
+			{MutantID: "group-lead", Status: engine.StatusSurvived, SurvivorRank: 1, Actionability: "high", SemanticGroupSize: 2, SuggestedSkipReason: "review once", Mutant: engine.Mutant{File: "a.go", Line: 1, Operator: "conditionals-boundary", Original: "<", Mutated: "<=", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "shared review"}},
+			{MutantID: "group-dup", Status: engine.StatusSurvived, SurvivorRank: 2, Actionability: "medium", SemanticGroupSize: 2, SuggestedSkipReason: "review once", Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "conditionals-boundary", Original: "<", Mutated: "<=", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "shared review"}},
+			{MutantID: "platform", Status: engine.StatusSurvived, SurvivorRank: 3, Actionability: "high", Mutant: engine.Mutant{File: "b.go", Line: 3, Operator: "numeric-literals", Original: "0o755", Mutated: "0", PlatformSensitive: true}},
+			{MutantID: "low", Status: engine.StatusSurvived, SurvivorRank: 4, Actionability: "low", Mutant: engine.Mutant{File: "c.go", Line: 4, Operator: "literals", Original: "1", Mutated: "0"}},
+			{MutantID: "keep", Status: engine.StatusSurvived, SurvivorRank: 5, Actionability: "medium", Mutant: engine.Mutant{File: "d.go", Line: 5, Operator: "logical", Original: "&&", Mutated: "||"}},
+		},
+	}
+
+	text := SurvivorsWithOptions(run, SurvivorsOptions{ActionableOnly: true})
+	for _, want := range []string{
+		"Actionable-only view: showing 2 of 5 survivors (filtered=2 collapsed=1)",
+		"Group sort comparator boundary (2 mutants): shared review",
+		"group-lead",
+		"keep",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("actionable-only survivors missing %q:\n%s", want, text)
+		}
+	}
+	for _, avoid := range []string{"#2 0.0 group-dup ", "#3 0.0 platform ", "#4 0.0 low "} {
+		if strings.Contains(text, avoid) {
+			t.Fatalf("actionable-only survivors should not include %q:\n%s", avoid, text)
+		}
 	}
 }
 
@@ -228,6 +258,30 @@ func TestWriteFormatsDefaultsAndErrors(t *testing.T) {
 	}
 	if err := WriteFormats(filePath, run, []string{"summary"}); err == nil {
 		t.Fatal("WriteFormats accepted a file as output directory")
+	}
+}
+
+func TestWriteFormatsWithActionableViewWritesExtraArtifact(t *testing.T) {
+	dir := t.TempDir()
+	run := engine.RunResult{
+		Environment: engine.Environment{OS: "windows"},
+		Summary:     engine.Summary{Total: 2, Survived: 2},
+		Mutants: []engine.MutantResult{
+			{MutantID: "keep", Status: engine.StatusSurvived, SurvivorRank: 1, Actionability: "high", Mutant: engine.Mutant{File: "a.go", Line: 1, Operator: "logical", Original: "&&", Mutated: "||"}},
+			{MutantID: "hide", Status: engine.StatusSurvived, SurvivorRank: 2, Actionability: "high", Mutant: engine.Mutant{File: "b.go", Line: 2, Operator: "numeric-literals", Original: "0o755", Mutated: "0", PlatformSensitive: true}},
+		},
+	}
+
+	if err := WriteFormatsWithOptions(dir, run, []string{"summary"}, WriteOptions{ActionableOnly: true}); err != nil {
+		t.Fatalf("WriteFormatsWithOptions returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "survivors-actionable.txt"))
+	if err != nil {
+		t.Fatalf("survivors-actionable.txt missing: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "keep") || strings.Contains(text, "hide") {
+		t.Fatalf("unexpected actionable-only artifact:\n%s", text)
 	}
 }
 
