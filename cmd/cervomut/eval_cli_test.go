@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cervantesh/cervo-mutants/internal/testharness"
 	"github.com/cervantesh/cervo-mutants/pkg/config"
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
 	evalpkg "github.com/cervantesh/cervo-mutants/pkg/eval"
@@ -504,19 +505,14 @@ func TestCompareCommandRecordsApplesToApplesPackageRootMode(t *testing.T) {
 
 func writeCLIFixture(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fixture\n\ngo 1.25.6\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "calc.go"), []byte(`package fixture
+	return testharness.WriteGoModuleTempDir(t, "fixture", map[string]string{
+		"calc.go": `package fixture
 
 func IsPositiveOrZero(n int) bool {
 	return n >= 0
 }
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "calc_test.go"), []byte(`package fixture
+`,
+		"calc_test.go": `package fixture
 
 import "testing"
 
@@ -525,10 +521,8 @@ func TestIsPositiveOrZero(t *testing.T) {
 		t.Fatal("want positive")
 	}
 }
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return dir
+`,
+	})
 }
 
 func extractMutantIDForTest(t *testing.T, report string) string {
