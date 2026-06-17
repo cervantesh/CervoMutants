@@ -201,6 +201,47 @@ func Count(xs []int) int {
 	}
 }
 
+func TestAggressiveProfileAddsSemanticTriageMetadata(t *testing.T) {
+	src := `package sample
+
+import (
+	"os"
+	"sort"
+)
+
+func Review(path string, xs []int) {
+	for i := 0; i < len(xs); i++ {
+		_ = xs[i]
+	}
+	_ = os.MkdirAll(path, 0o755)
+	sort.Slice(xs, func(i, j int) bool {
+		return xs[i] < xs[j]
+	})
+	if len(xs) > 0 {
+		_ = xs[0]
+	}
+}
+`
+
+	mutants, err := Generate("sample", "sample.go", []byte(src), ProfileAggressive)
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	assertSemanticMutant(t, mutants, func(m Mutant) bool {
+		return m.Operator == "inc-dec" && m.NonProgressRisk == "high" && containsTag(m.SemanticTags, "non-progress-loop-risk")
+	}, "expected high-risk non-progress loop mutant")
+	assertSemanticMutant(t, mutants, func(m Mutant) bool {
+		return m.PlatformSensitive && m.Operator == "numeric-literals" && m.Original == "0o755"
+	}, "expected permission-mode platform-sensitive mutant")
+	assertSemanticMutant(t, mutants, func(m Mutant) bool {
+		return m.GroupLabel == "sort comparator boundary" && m.SemanticGroup != ""
+	}, "expected sort comparator semantic group")
+	assertSemanticMutant(t, mutants, func(m Mutant) bool {
+		return m.GroupLabel == "len boundary" && m.SemanticGroup != ""
+	}, "expected len boundary semantic group")
+}
+
 func TestDefinitionsCarryGovernanceMetadata(t *testing.T) {
 	for _, definition := range Definitions() {
 		if definition.CompileErrorRisk == "" || definition.Reason == "" {
@@ -297,4 +338,23 @@ func operatorSet(mutants []Mutant) map[string]bool {
 		operators[mutant.Operator] = true
 	}
 	return operators
+}
+
+func assertSemanticMutant(t *testing.T, mutants []Mutant, match func(Mutant) bool, message string) {
+	t.Helper()
+	for _, mutant := range mutants {
+		if match(mutant) {
+			return
+		}
+	}
+	t.Fatalf("%s: %+v", message, mutants)
+}
+
+func containsTag(tags []string, want string) bool {
+	for _, tag := range tags {
+		if tag == want {
+			return true
+		}
+	}
+	return false
 }

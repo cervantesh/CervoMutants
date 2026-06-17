@@ -1327,6 +1327,24 @@ func TestSummarizeIncludesTimeoutRiskStats(t *testing.T) {
 	}
 }
 
+func TestSummarizeIncludesSemanticTriageStats(t *testing.T) {
+	result := summarize([]MutantResult{
+		{MutantID: "loop", Status: StatusTimedOut, Mutant: Mutant{ID: "loop", Operator: "inc-dec", NonProgressRisk: "high"}},
+		{MutantID: "perm", Status: StatusSurvived, Mutant: Mutant{ID: "perm", PlatformSensitive: true}},
+		{MutantID: "group-a", Status: StatusSurvived, Mutant: Mutant{ID: "group-a", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary"}},
+		{MutantID: "group-b", Status: StatusSurvived, Mutant: Mutant{ID: "group-b", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary"}},
+	})
+	if result.NonProgressTimeouts != 1 {
+		t.Fatalf("non-progress timeouts = %d, want 1", result.NonProgressTimeouts)
+	}
+	if result.PlatformSensitiveSurvivors != 1 {
+		t.Fatalf("platform-sensitive survivors = %d, want 1", result.PlatformSensitiveSurvivors)
+	}
+	if result.SemanticGroupStats["sort comparator boundary"] != 2 {
+		t.Fatalf("semantic group stats = %+v", result.SemanticGroupStats)
+	}
+}
+
 func TestSummarizeCoversCachedAndSuppressionStatusBranches(t *testing.T) {
 	result := summarize([]MutantResult{
 		{Status: StatusCached, PreviousStatus: StatusKilled, Mutant: Mutant{Operator: "cached-killed"}},
@@ -1385,6 +1403,26 @@ func TestRankSurvivorsPrioritizesLowerEquivalentRisk(t *testing.T) {
 	}
 	if results[2].SurvivorRank != 0 {
 		t.Fatalf("killed mutant should not be ranked: %+v", results[2])
+	}
+}
+
+func TestRankSurvivorsDeprioritizesSemanticGroups(t *testing.T) {
+	results := []MutantResult{
+		{MutantID: "plain", Status: StatusSurvived, Mutant: Mutant{EquivalentRisk: "low", Recommendation: "fast-ci", NearbyTests: []string{"x_test.go"}}},
+		{MutantID: "group-a", Status: StatusSurvived, Mutant: Mutant{EquivalentRisk: "low", Recommendation: "fast-ci", NearbyTests: []string{"x_test.go"}, SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary"}},
+		{MutantID: "group-b", Status: StatusSurvived, Mutant: Mutant{EquivalentRisk: "low", Recommendation: "fast-ci", NearbyTests: []string{"x_test.go"}, SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary"}},
+	}
+
+	rankSurvivors(results)
+
+	if results[0].SurvivorRank != 1 {
+		t.Fatalf("plain survivor should rank first: %+v", results)
+	}
+	if results[1].SemanticGroupSize != 2 || results[2].SemanticGroupSize != 2 {
+		t.Fatalf("semantic group size not recorded: %+v", results)
+	}
+	if !strings.Contains(results[1].SuggestedSkipReason, "review once") {
+		t.Fatalf("grouped survivor missing semantic skip reason: %+v", results[1])
 	}
 }
 

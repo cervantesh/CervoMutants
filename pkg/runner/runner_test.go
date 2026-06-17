@@ -78,6 +78,27 @@ func TestRunClassifiesSurvivedKilledCompileErrorAndTimeout(t *testing.T) {
 	}
 }
 
+func TestRunClassifiesNonProgressLoopTimeout(t *testing.T) {
+	r := GoTestRunner{MaxOutputBytes: 256}
+
+	result, err := r.Run(context.Background(), engine.MutantJob{
+		ID:          "timeout-loop",
+		Mutant:      engine.Mutant{ID: "timeout-loop", NonProgressRisk: "high"},
+		WorkDir:     writeModule(t, "sleep"),
+		TestCommand: []string{"go", "test", "./..."},
+		Timeout:     "1ms",
+	})
+	if err != nil {
+		t.Fatalf("timeout-loop run returned error: %v", err)
+	}
+	if result.Status != engine.StatusTimedOut || result.FailureKind != "non_progress_loop" {
+		t.Fatalf("semantic timeout classification mismatch: %+v", result)
+	}
+	if !strings.Contains(result.SuggestedSkipReason, "quarantine") {
+		t.Fatalf("suggested skip reason missing quarantine guidance: %+v", result)
+	}
+}
+
 func TestTrim(t *testing.T) {
 	if trim("abcdef", 3) != "abc" {
 		t.Fatal("trim did not cap output")

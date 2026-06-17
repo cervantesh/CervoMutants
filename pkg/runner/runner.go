@@ -36,7 +36,7 @@ func (r GoTestRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 	err := cmd.Run()
 	text := trim(output.String(), r.MaxOutputBytes)
 	status, reason := classifyTestResult(text, err, runCtx.Err() == context.DeadlineExceeded)
-	return engine.MutantResult{
+	result := engine.MutantResult{
 		MutantID:     job.Mutant.ID,
 		Status:       status,
 		Duration:     time.Since(start),
@@ -44,7 +44,9 @@ func (r GoTestRunner) Run(ctx context.Context, job engine.MutantJob) (engine.Mut
 		StatusReason: reason,
 		Output:       text,
 		Mutant:       job.Mutant,
-	}, nil
+	}
+	applySemanticTimeoutClassification(&result)
+	return result, nil
 }
 
 func classifyTestResult(text string, err error, timedOut bool) (engine.Status, string) {
@@ -72,4 +74,19 @@ func trim(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+func applySemanticTimeoutClassification(result *engine.MutantResult) {
+	if result.Status != engine.StatusTimedOut {
+		return
+	}
+	if result.Mutant.NonProgressRisk != "high" {
+		result.FailureKind = "timeout"
+		return
+	}
+	result.FailureKind = "non_progress_loop"
+	result.StatusReason = "test command timed out after a likely non-progress loop mutation"
+	if result.SuggestedSkipReason == "" {
+		result.SuggestedSkipReason = "reviewed-skip or quarantine if the timeout is a confirmed non-progress loop"
+	}
 }

@@ -23,26 +23,33 @@ const (
 )
 
 type Mutant struct {
-	ID               string             `json:"id"`
-	Module           string             `json:"module"`
-	Package          string             `json:"package"`
-	File             string             `json:"file"`
-	Line             int                `json:"line"`
-	Function         string             `json:"function"`
-	Operator         string             `json:"operator"`
-	Original         string             `json:"original"`
-	Mutated          string             `json:"mutated"`
-	StartOffset      int                `json:"start_offset"`
-	EndOffset        int                `json:"end_offset"`
-	Diff             string             `json:"unified_diff"`
-	Fingerprint      string             `json:"fingerprint"`
-	Hint             string             `json:"hint"`
-	Description      string             `json:"description"`
-	NearbyTests      []string           `json:"nearby_tests,omitempty"`
-	EquivalentRisk   string             `json:"equivalent_risk"`
-	Recommendation   string             `json:"recommendation"`
-	CompileErrorRisk string             `json:"compile_error_risk"`
-	SuppressionAudit []SuppressionAudit `json:"suppression_audit,omitempty"`
+	ID                  string             `json:"id"`
+	Module              string             `json:"module"`
+	Package             string             `json:"package"`
+	File                string             `json:"file"`
+	Line                int                `json:"line"`
+	Function            string             `json:"function"`
+	Operator            string             `json:"operator"`
+	Original            string             `json:"original"`
+	Mutated             string             `json:"mutated"`
+	StartOffset         int                `json:"start_offset"`
+	EndOffset           int                `json:"end_offset"`
+	Diff                string             `json:"unified_diff"`
+	Fingerprint         string             `json:"fingerprint"`
+	Hint                string             `json:"hint"`
+	Description         string             `json:"description"`
+	NearbyTests         []string           `json:"nearby_tests,omitempty"`
+	EquivalentRisk      string             `json:"equivalent_risk"`
+	Recommendation      string             `json:"recommendation"`
+	CompileErrorRisk    string             `json:"compile_error_risk"`
+	SemanticTags        []string           `json:"semantic_tags,omitempty"`
+	SemanticGroup       string             `json:"semantic_group,omitempty"`
+	GroupLabel          string             `json:"group_label,omitempty"`
+	GroupReason         string             `json:"group_reason,omitempty"`
+	PlatformSensitive   bool               `json:"platform_sensitive,omitempty"`
+	NonProgressRisk     string             `json:"non_progress_risk,omitempty"`
+	SuggestedSkipReason string             `json:"suggested_skip_reason,omitempty"`
+	SuppressionAudit    []SuppressionAudit `json:"suppression_audit,omitempty"`
 }
 
 type SuppressionAudit struct {
@@ -62,29 +69,31 @@ type MutantJob struct {
 }
 
 type MutantResult struct {
-	MutantID           string        `json:"mutant_id"`
-	Status             Status        `json:"status"`
-	FailureKind        string        `json:"failure_kind,omitempty"`
-	MemoryPeakBytes    int64         `json:"memory_peak_bytes,omitempty"`
-	Duration           time.Duration `json:"duration"`
-	TestCommand        []string      `json:"selected_tests"`
-	StatusReason       string        `json:"status_reason"`
-	SelectionReason    string        `json:"selection_reason,omitempty"`
-	CoverageSource     string        `json:"coverage_source,omitempty"`
-	Output             string        `json:"output"`
-	Mutant             Mutant        `json:"mutant"`
-	SurvivorRank       int           `json:"survivor_rank,omitempty"`
-	RankScore          float64       `json:"rank_score,omitempty"`
-	RankReason         string        `json:"rank_reason,omitempty"`
-	Actionability      string        `json:"actionability,omitempty"`
-	SuggestedTestScope string        `json:"suggested_test_scope,omitempty"`
-	NearestTests       []string      `json:"nearest_tests,omitempty"`
-	PreviousStatus     Status        `json:"previous_status,omitempty"`
-	FirstSeen          string        `json:"first_seen,omitempty"`
-	LastSeen           string        `json:"last_seen,omitempty"`
-	SurvivorAgeRuns    int           `json:"survivor_age_runs,omitempty"`
-	HistoryStatus      string        `json:"history_status,omitempty"`
-	OperatorYield      float64       `json:"operator_historical_yield,omitempty"`
+	MutantID            string        `json:"mutant_id"`
+	Status              Status        `json:"status"`
+	FailureKind         string        `json:"failure_kind,omitempty"`
+	MemoryPeakBytes     int64         `json:"memory_peak_bytes,omitempty"`
+	Duration            time.Duration `json:"duration"`
+	TestCommand         []string      `json:"selected_tests"`
+	StatusReason        string        `json:"status_reason"`
+	SelectionReason     string        `json:"selection_reason,omitempty"`
+	CoverageSource      string        `json:"coverage_source,omitempty"`
+	Output              string        `json:"output"`
+	Mutant              Mutant        `json:"mutant"`
+	SurvivorRank        int           `json:"survivor_rank,omitempty"`
+	RankScore           float64       `json:"rank_score,omitempty"`
+	RankReason          string        `json:"rank_reason,omitempty"`
+	Actionability       string        `json:"actionability,omitempty"`
+	SuggestedTestScope  string        `json:"suggested_test_scope,omitempty"`
+	SuggestedSkipReason string        `json:"suggested_skip_reason,omitempty"`
+	NearestTests        []string      `json:"nearest_tests,omitempty"`
+	SemanticGroupSize   int           `json:"semantic_group_size,omitempty"`
+	PreviousStatus      Status        `json:"previous_status,omitempty"`
+	FirstSeen           string        `json:"first_seen,omitempty"`
+	LastSeen            string        `json:"last_seen,omitempty"`
+	SurvivorAgeRuns     int           `json:"survivor_age_runs,omitempty"`
+	HistoryStatus       string        `json:"history_status,omitempty"`
+	OperatorYield       float64       `json:"operator_historical_yield,omitempty"`
 }
 
 type Summary struct {
@@ -119,8 +128,11 @@ type Summary struct {
 	SuppressionQuarantineRequired int                    `json:"suppression_quarantine_required"`
 	NewSurvivors                  int                    `json:"new_survivors"`
 	LongStandingSurvivors         int                    `json:"long_standing_survivors"`
+	PlatformSensitiveSurvivors    int                    `json:"platform_sensitive_survivors"`
+	NonProgressTimeouts           int                    `json:"non_progress_timeouts"`
 	TimeoutRiskStats              map[string]int         `json:"timeout_risk_statistics,omitempty"`
 	EquivalentRiskStats           map[string]int         `json:"equivalent_risk_statistics,omitempty"`
+	SemanticGroupStats            map[string]int         `json:"semantic_group_statistics,omitempty"`
 	MutatorStats                  map[string]MutatorStat `json:"mutator_statistics,omitempty"`
 }
 

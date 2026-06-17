@@ -25,7 +25,7 @@ func JSON(result engine.RunResult) ([]byte, error) {
 
 func Summary(result engine.RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Effective mutation score: %.2f%%\nRaw mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nEffective mutants: %d\nScore denominator: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nPending budget: %d\nSkipped resource: %d\nQuarantined: %d\nTimed out: %d\nMemory killed: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nNew survivors: %d\nLong-standing survivors: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
+	fmt.Fprintf(&b, "Effective mutation score: %.2f%%\nRaw mutation score: %.2f%%\nGenerated mutants: %d\nCovered mutants: %d\nExecuted mutants: %d\nEffective mutants: %d\nScore denominator: %d\nKilled: %d\nSurvived: %d\nNot covered: %d\nPending budget: %d\nSkipped resource: %d\nQuarantined: %d\nTimed out: %d\nMemory killed: %d\nCompile errors: %d\nTest efficacy: %.2f%%\nMutation coverage: %.2f%%\nHigh-risk survivors: %d\nNew survivors: %d\nLong-standing survivors: %d\nPlatform-sensitive survivors: %d\nNon-progress timeouts: %d\nSuppression audits: report_only=%d lower_priority=%d suppress=%d quarantine_required=%d\n",
 		result.Summary.EffectiveScore,
 		result.Summary.Score,
 		result.Summary.GeneratedMutants,
@@ -47,6 +47,8 @@ func Summary(result engine.RunResult) string {
 		result.Summary.HighRiskSurvivors,
 		result.Summary.NewSurvivors,
 		result.Summary.LongStandingSurvivors,
+		result.Summary.PlatformSensitiveSurvivors,
+		result.Summary.NonProgressTimeouts,
 		result.Summary.SuppressionReportOnly,
 		result.Summary.SuppressionLowerPriority,
 		result.Summary.SuppressionSuppressed,
@@ -110,6 +112,17 @@ func Summary(result engine.RunResult) string {
 			)
 		}
 	}
+	if len(result.Summary.SemanticGroupStats) > 0 {
+		b.WriteString("Semantic-group statistics:\n")
+		keys := make([]string, 0, len(result.Summary.SemanticGroupStats))
+		for key := range result.Summary.SemanticGroupStats {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(&b, "- %s: %d\n", key, result.Summary.SemanticGroupStats[key])
+		}
+	}
 	if result.Slice.Enabled {
 		fmt.Fprintf(&b, "Slice: by=%s shard=%d/%d groups=%d selected_groups=%d files=%d max_files=%d max_mutants_per_package=%d selected_mutants=%d\n",
 			result.Slice.SliceBy,
@@ -168,8 +181,23 @@ func Survivors(result engine.RunResult) string {
 		}
 		return survivors[i].SurvivorRank < survivors[j].SurvivorRank
 	})
+	groupSizes := map[string]int{}
 	for _, mutant := range survivors {
-		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.RankReason)
+		if mutant.Mutant.SemanticGroup != "" {
+			groupSizes[mutant.Mutant.SemanticGroup]++
+		}
+	}
+	seenGroups := map[string]bool{}
+	for _, mutant := range survivors {
+		if group := mutant.Mutant.SemanticGroup; group != "" && groupSizes[group] > 1 && !seenGroups[group] {
+			label := mutant.Mutant.GroupLabel
+			if label == "" {
+				label = group
+			}
+			fmt.Fprintf(&b, "Group %s (%d mutants): %s\n", label, groupSizes[group], mutant.Mutant.GroupReason)
+			seenGroups[group] = true
+		}
+		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
 	}
 	return b.String()
 }
@@ -180,7 +208,7 @@ func HTML(result engine.RunResult) string {
 	b.WriteString("<h1>cervomut mutation report</h1>")
 	b.WriteString("<pre>")
 	b.WriteString(html.EscapeString(Summary(result)))
-	b.WriteString("</pre><table><thead><tr><th>Status</th><th>Mutant</th><th>Failure Kind</th><th>Reason</th><th>Diff</th></tr></thead><tbody>")
+	b.WriteString("</pre><table><thead><tr><th>Status</th><th>Mutant</th><th>Failure Kind</th><th>Semantic Group</th><th>Reason</th><th>Suggested Skip</th><th>Diff</th></tr></thead><tbody>")
 	for _, mutant := range result.Mutants {
 		b.WriteString("<tr><td>")
 		b.WriteString(html.EscapeString(string(mutant.Status)))
@@ -189,7 +217,11 @@ func HTML(result engine.RunResult) string {
 		b.WriteString("</td><td>")
 		b.WriteString(html.EscapeString(mutant.FailureKind))
 		b.WriteString("</td><td>")
+		b.WriteString(html.EscapeString(mutant.Mutant.GroupLabel))
+		b.WriteString("</td><td>")
 		b.WriteString(html.EscapeString(mutant.StatusReason))
+		b.WriteString("</td><td>")
+		b.WriteString(html.EscapeString(mutant.SuggestedSkipReason))
 		b.WriteString("</td><td><pre>")
 		b.WriteString(html.EscapeString(mutant.Mutant.Diff))
 		b.WriteString("</pre></td></tr>")

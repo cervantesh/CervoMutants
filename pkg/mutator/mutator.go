@@ -53,24 +53,31 @@ type Definition struct {
 }
 
 type Mutant struct {
-	ID               string `json:"id"`
-	Module           string `json:"module"`
-	Package          string `json:"package"`
-	File             string `json:"file"`
-	Line             int    `json:"line"`
-	Function         string `json:"function"`
-	Operator         string `json:"operator"`
-	Original         string `json:"original"`
-	Mutated          string `json:"mutated"`
-	StartOffset      int    `json:"start_offset"`
-	EndOffset        int    `json:"end_offset"`
-	Diff             string `json:"unified_diff"`
-	Fingerprint      string `json:"fingerprint"`
-	Hint             string `json:"hint"`
-	Description      string `json:"description"`
-	EquivalentRisk   string `json:"equivalent_risk"`
-	Recommendation   string `json:"recommendation"`
-	CompileErrorRisk string `json:"compile_error_risk"`
+	ID                  string   `json:"id"`
+	Module              string   `json:"module"`
+	Package             string   `json:"package"`
+	File                string   `json:"file"`
+	Line                int      `json:"line"`
+	Function            string   `json:"function"`
+	Operator            string   `json:"operator"`
+	Original            string   `json:"original"`
+	Mutated             string   `json:"mutated"`
+	StartOffset         int      `json:"start_offset"`
+	EndOffset           int      `json:"end_offset"`
+	Diff                string   `json:"unified_diff"`
+	Fingerprint         string   `json:"fingerprint"`
+	Hint                string   `json:"hint"`
+	Description         string   `json:"description"`
+	EquivalentRisk      string   `json:"equivalent_risk"`
+	Recommendation      string   `json:"recommendation"`
+	CompileErrorRisk    string   `json:"compile_error_risk"`
+	SemanticTags        []string `json:"semantic_tags,omitempty"`
+	SemanticGroup       string   `json:"semantic_group,omitempty"`
+	GroupLabel          string   `json:"group_label,omitempty"`
+	GroupReason         string   `json:"group_reason,omitempty"`
+	PlatformSensitive   bool     `json:"platform_sensitive,omitempty"`
+	NonProgressRisk     string   `json:"non_progress_risk,omitempty"`
+	SuggestedSkipReason string   `json:"suggested_skip_reason,omitempty"`
 }
 
 func Definitions() []Definition {
@@ -112,6 +119,17 @@ type mutationContext struct {
 	fn       string
 	profile  string
 	ignores  []inlineIgnore
+	parents  map[ast.Node]ast.Node
+}
+
+type semanticMetadata struct {
+	tags                []string
+	group               string
+	groupLabel          string
+	groupReason         string
+	platformSensitive   bool
+	nonProgressRisk     string
+	suggestedSkipReason string
 }
 
 func ValidateInlineIgnores(filename string, src []byte, requireReason bool) ([]inlineIgnore, error) {
@@ -182,7 +200,7 @@ func Generate(pkg, filename string, src []byte, profile string) ([]Mutant, error
 	}
 	var mutants []Mutant
 	var fn string
-	ctx := mutationContext{mutants: &mutants, fset: fset, pkg: pkg, filename: filename, src: src, profile: profile, ignores: ignores}
+	ctx := mutationContext{mutants: &mutants, fset: fset, pkg: pkg, filename: filename, src: src, profile: profile, ignores: ignores, parents: buildParentIndex(file)}
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch n := node.(type) {
 		case *ast.FuncDecl:
@@ -422,29 +440,359 @@ func addMutation(ctx mutationContext, node ast.Node, operator, original, mutated
 	if err != nil {
 		return
 	}
+	meta := classifySemanticMutation(ctx, node, operator)
 	mutatedSrc = append(mutatedSrc[:start], append([]byte(next), mutatedSrc[end:]...)...)
 	diff := unifiedDiff(ctx.filename, string(ctx.src), string(mutatedSrc))
 	fp := fingerprint(ctx.filename, strconv.Itoa(pos.Line), strconv.Itoa(start), strconv.Itoa(end), operator, original, mutated, diff)
 	id := fmt.Sprintf("%s:%d:%s:%s", ctx.filename, pos.Line, operator, fp[:12])
 	*ctx.mutants = append(*ctx.mutants, Mutant{
-		ID:               id,
-		Package:          ctx.pkg,
-		File:             ctx.filename,
-		Line:             pos.Line,
-		Function:         ctx.fn,
-		Operator:         operator,
-		Original:         original,
-		Mutated:          mutated,
-		StartOffset:      start,
-		EndOffset:        end,
-		Diff:             diff,
-		Fingerprint:      fp,
-		Hint:             hint(operator),
-		Description:      description(ctx.fn, operator, original, mutated),
-		EquivalentRisk:   equivalentRisk(operator),
-		Recommendation:   recommendation(operator),
-		CompileErrorRisk: compileErrorRisk(operator),
+		ID:                  id,
+		Package:             ctx.pkg,
+		File:                ctx.filename,
+		Line:                pos.Line,
+		Function:            ctx.fn,
+		Operator:            operator,
+		Original:            original,
+		Mutated:             mutated,
+		StartOffset:         start,
+		EndOffset:           end,
+		Diff:                diff,
+		Fingerprint:         fp,
+		Hint:                hint(operator),
+		Description:         description(ctx.fn, operator, original, mutated),
+		EquivalentRisk:      equivalentRisk(operator),
+		Recommendation:      recommendation(operator),
+		CompileErrorRisk:    compileErrorRisk(operator),
+		SemanticTags:        meta.tags,
+		SemanticGroup:       meta.group,
+		GroupLabel:          meta.groupLabel,
+		GroupReason:         meta.groupReason,
+		PlatformSensitive:   meta.platformSensitive,
+		NonProgressRisk:     meta.nonProgressRisk,
+		SuggestedSkipReason: meta.suggestedSkipReason,
 	})
+}
+
+func buildParentIndex(root ast.Node) map[ast.Node]ast.Node {
+	parents := map[ast.Node]ast.Node{}
+	stack := []ast.Node{}
+	ast.Inspect(root, func(node ast.Node) bool {
+		if node == nil {
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			return false
+		}
+		if len(stack) > 0 {
+			parents[node] = stack[len(stack)-1]
+		}
+		stack = append(stack, node)
+		return true
+	})
+	return parents
+}
+
+func classifySemanticMutation(ctx mutationContext, node ast.Node, operator string) semanticMetadata {
+	meta := semanticMetadata{}
+	if risk := nonProgressLoopRisk(ctx.parents, node, operator); risk != "" {
+		meta.nonProgressRisk = risk
+		meta.tags = appendUnique(meta.tags, "non-progress-loop-risk")
+		meta.suggestedSkipReason = "reviewed-skip or quarantine if timeout confirms a non-progress loop"
+	}
+	if permissionModeMutation(ctx.parents, node, operator) {
+		meta.platformSensitive = true
+		meta.tags = appendUnique(meta.tags, "platform-sensitive")
+		if meta.suggestedSkipReason == "" {
+			meta.suggestedSkipReason = "review on the target OS before treating this permission-mode mutant as actionable"
+		}
+	}
+	group, label, reason := semanticGroup(ctx, node, operator)
+	if group != "" {
+		meta.group = group
+		meta.groupLabel = label
+		meta.groupReason = reason
+		meta.tags = appendUnique(meta.tags, "equivalence-risk-group")
+		if label != "" {
+			meta.tags = appendUnique(meta.tags, normalizeTag(label))
+		}
+		if meta.suggestedSkipReason == "" {
+			meta.suggestedSkipReason = "review once for this semantic group before treating each survivor independently"
+		}
+	}
+	if len(meta.tags) == 0 {
+		return semanticMetadata{}
+	}
+	return meta
+}
+
+func semanticGroup(ctx mutationContext, node ast.Node, operator string) (string, string, string) {
+	if operator == opConditionalsBoundary {
+		if call, _, ok := enclosingCallForNode(ctx.parents, node); ok && isSortComparatorCall(ctx.parents, node, call) {
+			line := ctx.fset.Position(call.Pos()).Line
+			return fmt.Sprintf("sort-comparator-boundary:%s:%d", ctx.filename, line),
+				"sort comparator boundary",
+				"Boundary mutations inside sort comparator closures often collapse into one review decision."
+		}
+	}
+	expr, ok := node.(*ast.BinaryExpr)
+	if !ok {
+		return "", "", ""
+	}
+	if operator == opSliceMapLenBoundary || (operator == opConditionalsBoundary && isLenComparison(expr)) || (operator == opLoopControl && isLenComparison(expr)) {
+		return fmt.Sprintf("len-boundary:%s:%s", ctx.filename, normalizeExpr(FormatNode(ctx.fset, expr))),
+			"len boundary",
+			"Length-boundary mutations are often review-once families rather than independent actionable survivors."
+	}
+	return "", "", ""
+}
+
+func nonProgressLoopRisk(parents map[ast.Node]ast.Node, node ast.Node, operator string) string {
+	forStmt := enclosingForStmt(parents, node)
+	if forStmt == nil {
+		return ""
+	}
+	switch n := node.(type) {
+	case *ast.IncDecStmt:
+		ident := identName(n.X)
+		if ident == "" {
+			return ""
+		}
+		condDirection, ok := loopConditionDirection(forStmt.Cond, ident)
+		if !ok {
+			return ""
+		}
+		originalDirection := directionForIncDec(n.Tok)
+		mutatedDirection := oppositeDirection(originalDirection)
+		if originalDirection == "" || mutatedDirection == "" {
+			return ""
+		}
+		if originalDirection == condDirection && mutatedDirection != condDirection {
+			return "high"
+		}
+	case *ast.AssignStmt:
+		if operator != opAssignmentArithmetic || len(n.Lhs) == 0 {
+			return ""
+		}
+		ident := identName(n.Lhs[0])
+		if ident == "" {
+			return ""
+		}
+		condDirection, ok := loopConditionDirection(forStmt.Cond, ident)
+		if !ok {
+			return ""
+		}
+		originalDirection := directionForAssign(n.Tok)
+		mutatedDirection := oppositeDirection(originalDirection)
+		if originalDirection == "" || mutatedDirection == "" {
+			return ""
+		}
+		if originalDirection == condDirection && mutatedDirection != condDirection {
+			return "high"
+		}
+	}
+	return ""
+}
+
+func permissionModeMutation(parents map[ast.Node]ast.Node, node ast.Node, operator string) bool {
+	if operator != opNumericLiterals && operator != opLiterals {
+		return false
+	}
+	call, argIndex, ok := enclosingCallForNode(parents, node)
+	if !ok {
+		return false
+	}
+	switch selectorName(call.Fun) {
+	case "os.Mkdir", "os.MkdirAll", "os.Chmod":
+		return argIndex == 1
+	case "os.OpenFile":
+		return argIndex == 2
+	default:
+		return false
+	}
+}
+
+func enclosingForStmt(parents map[ast.Node]ast.Node, node ast.Node) *ast.ForStmt {
+	for current := node; current != nil; current = parents[current] {
+		if forStmt, ok := current.(*ast.ForStmt); ok {
+			return forStmt
+		}
+	}
+	return nil
+}
+
+func loopConditionDirection(expr ast.Expr, ident string) (string, bool) {
+	direction := ""
+	found := false
+	ast.Inspect(expr, func(node ast.Node) bool {
+		if found {
+			return false
+		}
+		binary, ok := node.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		switch {
+		case exprHasIdent(binary.X, ident):
+			direction, found = directionFromComparison(binary.Op, true)
+		case exprHasIdent(binary.Y, ident):
+			direction, found = directionFromComparison(binary.Op, false)
+		}
+		return !found
+	})
+	return direction, found
+}
+
+func directionFromComparison(op token.Token, identOnLeft bool) (string, bool) {
+	if identOnLeft {
+		switch op {
+		case token.LSS, token.LEQ:
+			return "ascending", true
+		case token.GTR, token.GEQ:
+			return "descending", true
+		}
+		return "", false
+	}
+	switch op {
+	case token.GTR, token.GEQ:
+		return "ascending", true
+	case token.LSS, token.LEQ:
+		return "descending", true
+	default:
+		return "", false
+	}
+}
+
+func exprHasIdent(expr ast.Expr, ident string) bool {
+	found := false
+	ast.Inspect(expr, func(node ast.Node) bool {
+		name, ok := node.(*ast.Ident)
+		if ok && name.Name == ident {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func directionForIncDec(tok token.Token) string {
+	switch tok {
+	case token.INC:
+		return "ascending"
+	case token.DEC:
+		return "descending"
+	default:
+		return ""
+	}
+}
+
+func directionForAssign(tok token.Token) string {
+	switch tok {
+	case token.ADD_ASSIGN:
+		return "ascending"
+	case token.SUB_ASSIGN:
+		return "descending"
+	default:
+		return ""
+	}
+}
+
+func oppositeDirection(direction string) string {
+	switch direction {
+	case "ascending":
+		return "descending"
+	case "descending":
+		return "ascending"
+	default:
+		return ""
+	}
+}
+
+func enclosingCallForNode(parents map[ast.Node]ast.Node, node ast.Node) (*ast.CallExpr, int, bool) {
+	child := node
+	for current := parents[node]; current != nil; current = parents[current] {
+		call, ok := current.(*ast.CallExpr)
+		if ok {
+			for index, arg := range call.Args {
+				if arg == child {
+					return call, index, true
+				}
+			}
+		}
+		child = current
+	}
+	return nil, 0, false
+}
+
+func isSortComparatorCall(parents map[ast.Node]ast.Node, node ast.Node, call *ast.CallExpr) bool {
+	if !isSortCall(call) {
+		return false
+	}
+	child := node
+	for current := parents[node]; current != nil; current = parents[current] {
+		if current == call {
+			break
+		}
+		if fn, ok := current.(*ast.FuncLit); ok {
+			for _, arg := range call.Args {
+				if arg == fn {
+					return true
+				}
+			}
+		}
+		child = current
+	}
+	_ = child
+	return false
+}
+
+func isSortCall(call *ast.CallExpr) bool {
+	name := selectorName(call.Fun)
+	return name == "sort.Slice" || name == "sort.SliceStable"
+}
+
+func selectorName(expr ast.Expr) string {
+	switch node := expr.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := node.X.(*ast.Ident); ok {
+			return ident.Name + "." + node.Sel.Name
+		}
+		return node.Sel.Name
+	case *ast.Ident:
+		return node.Name
+	default:
+		return ""
+	}
+}
+
+func identName(expr ast.Expr) string {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return ident.Name
+}
+
+func normalizeExpr(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func appendUnique(tags []string, tag string) []string {
+	if tag == "" {
+		return tags
+	}
+	for _, existing := range tags {
+		if existing == tag {
+			return tags
+		}
+	}
+	return append(tags, tag)
+}
+
+func normalizeTag(value string) string {
+	replaced := strings.ToLower(strings.TrimSpace(value))
+	replaced = strings.ReplaceAll(replaced, " ", "-")
+	return replaced
 }
 
 func operatorEnabled(operator, profile string) bool {
