@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.6"
+      - run: go vet ./...
+      - run: go test ./...
+      - run: mkdir -p dist
+      - run: >-
+          go run ./cmd/releasehelper notes
+          --version "${GITHUB_REF_NAME}"
+          --out dist/release-notes.md
+      - name: Build release archives
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          targets=(
+            "linux amd64 tar.gz"
+            "linux arm64 tar.gz"
+            "darwin amd64 tar.gz"
+            "darwin arm64 tar.gz"
+            "windows amd64 zip"
+          )
+
+          for target in "${targets[@]}"; do
+            read -r goos goarch format <<<"$target"
+            stage="dist/cervomut_${version}_${goos}_${goarch}"
+            binary="cervomut"
+            if [ "$goos" = "windows" ]; then
+              binary="${binary}.exe"
+            fi
+
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$stage/$binary" ./cmd/cervomut
+            cp LICENSE NOTICE TRADEMARKS.md README.md CHANGELOG.md "$stage/"
+
+            if [ "$format" = "zip" ]; then
+              (
+                cd dist
+                zip -qr "cervomut_${version}_${goos}_${goarch}.zip" "$(basename "$stage")"
+              )
+            else
+              tar -C dist -czf "dist/cervomut_${version}_${goos}_${goarch}.tar.gz" "$(basename "$stage")"
+            fi
+
+            rm -rf "$stage"
+          done
+
+          (
+            cd dist
+            sha256sum cervomut_${version}_* > SHA256SUMS
+          )
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: dist/release-notes.md
+          files: |
+            dist/cervomut_${{ github.ref_name }}_*.tar.gz
+            dist/cervomut_${{ github.ref_name }}_*.zip
+            dist/SHA256SUMS
+          overwrite_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
