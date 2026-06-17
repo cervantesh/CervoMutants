@@ -19,11 +19,11 @@ import (
 	"sync"
 	"time"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/discover"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/isolate"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/quarantine"
+	"github.com/cervantesh/cervo-mutant/pkg/config"
+	"github.com/cervantesh/cervo-mutant/pkg/discover"
+	"github.com/cervantesh/cervo-mutant/pkg/isolate"
+	"github.com/cervantesh/cervo-mutant/pkg/mutator"
+	"github.com/cervantesh/cervo-mutant/pkg/quarantine"
 )
 
 type Engine struct {

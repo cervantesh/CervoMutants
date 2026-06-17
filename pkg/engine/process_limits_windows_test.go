@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
+	"github.com/cervantesh/cervo-mutant/pkg/config"
 )
 
 func TestApplyProcessLimitsWindowsBranches(t *testing.T) {

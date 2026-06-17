@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
 )
 
 func TestSelectorDefaultsToAllTests(t *testing.T) {

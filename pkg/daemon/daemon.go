@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/isolate"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/runner"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
+	"github.com/cervantesh/cervo-mutant/pkg/isolate"
+	"github.com/cervantesh/cervo-mutant/pkg/runner"
 )
 
 type Message struct {

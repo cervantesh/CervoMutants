@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
 )
 
 func Load(path string) (engine.RunResult, bool, error) {

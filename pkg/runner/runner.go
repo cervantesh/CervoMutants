@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
 )
 
 type GoTestRunner struct {

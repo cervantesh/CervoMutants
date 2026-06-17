@@ -3,7 +3,7 @@
 This document describes the local mutation-tool comparison harness so a future
 agent can run it without relying on thread memory.
 
-Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/13
+Tracking issue: https://github.com/cervantesh/cervo-mutant/issues/13
 
 ## Purpose
 
@@ -188,7 +188,7 @@ The output includes:
 
 Before launching a comparison:
 
-1. Confirm the Gitea issue.
+1. Confirm the GitHub issue.
 2. Choose `manifest` or `package-root` mode.
 3. Use the same effective target mode for every tool in any fairness claim.
 4. Set memory and timeout guards.

@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/baseline"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/daemon"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/doctor"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
-	evalpkg "gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/eval"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/extcompare"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/report"
+	"github.com/cervantesh/cervo-mutant/pkg/baseline"
+	"github.com/cervantesh/cervo-mutant/pkg/config"
+	"github.com/cervantesh/cervo-mutant/pkg/daemon"
+	"github.com/cervantesh/cervo-mutant/pkg/doctor"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
+	evalpkg "github.com/cervantesh/cervo-mutant/pkg/eval"
+	"github.com/cervantesh/cervo-mutant/pkg/extcompare"
+	"github.com/cervantesh/cervo-mutant/pkg/mutator"
+	"github.com/cervantesh/cervo-mutant/pkg/report"
 )
 
 const (

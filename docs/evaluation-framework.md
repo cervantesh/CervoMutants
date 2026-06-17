@@ -2,9 +2,9 @@
 
 Tracking issues:
 
-- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/5
-- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/6
-- https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/7
+- https://github.com/cervantesh/cervo-mutant/issues/5
+- https://github.com/cervantesh/cervo-mutant/issues/6
+- https://github.com/cervantesh/cervo-mutant/issues/7
 
 This framework evaluates mutation testing tools for CervoSoft and decides
 whether `cervo-mutant` should be the default for CervoClaw and related Go

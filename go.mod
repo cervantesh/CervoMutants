@@ -1,4 +1,4 @@
-module gitea.cervbox.synology.me/CervoSoft/cervo-mutant
+module github.com/cervantesh/cervo-mutant
 
 go 1.25.6
 

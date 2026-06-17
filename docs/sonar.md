@@ -1,6 +1,6 @@
 # Sonar Analysis
 
-Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/31
+Tracking issue: https://github.com/cervantesh/cervo-mutant/issues/31
 
 CervoMutant includes `sonar-project.properties` so SonarQube or SonarCloud can
 ingest Go sources, tests, and coverage.

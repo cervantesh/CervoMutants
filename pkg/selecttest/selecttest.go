@@ -3,7 +3,7 @@ package selecttest
 import (
 	"context"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/engine"
+	"github.com/cervantesh/cervo-mutant/pkg/engine"
 )
 
 type Selector struct {

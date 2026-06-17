@@ -1,6 +1,6 @@
 # Repository Instructions
 
-All work in this repository must be tracked through a Gitea issue before
+All work in this repository must be tracked through a GitHub issue before
 implementation starts.
 
 - Use an existing issue when one already covers the scope.

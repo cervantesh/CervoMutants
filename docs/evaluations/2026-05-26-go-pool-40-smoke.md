@@ -1,6 +1,6 @@
 # Go Pool 40 Smoke Run
 
-Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/13
+Tracking issue: https://github.com/cervantesh/cervo-mutant/issues/13
 
 Date: 2026-05-26
 

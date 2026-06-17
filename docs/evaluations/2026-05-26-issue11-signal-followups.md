@@ -1,6 +1,6 @@
 # Issue #11 Signal Follow-Ups
 
-Tracking issue: https://gitea.cervbox.synology.me/CervoSoft/cervo-mutant/issues/11
+Tracking issue: https://github.com/cervantesh/cervo-mutant/issues/11
 
 Date: 2026-05-26
 
@@ -66,7 +66,7 @@ C:\Users\c___h\AppData\Local\Temp\cervomut-issue11-cobra-comparison\normalized-b
 
 ## 2. Real CI Pipeline
 
-The Gitea workflow now does more than compile and run unit tests:
+The GitHub Actions workflow now does more than compile and run unit tests:
 
 ```yaml
 go vet ./...
@@ -175,7 +175,7 @@ represented as explicit data capture rather than hidden TODOs.
 | Broader operators | Added governed `assignment-arithmetic` and `inc-dec` operators to `default`/`aggressive`, inspired by Go operator breadth in external tools without moving them into fast CI. | Multi-repo operator yield comparison. |
 | External tool revalidation | Re-ran the current `cervomut compare` parser against the Cobra artifacts from CervoMutant, Gremlins, patched gomu, and patched go-mutesting. | Schedule periodic full reruns after operator changes. |
 | Preset UX documentation | Config defaults now expose `history`; docs explain `ci-fast`, `ci-balanced`, `nightly`, and `campaign` as distinct adoption modes. | Expand examples per repo type. |
-| Real CI pipeline | Gitea CI now runs `go vet`, full tests, race tests for core packages, mutator registry smoke, `ci-fast` report smoke, and `ci-balanced` report smoke. | Add protected-branch gating once the repo policy is set. |
+| Real CI pipeline | GitHub Actions now run `go vet`, full tests, race tests for core packages, mutator registry smoke, `ci-fast` report smoke, and `ci-balanced` report smoke. | Add protected-branch gating once the repo policy is set. |
 | Final PR/issue hygiene | Issue #11 has progress comments; branch and PR reference `#11`; docs link back to the issue. | Close issue after PR review/merge. |
 | Wiki continuity | Wiki page is updated with the issue #11 signal-followup summary. | Push wiki changes with the implementation branch. |
 

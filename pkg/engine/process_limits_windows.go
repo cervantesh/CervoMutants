@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
+	"github.com/cervantesh/cervo-mutant/pkg/config"
 )
 
 const (

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/config"
-	"gitea.cervbox.synology.me/CervoSoft/cervo-mutant/pkg/mutator"
+	"github.com/cervantesh/cervo-mutant/pkg/config"
+	"github.com/cervantesh/cervo-mutant/pkg/mutator"
 )
 
 func writeFixture(t *testing.T) string {
@@ -1507,7 +1507,7 @@ func assertQuarantineLoad(t *testing.T, e *Engine, path string) {
 		"mutant_id":  "m-active",
 		"reason":     "temporary",
 		"owner":      "qa",
-		"issue":      "CervoSoft/cervo-mutant#31",
+		"issue":      "cervantesh/cervo-mutant#31",
 		"created_at": time.Now().Add(-time.Hour).Format(time.RFC3339),
 		"expires_at": time.Now().Add(time.Hour).Format(time.RFC3339),
 	}}
