@@ -198,8 +198,12 @@ func TestReportShowExplainErrorBranches(t *testing.T) {
 func TestRunAcceptsWorkerAndIsolationFlags(t *testing.T) {
 	dir := writeCLIFixture(t)
 	out := filepath.Join(dir, "parallel-out")
-	if err := run([]string{"run", dir, "--max-mutants", "1", "--workers", "2", "--isolation", "overlay", "--out", out}); err != nil {
+	tempRoot := filepath.Join(dir, "temp-root")
+	if err := run([]string{"run", dir, "--max-mutants", "1", "--workers", "2", "--isolation", "overlay", "--temp-root", tempRoot, "--out", out}); err != nil {
 		t.Fatalf("run with workers and isolation returned error: %v", err)
+	}
+	if _, err := os.Stat(tempRoot); err != nil {
+		t.Fatalf("temp root was not created: %v", err)
 	}
 }
 

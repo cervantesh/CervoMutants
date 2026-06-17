@@ -41,6 +41,12 @@ func TestRuntimeEnvironmentHelpers(t *testing.T) {
 	if mentionsOneDrive(`/tmp/work`) {
 		t.Fatal("mentionsOneDrive should ignore unrelated paths")
 	}
+	if !pathContainsOther(`C:\repo`, `C:\repo\.tmp`) {
+		t.Fatal("pathContainsOther should detect nested Windows paths")
+	}
+	if pathContainsOther(`C:\repo`, `D:\temp`) {
+		t.Fatal("pathContainsOther should ignore unrelated paths")
+	}
 
 	checks := windowsChecks(strings.Repeat("x", 121), `C:\Temp`)
 	if len(checks) == 0 {
@@ -49,6 +55,10 @@ func TestRuntimeEnvironmentHelpers(t *testing.T) {
 	checks = windowsChecks(`C:\Users\me\OneDrive\Documents\project`, `C:\Users\me\OneDrive\Temp`)
 	if !containsCheck(checks, "windows-onedrive") || !containsCheck(checks, "windows-temp-onedrive") {
 		t.Fatalf("windowsChecks missing OneDrive warnings: %+v", checks)
+	}
+	checks = windowsChecks(`C:\Users\me\Projects\cobra doc`, `C:\Users\me\Projects\cobra doc\.tmp`)
+	if !containsCheck(checks, "windows-temp-workspace") || !containsCheck(checks, "windows-path-spaces") {
+		t.Fatalf("windowsChecks missing workspace/temp-root warnings: %+v", checks)
 	}
 	checks = windowsChecks(`\\server\share\project`, `C:\Temp`)
 	if !containsCheck(checks, "windows-network-path") {

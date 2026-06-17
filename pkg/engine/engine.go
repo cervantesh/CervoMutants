@@ -344,27 +344,20 @@ func suppressionPriority(action string) int {
 }
 
 func (e *Engine) workerCount(mutants int) int {
-	workers := e.cfg.Execution.Workers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
-	if workers > mutants && mutants > 0 {
-		workers = mutants
-	}
-	if workers < 1 {
-		workers = 1
-	}
-	return workers
+	return effectiveWorkerCount(runtime.GOOS, e.cfg.Execution.Isolation, e.cfg.Execution.Workers, mutants)
 }
 
 func (e *Engine) environment(mutants int) Environment {
 	wd, _ := os.Getwd()
+	tempPlan := isolate.ResolveTempRoot(wd, e.cfg.Execution.TempRoot)
+	runtimePlan := effectiveTestCommandEnv(runtime.GOOS, e.cfg.Execution.Isolation, e.workerCount(mutants), e.cfg.Tests.Command, os.Environ())
 	env := Environment{
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
 		GoVersion:       runtime.Version(),
 		WorkingDir:      wd,
 		TempDir:         os.TempDir(),
+		TempRoot:        tempPlan.Root,
 		Isolation:       e.cfg.Execution.Isolation,
 		Workers:         e.workerCount(mutants),
 		TestTimeout:     e.cfg.Tests.Timeout.String(),
@@ -375,8 +368,9 @@ func (e *Engine) environment(mutants int) Environment {
 		WSL:             isWSL(),
 		CGroup:          cgroupSummary(),
 		WindowsOneDrive: runtime.GOOS == "windows" && pathMentionsOneDrive(wd),
+		Warnings:        append([]string{}, tempPlan.Warnings...),
 	}
-	if e.cfg.Execution.Resources.MaxProcessMemoryMB > 0 || e.cfg.Execution.Resources.MaxProcesses > 0 {
+	if e.cfg.Execution.Resources.MaxProcessMemoryMB > 0 || e.cfg.Execution.Resources.MaxProcesses > 0 || tempPlan.Source != "" || runtimePlan.Applied {
 		env.Extra = map[string]string{}
 		if e.cfg.Execution.Resources.MaxProcessMemoryMB > 0 {
 			env.Extra["max_process_memory_mb"] = strconv.Itoa(e.cfg.Execution.Resources.MaxProcessMemoryMB)
@@ -384,11 +378,41 @@ func (e *Engine) environment(mutants int) Environment {
 		if e.cfg.Execution.Resources.MaxProcesses > 0 {
 			env.Extra["max_processes"] = strconv.Itoa(e.cfg.Execution.Resources.MaxProcesses)
 		}
+		if tempPlan.Source != "" {
+			env.Extra["temp_root_source"] = tempPlan.Source
+		}
+		if runtimePlan.Applied {
+			env.Extra["effective_goflags"] = runtimePlan.GoFlags
+			env.Extra["effective_gomaxprocs"] = runtimePlan.GOMAXPROCS
+		}
 	}
 	if e.cfg.Execution.Budget > 0 {
 		env.Budget = e.cfg.Execution.Budget.String()
 	}
+	if runtime.GOOS == "windows" && e.cfg.Execution.Isolation == config.IsolationTempWorkdir && e.cfg.Execution.Workers > env.Workers {
+		env.Warnings = append(env.Warnings, fmt.Sprintf("Windows temp-workdir worker cap applied: requested=%d effective=%d", e.cfg.Execution.Workers, env.Workers))
+	}
+	if runtime.GOOS == "windows" && e.cfg.Execution.Isolation == config.IsolationTempWorkdir && e.cfg.Tests.Timeout > 0 && e.cfg.Tests.Timeout < 20*time.Second {
+		env.Warnings = append(env.Warnings, fmt.Sprintf("per-mutant timeout %s may be too aggressive for Windows temp-workdir runs", e.cfg.Tests.Timeout))
+	}
 	return env
+}
+
+func effectiveWorkerCount(goos, isolation string, requested, mutants int) int {
+	workers := requested
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+	if workers > mutants && mutants > 0 {
+		workers = mutants
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if goos == "windows" && isolation == config.IsolationTempWorkdir && workers > 2 {
+		workers = 2
+	}
+	return workers
 }
 
 func isWSL() bool {
@@ -1077,9 +1101,9 @@ func (e *Engine) runMutant(ctx context.Context, mutant Mutant) (MutantResult, er
 
 func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []string, func(), error) {
 	if e.cfg.Execution.Isolation == "overlay" {
-		return prepareOverlayMutation(mutant, command)
+		return prepareOverlayMutation(mutant, command, e.cfg.Execution.TempRoot)
 	}
-	workdir, err := isolate.CopyModule(mutant.Module)
+	workdir, err := isolate.CopyModuleWithRoot(mutant.Module, e.cfg.Execution.TempRoot)
 	if err != nil {
 		return "", nil, noopCleanup, err
 	}
@@ -1096,8 +1120,8 @@ func (e *Engine) prepareMutation(mutant Mutant, command []string) (string, []str
 	return workdir, command, cleanup, nil
 }
 
-func prepareOverlayMutation(mutant Mutant, command []string) (string, []string, func(), error) {
-	tmp, err := os.MkdirTemp("", "cervomut-overlay-*")
+func prepareOverlayMutation(mutant Mutant, command []string, tempRoot string) (string, []string, func(), error) {
+	tmp, err := isolate.CreateTempDir(mutant.Module, tempRoot, "cervomut-overlay-*")
 	if err != nil {
 		return "", nil, noopCleanup, err
 	}
@@ -1151,6 +1175,88 @@ func withOverlayFlag(command []string, overlayPath string) []string {
 		return append(append([]string{}, next[:2]...), append([]string{"-overlay", overlayPath}, next[2:]...)...)
 	}
 	return next
+}
+
+type testCommandEnvPlan struct {
+	Env        []string
+	Applied    bool
+	GoFlags    string
+	GOMAXPROCS string
+}
+
+func effectiveTestCommandEnv(goos, isolation string, workers int, command, baseEnv []string) testCommandEnvPlan {
+	if goos != "windows" || !isGoTestCommand(command) {
+		return testCommandEnvPlan{Env: append([]string{}, baseEnv...)}
+	}
+	if isolation != config.IsolationTempWorkdir && workers <= 2 {
+		return testCommandEnvPlan{Env: append([]string{}, baseEnv...)}
+	}
+	values := map[string]string{}
+	order := make([]string, 0, len(baseEnv))
+	for _, entry := range baseEnv {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := values[name]; !exists {
+			order = append(order, name)
+		}
+		values[name] = value
+	}
+	goFlags := normalizeGoFlags(values["GOFLAGS"])
+	values["GOFLAGS"] = goFlags
+	maxProcs := "1"
+	if workers > 1 {
+		maxProcs = "2"
+	}
+	values["GOMAXPROCS"] = maxProcs
+	if !containsString(order, "GOFLAGS") {
+		order = append(order, "GOFLAGS")
+	}
+	if !containsString(order, "GOMAXPROCS") {
+		order = append(order, "GOMAXPROCS")
+	}
+	env := make([]string, 0, len(order))
+	for _, name := range order {
+		env = append(env, name+"="+values[name])
+	}
+	return testCommandEnvPlan{
+		Env:        env,
+		Applied:    true,
+		GoFlags:    goFlags,
+		GOMAXPROCS: maxProcs,
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeGoFlags(current string) string {
+	fields := strings.Fields(current)
+	filtered := make([]string, 0, len(fields)+1)
+	skipValue := false
+	for _, field := range fields {
+		if skipValue {
+			skipValue = false
+			continue
+		}
+		if field == "-p" {
+			skipValue = true
+			continue
+		}
+		if strings.HasPrefix(field, "-p=") {
+			continue
+		}
+		filtered = append(filtered, field)
+	}
+	filtered = append(filtered, "-p=1")
+	return strings.Join(filtered, " ")
 }
 
 func (e *Engine) selectTests(mutant Mutant) TestPlan {
@@ -1238,6 +1344,10 @@ func (e *Engine) runTest(ctx context.Context, job MutantJob) (MutantResult, erro
 	start := time.Now()
 	cmd := exec.CommandContext(runCtx, job.TestCommand[0], job.TestCommand[1:]...)
 	cmd.Dir = job.WorkDir
+	envPlan := effectiveTestCommandEnv(runtime.GOOS, e.cfg.Execution.Isolation, e.workerCount(0), job.TestCommand, os.Environ())
+	if envPlan.Applied {
+		cmd.Env = envPlan.Env
+	}
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output

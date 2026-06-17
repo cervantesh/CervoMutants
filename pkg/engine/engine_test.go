@@ -1391,6 +1391,27 @@ func assertEngineTargetBranches(t *testing.T) {
 	if err != nil || wd == "" {
 		t.Fatalf("moduleForTargets(nil) = %q err=%v", wd, err)
 	}
+	if got := effectiveWorkerCount("windows", config.IsolationTempWorkdir, 4, 10); got != 2 {
+		t.Fatalf("effectiveWorkerCount windows temp-workdir = %d, want 2", got)
+	}
+	if got := effectiveWorkerCount("windows", "overlay", 4, 10); got != 4 {
+		t.Fatalf("effectiveWorkerCount windows overlay = %d, want 4", got)
+	}
+	if got := effectiveWorkerCount("linux", config.IsolationTempWorkdir, 4, 1); got != 1 {
+		t.Fatalf("effectiveWorkerCount linux mutant cap = %d, want 1", got)
+	}
+	plan := effectiveTestCommandEnv("windows", config.IsolationTempWorkdir, 2, []string{"go", "test", "./..."}, []string{"PATH=C:\\Windows\\System32"})
+	if !plan.Applied || plan.GOMAXPROCS != "2" || !strings.Contains(plan.GoFlags, "-p=1") {
+		t.Fatalf("effectiveTestCommandEnv did not apply conservative settings: %+v", plan)
+	}
+	plan = effectiveTestCommandEnv("windows", "overlay", 1, []string{"go", "test", "./..."}, []string{"PATH=C:\\Windows\\System32"})
+	if plan.Applied {
+		t.Fatalf("effectiveTestCommandEnv should not apply for already-conservative overlay run: %+v", plan)
+	}
+	plan = effectiveTestCommandEnv("windows", config.IsolationTempWorkdir, 2, []string{"echo", "ok"}, []string{"PATH=C:\\Windows\\System32"})
+	if plan.Applied {
+		t.Fatalf("effectiveTestCommandEnv should ignore non-go-test commands: %+v", plan)
+	}
 }
 
 func TestSelectionPatchAndRunTestErrorBranches(t *testing.T) {

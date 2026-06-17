@@ -232,6 +232,7 @@ type Environment struct {
 	ToolVersion     string            `json:"tool_version,omitempty"`
 	WorkingDir      string            `json:"working_dir,omitempty"`
 	TempDir         string            `json:"temp_dir,omitempty"`
+	TempRoot        string            `json:"temp_root,omitempty"`
 	Isolation       string            `json:"isolation,omitempty"`
 	Workers         int               `json:"workers,omitempty"`
 	TestTimeout     string            `json:"test_timeout,omitempty"`
@@ -243,6 +244,7 @@ type Environment struct {
 	WSL             bool              `json:"wsl,omitempty"`
 	CGroup          string            `json:"cgroup,omitempty"`
 	WindowsOneDrive bool              `json:"windows_onedrive,omitempty"`
+	Warnings        []string          `json:"warnings,omitempty"`
 	Extra           map[string]string `json:"extra,omitempty"`
 }
 
