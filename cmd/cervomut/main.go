@@ -32,6 +32,7 @@ var (
 	runPoolSmokeFn     = pool.RunSmoke
 	runPoolCompareFn   = pool.RunCompare
 	runPoolBenchmarkFn = pool.RunBenchmark
+	runPoolCampaignFn  = pool.RunCampaign
 )
 
 func main() {

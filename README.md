@@ -46,6 +46,7 @@ platform. The project currently includes:
 - Daemon/worker JSON-lines contracts for future distributed execution.
 - External-tool comparison normalization for apples-to-apples studies.
 - Benchmark corpus harness for runtime, peak-memory, and mutation-throughput regression tracking.
+- Pool campaign manifests that orchestrate smoke, compare, and benchmark jobs under one resumable summary.
 
 ## Install
 
@@ -191,6 +192,7 @@ The public guide is [docs/example-repos.md](docs/example-repos.md).
 | `cervomut eval ./...` | Build a structured evaluation artifact. |
 | `cervomut compare ...` | Normalize external tool reports. |
 | `cervomut pool benchmark --corpus FILE` | Run the pinned benchmark corpus and fail on threshold regressions. |
+| `cervomut pool campaign --file FILE` | Orchestrate multi-repo smoke, compare, and benchmark jobs from one manifest. |
 | `cervomut baseline update` | Save current report as baseline. |
 | `cervomut baseline compare` | Compare current report to baseline. |
 | `cervomut baseline diff` | Show a review-oriented diff between the baseline and the current report or accepted candidate. |
@@ -651,6 +653,8 @@ Latest local Sonar pass after issue #31:
   runnable harness description.
 - [docs/evaluations/benchmark-corpus.md](docs/evaluations/benchmark-corpus.md):
   pinned benchmark corpus and regression-threshold harness.
+- [docs/evaluations/pool-campaigns.md](docs/evaluations/pool-campaigns.md):
+  campaign manifests for orchestrating pool smoke, compare, and benchmark jobs.
 - [docs/evaluations/tool-findings.md](docs/evaluations/tool-findings.md):
   findings from Gremlins, gomu, and go-mutesting comparisons.
 

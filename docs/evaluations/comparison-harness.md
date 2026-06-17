@@ -25,13 +25,19 @@ If the question is instead "did CervoMutants itself get slower, heavier, or
 weaker on a pinned corpus?", use
 [benchmark-corpus.md](benchmark-corpus.md) and `cervomut pool benchmark`.
 
+If the question spans multiple steps, such as "smoke this pool, then compare a
+smaller fairness subset, then run the release benchmark corpus", use
+`cervomut pool campaign`.
+
 ## Main Files
 
 | File | Role |
 | --- | --- |
 | `docs/evaluations/go-repo-pool-40.json` | Repository manifest with name, URL, target, lane, domain, and reason. |
 | `docs/evaluations/benchmark-corpus.json` | Pinned CervoMutants benchmark corpus with explicit regression thresholds. |
+| `docs/evaluations/pool-campaign-example.json` | Example campaign manifest that combines smoke, compare, and benchmark jobs. |
 | `cmd/cervomut` `pool benchmark` | CervoMutants-only performance lane for runtime, memory, and throughput regressions. |
+| `cmd/cervomut` `pool campaign` | Orchestration layer that runs multiple pool jobs under one resumable summary. |
 | `cmd/cervomut` `pool compare` | Main multi-tool runner. Supports memory guards, resume, target normalization, and per-tool parsing. |
 | `cmd/cervomut` `pool smoke` | Lighter CervoMutants calibration smoke runner. Useful before expensive external comparisons. |
 | `cmd/cervomut` `compare` | Normalizes existing tool reports into one JSON schema. |
@@ -176,6 +182,40 @@ Use the outputs by layer:
 
 `summary.json` remains the source of truth for automation. The study JSON and
 markdown are product-facing projections on top of that raw layer.
+
+## Campaign Orchestration
+
+`cervomut pool campaign` adds a thin orchestration layer on top of the existing
+pool runners:
+
+- `smoke` jobs call `cervomut pool smoke`
+- `compare` jobs call `cervomut pool compare`
+- `benchmark` jobs call `cervomut pool benchmark`
+
+The campaign manifest keeps those jobs together and writes
+`campaign-summary.json` with:
+
+- per-job status
+- elapsed time
+- summary path
+- generated artifact paths
+- resume markers for completed jobs
+
+Relative paths inside the campaign file resolve relative to the campaign file
+itself, not the current shell directory.
+
+Use the example manifest as a starting point:
+
+```powershell
+cervomut pool campaign `
+  --file docs/evaluations/pool-campaign-example.json `
+  --resume `
+  --cervomutants $env:TEMP/cervomut-pool.exe
+```
+
+When you want `compare` to reuse clones produced by `smoke`, point both jobs at
+the same explicit `work_root`. If you omit per-job roots, each job gets its own
+isolated work/output directory.
 
 ## Recommended Workflow
 
