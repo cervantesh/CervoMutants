@@ -666,6 +666,8 @@ Latest local Sonar pass after issue #31:
   limitation, and tradeoff guidance grounded in current validation evidence.
 - [docs/github-review-workflow.md](docs/github-review-workflow.md): the default
   PR and CI review model using the maintained GitHub workflow examples.
+- [docs/history-data.md](docs/history-data.md): storage, export, retention, and
+  audit contract for persisted mutation history and history dashboard outputs.
 - [docs/extensibility.md](docs/extensibility.md): programmatic extension seams
   for custom mutators, suppression evaluators, and survivor rankers.
 - [docs/daemon-worker.md](docs/daemon-worker.md): experimental daemon/worker
