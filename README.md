@@ -45,6 +45,7 @@ platform. The project currently includes:
 - CLI orchestration split across command-family files for run/eval, compare/pool, baseline/report, and shared entrypoint dispatch.
 - Daemon/worker JSON-lines contracts for future distributed execution.
 - External-tool comparison normalization for apples-to-apples studies.
+- Benchmark corpus harness for runtime, peak-memory, and mutation-throughput regression tracking.
 
 ## Install
 
@@ -174,6 +175,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut fast ./...` | Shortcut for fast CI defaults. |
 | `cervomut eval ./...` | Build a structured evaluation artifact. |
 | `cervomut compare ...` | Normalize external tool reports. |
+| `cervomut pool benchmark --corpus FILE` | Run the pinned benchmark corpus and fail on threshold regressions. |
 | `cervomut baseline update` | Save current report as baseline. |
 | `cervomut baseline compare` | Compare current report to baseline. |
 | `cervomut baseline diff` | Show a review-oriented diff between the baseline and the current report or accepted candidate. |
@@ -528,6 +530,8 @@ Latest local Sonar pass after issue #31:
   apples-to-apples comparison rules.
 - [docs/evaluations/comparison-harness.md](docs/evaluations/comparison-harness.md):
   runnable harness description.
+- [docs/evaluations/benchmark-corpus.md](docs/evaluations/benchmark-corpus.md):
+  pinned benchmark corpus and regression-threshold harness.
 - [docs/evaluations/tool-findings.md](docs/evaluations/tool-findings.md):
   findings from Gremlins, gomu, and go-mutesting comparisons.
 

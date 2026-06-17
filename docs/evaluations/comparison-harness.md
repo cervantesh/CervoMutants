@@ -19,11 +19,17 @@ Do not mix those two questions. Use
 [tool-comparison-protocol.md](tool-comparison-protocol.md) for the fairness
 rules.
 
+If the question is instead "did CervoMutants itself get slower, heavier, or
+weaker on a pinned corpus?", use
+[benchmark-corpus.md](benchmark-corpus.md) and `cervomut pool benchmark`.
+
 ## Main Files
 
 | File | Role |
 | --- | --- |
 | `docs/evaluations/go-repo-pool-40.json` | Repository manifest with name, URL, target, lane, domain, and reason. |
+| `docs/evaluations/benchmark-corpus.json` | Pinned CervoMutants benchmark corpus with explicit regression thresholds. |
+| `cmd/cervomut` `pool benchmark` | CervoMutants-only performance lane for runtime, memory, and throughput regressions. |
 | `cmd/cervomut` `pool compare` | Main multi-tool runner. Supports memory guards, resume, target normalization, and per-tool parsing. |
 | `cmd/cervomut` `pool smoke` | Lighter CervoMutants calibration smoke runner. Useful before expensive external comparisons. |
 | `cmd/cervomut` `compare` | Normalizes existing tool reports into one JSON schema. |

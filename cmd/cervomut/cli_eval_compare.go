@@ -148,13 +148,15 @@ func cmdCompare(args []string) error {
 
 func cmdPool(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("pool requires smoke or compare")
+		return fmt.Errorf("pool requires smoke, compare, or benchmark")
 	}
 	switch args[0] {
 	case "smoke":
 		return cmdPoolSmoke(args[1:])
 	case "compare":
 		return cmdPoolCompare(args[1:])
+	case "benchmark":
+		return cmdPoolBenchmark(args[1:])
 	default:
 		return fmt.Errorf("unknown pool command %q", args[0])
 	}
@@ -273,6 +275,38 @@ func cmdPoolCompare(args []string) error {
 		return err
 	}
 	fmt.Printf("Pool comparison summary: %s\n", run.SummaryPath)
+	return nil
+}
+
+func cmdPoolBenchmark(args []string) error {
+	fs := flag.NewFlagSet("pool benchmark", flag.ContinueOnError)
+	corpus := fs.String("corpus", "docs/evaluations/benchmark-corpus.json", "benchmark corpus manifest")
+	workRoot := fs.String("work-root", filepath.Join(os.TempDir(), "cervomut-benchmark-corpus"), "working root containing cloned benchmark repositories")
+	outputRoot := fs.String("output-root", filepath.Join(os.TempDir(), "cervomut-benchmark-results"), "output directory for benchmark reports and summary")
+	names := fs.String("names", "", "comma-separated benchmark names to include")
+	limit := fs.Int("limit", 0, "limit benchmark entries after filtering")
+	resume := fs.Bool("resume", false, "resume using the existing summary.json")
+	cervoBinary := fs.String("cervomutants", currentExecutable(), "path to the cervomut binary used for nested benchmark runs")
+	gitBinary := fs.String("git", "git", "path to git")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"corpus": true, "work-root": true, "output-root": true, "names": true, "limit": true, "resume": true, "cervomutants": true, "git": true,
+	})); err != nil {
+		return err
+	}
+	run, err := runPoolBenchmarkFn(context.Background(), pool.BenchmarkOptions{
+		CorpusPath:  *corpus,
+		WorkRoot:    *workRoot,
+		OutputRoot:  *outputRoot,
+		Names:       splitList(*names),
+		Limit:       *limit,
+		Resume:      *resume,
+		CervoBinary: *cervoBinary,
+		GitBinary:   *gitBinary,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Pool benchmark summary: %s\n", run.SummaryPath)
 	return nil
 }
 

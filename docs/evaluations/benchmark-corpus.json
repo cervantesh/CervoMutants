@@ -1,0 +1,79 @@
+{
+  "schema_version": "1",
+  "tracking_issue": "#80",
+  "description": "Starter benchmark corpus for runtime, memory, and throughput regression tracking across pinned public Go repos.",
+  "entries": [
+    {
+      "name": "cobra-doc",
+      "url": "https://github.com/spf13/cobra.git",
+      "ref": "v1.10.1",
+      "target": "./doc",
+      "size": "small",
+      "resource_class": "low",
+      "policy": "comparison-safe",
+      "max_mutants": 50,
+      "workers": 2,
+      "clone_timeout_seconds": 180,
+      "baseline_timeout_seconds": 60,
+      "dry_run_timeout_seconds": 60,
+      "mutation_timeout_seconds": 180,
+      "thresholds": {
+        "max_baseline_seconds": 20,
+        "max_dry_run_seconds": 45,
+        "max_mutation_seconds": 180,
+        "max_peak_memory_mb": 512,
+        "min_mutants_per_second": 0.5,
+        "min_executed_mutants": 25
+      },
+      "notes": "Small CLI target with a historically repeatable comparison-safe lane."
+    },
+    {
+      "name": "logrus-root",
+      "url": "https://github.com/sirupsen/logrus.git",
+      "ref": "v1.9.3",
+      "target": "./...",
+      "size": "medium",
+      "resource_class": "medium",
+      "policy": "comparison-safe",
+      "max_mutants": 75,
+      "workers": 2,
+      "clone_timeout_seconds": 180,
+      "baseline_timeout_seconds": 60,
+      "dry_run_timeout_seconds": 90,
+      "mutation_timeout_seconds": 240,
+      "thresholds": {
+        "max_baseline_seconds": 25,
+        "max_dry_run_seconds": 60,
+        "max_mutation_seconds": 240,
+        "max_peak_memory_mb": 768,
+        "min_mutants_per_second": 0.4,
+        "min_executed_mutants": 40
+      },
+      "notes": "Medium-sized logging repo with broad package coverage and steady test cost."
+    },
+    {
+      "name": "grpc-status",
+      "url": "https://github.com/grpc/grpc-go.git",
+      "ref": "v1.63.2",
+      "target": "./status",
+      "size": "scoped-large-repo",
+      "resource_class": "high",
+      "policy": "comparison-safe",
+      "max_mutants": 60,
+      "workers": 2,
+      "clone_timeout_seconds": 240,
+      "baseline_timeout_seconds": 90,
+      "dry_run_timeout_seconds": 120,
+      "mutation_timeout_seconds": 300,
+      "thresholds": {
+        "max_baseline_seconds": 35,
+        "max_dry_run_seconds": 90,
+        "max_mutation_seconds": 300,
+        "max_peak_memory_mb": 1024,
+        "min_mutants_per_second": 0.3,
+        "min_executed_mutants": 30
+      },
+      "notes": "Scoped package inside a larger repo to keep the corpus representative without making the lane unbounded."
+    }
+  ]
+}
