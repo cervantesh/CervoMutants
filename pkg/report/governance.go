@@ -174,7 +174,7 @@ func buildQuarantineTemplates(result engine.RunResult, now time.Time) []Governan
 		entry := GovernanceQuarantineEntry{
 			MutantID:  mutant.MutantID,
 			Reason:    reason,
-			Owner:     "",
+			Owner:     ownershipRouteReviewOwner(mutant.Mutant.Ownership),
 			Issue:     "",
 			CreatedAt: now.Format(time.RFC3339),
 			ExpiresAt: governanceSuggestedExpiry(result.Quarantine, now),
@@ -227,6 +227,9 @@ func quarantineGuidance(policy engine.QuarantineStats, mutant engine.MutantResul
 	}
 	if mutant.FailureKind == "non_progress_loop" {
 		guidance = append(guidance, "confirm the timeout is reproducibly non-progress before activating quarantine")
+	}
+	if ownership := ownershipRouteSummary(mutant.Mutant.Ownership); ownership != "" {
+		guidance = append(guidance, "ownership_route="+ownership)
 	}
 	return guidance
 }

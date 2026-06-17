@@ -39,25 +39,31 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 			CoverageSource:  "coverage-mode",
 			Output:          "ok",
 			Mutant: engine.Mutant{
-				ID:                  "pkg/foo.go:10:conditionals-negation:eq-to-ne",
-				Package:             "pkg",
-				File:                "pkg/foo.go",
-				Line:                10,
-				Function:            "Check",
-				Operator:            "conditionals-negation",
-				Original:            "==",
-				Mutated:             "!=",
-				Diff:                "--- pkg/foo.go\n+++ pkg/foo.go\n",
-				Hint:                "Add an assertion for the opposite branch.",
-				Description:         "Changed == to != in Check.",
-				NearbyTests:         []string{"pkg/foo_test.go"},
-				EquivalentRisk:      "medium",
-				Recommendation:      "fast-ci",
-				CompileErrorRisk:    "low",
-				SemanticTags:        []string{"equivalence-risk-group", "sort-comparator-boundary"},
-				SemanticGroup:       "sort-boundary:pkg/foo.go:10",
-				GroupLabel:          "sort comparator boundary",
-				GroupReason:         "Boundary mutations inside sort comparator closures often collapse into one review decision.",
+				ID:               "pkg/foo.go:10:conditionals-negation:eq-to-ne",
+				Package:          "pkg",
+				File:             "pkg/foo.go",
+				Line:             10,
+				Function:         "Check",
+				Operator:         "conditionals-negation",
+				Original:         "==",
+				Mutated:          "!=",
+				Diff:             "--- pkg/foo.go\n+++ pkg/foo.go\n",
+				Hint:             "Add an assertion for the opposite branch.",
+				Description:      "Changed == to != in Check.",
+				NearbyTests:      []string{"pkg/foo_test.go"},
+				EquivalentRisk:   "medium",
+				Recommendation:   "fast-ci",
+				CompileErrorRisk: "low",
+				SemanticTags:     []string{"equivalence-risk-group", "sort-comparator-boundary"},
+				SemanticGroup:    "sort-boundary:pkg/foo.go:10",
+				GroupLabel:       "sort comparator boundary",
+				GroupReason:      "Boundary mutations inside sort comparator closures often collapse into one review decision.",
+				Ownership: &engine.OwnershipRoute{
+					Owner:   "pkg-owner",
+					Team:    "platform",
+					Contact: "@platform",
+					Rule:    "pkg-review",
+				},
 				SuggestedSkipReason: "review once for this semantic group before treating each survivor independently",
 				SuppressionAudit: []engine.SuppressionAudit{{
 					Name:          "audit-high-equivalent-risk",
@@ -114,7 +120,7 @@ func TestJSONReportSchemaV1IncludesActionableFields(t *testing.T) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	text := string(data)
-	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "expire_after", "require_owner", "require_issue", "max_renewals", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "test_recommendation", "candidate_tests", "suggested_assertions", "rationale", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
+	for _, want := range []string{"environment", "go_version", "temp_root", "warnings", "slice", "slice_by", "shard_index", "shard_count", "selected_files", "max_mutants_per_package", "isolation", "checkpoint", "fingerprint", "includes_file_digests", "failure_kind", "memory_peak_bytes", "baseline", "cache", "quarantine", "expire_after", "require_owner", "require_issue", "max_renewals", "history", "unified_diff", "status_reason", "selection_reason", "coverage_source", "selected_tests", "description", "nearby_tests", "equivalent_risk", "recommendation", "compile_error_risk", "semantic_tags", "semantic_group", "group_label", "group_reason", "ownership", "owner", "team", "contact", "rule", "suggested_skip_reason", "semantic_group_size", "semantic_group_statistics", "platform_sensitive_survivors", "non_progress_timeouts", "actionable", "raw_score", "actionable_score", "true_actionable_survivors", "equivalent_risk_survivors", "semantic_group_review_units", "collapsed_semantic_duplicates", "suppression_audit", "evidence_level", "survivor_rank", "rank_score", "rank_reason", "actionability", "suggested_test_scope", "test_recommendation", "candidate_tests", "suggested_assertions", "rationale", "nearest_tests", "previous_status", "first_seen", "survivor_age_runs", "operator_historical_yield"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("JSON report missing %q: %s", want, text)
 		}
@@ -217,7 +223,7 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 func TestSurvivorsReportIsRanked(t *testing.T) {
 	run := engine.RunResult{
 		Mutants: []engine.MutantResult{
-			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-value-assertions", CandidateTests: []string{"pkg/a_test.go"}}, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
+			{MutantID: "later", Status: engine.StatusSurvived, SurvivorRank: 2, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-value-assertions", CandidateTests: []string{"pkg/a_test.go"}}, Mutant: engine.Mutant{File: "a.go", Line: 2, Operator: "returns", Original: "x", Mutated: "y", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision.", Ownership: &engine.OwnershipRoute{Owner: "platform-owner", Team: "platform", Rule: "pkg-platform"}}},
 			{MutantID: "first", Status: engine.StatusSurvived, SurvivorRank: 1, RankReason: "risk=low", Actionability: "high", TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-branch-assertions", CandidateTests: []string{"pkg/b_test.go"}}, Mutant: engine.Mutant{File: "b.go", Line: 1, Operator: "boolean", Original: "true", Mutated: "false"}},
 			{MutantID: "again", Status: engine.StatusSurvived, SurvivorRank: 3, RankReason: "risk=high", Actionability: "medium", SuggestedSkipReason: "review once", SemanticGroupSize: 2, TestRecommendation: &engine.TestRecommendation{Strategy: "tighten-value-assertions", CandidateTests: []string{"pkg/c_test.go"}}, Mutant: engine.Mutant{File: "c.go", Line: 3, Operator: "returns", Original: "x", Mutated: "z", SemanticGroup: "sort:1", GroupLabel: "sort comparator boundary", GroupReason: "Boundary mutations inside sort comparator closures often collapse into one review decision."}},
 		},
@@ -232,6 +238,9 @@ func TestSurvivorsReportIsRanked(t *testing.T) {
 	}
 	if !strings.Contains(text, "next_test=pkg/b_test.go") || !strings.Contains(text, "strategy=tighten-branch-assertions") {
 		t.Fatalf("survivors report missing test recommendation context:\n%s", text)
+	}
+	if !strings.Contains(text, "ownership=owner=platform-owner team=platform rule=pkg-platform") {
+		t.Fatalf("survivors report missing ownership route:\n%s", text)
 	}
 }
 
@@ -262,6 +271,30 @@ func TestSurvivorsActionableOnlyFiltersAndCollapses(t *testing.T) {
 		if strings.Contains(text, avoid) {
 			t.Fatalf("actionable-only survivors should not include %q:\n%s", avoid, text)
 		}
+	}
+}
+
+func TestRecommendationsIncludeOwnershipRoute(t *testing.T) {
+	run := engine.RunResult{
+		Mutants: []engine.MutantResult{{
+			MutantID:           "owned",
+			Status:             engine.StatusSurvived,
+			SurvivorRank:       1,
+			Actionability:      "high",
+			SuggestedTestScope: "./pkg",
+			TestRecommendation: &engine.TestRecommendation{Priority: "high", Strategy: "tighten-branch-assertions"},
+			Mutant: engine.Mutant{
+				File:      "pkg/foo.go",
+				Line:      9,
+				Operator:  "logical",
+				Ownership: &engine.OwnershipRoute{Owner: "qa-owner", Team: "qa", Contact: "@qa", Rule: "pkg-qa"},
+			},
+		}},
+	}
+
+	text := TestRecommendations(run)
+	if !strings.Contains(text, "- Ownership: `owner=qa-owner team=qa contact=@qa rule=pkg-qa`") {
+		t.Fatalf("recommendations missing ownership route:\n%s", text)
 	}
 }
 
@@ -477,6 +510,7 @@ func TestGovernanceReviewExportsTemplatesAndPolicy(t *testing.T) {
 					Original:        "i++",
 					Mutated:         "i--",
 					NonProgressRisk: "high",
+					Ownership:       &engine.OwnershipRoute{Owner: "runtime-owner", Team: "runtime", Rule: "pkg-runtime"},
 				},
 			},
 			{
@@ -508,6 +542,9 @@ func TestGovernanceReviewExportsTemplatesAndPolicy(t *testing.T) {
 	if len(review.QuarantineTemplates) != 1 || review.QuarantineTemplates[0].MutantID != "timeout" {
 		t.Fatalf("unexpected quarantine templates: %+v", review.QuarantineTemplates)
 	}
+	if review.QuarantineTemplates[0].Template.Owner != "runtime-owner" {
+		t.Fatalf("ownership route should prefill quarantine owner: %+v", review.QuarantineTemplates[0].Template)
+	}
 	if review.QuarantineTemplates[0].Template.ExpiresAt != now.Add(30*24*time.Hour).Format(time.RFC3339) {
 		t.Fatalf("unexpected suggested quarantine expiry: %+v", review.QuarantineTemplates[0])
 	}
@@ -525,7 +562,7 @@ func TestGovernanceReviewExportsTemplatesAndPolicy(t *testing.T) {
 		}
 	}
 	markdown := GovernanceReviewMarkdown(run)
-	for _, want := range []string{"# CervoMutants Governance Review", "## Quarantine Templates", "## Suppression Templates", "timeout", "audit-high-equivalent-risk"} {
+	for _, want := range []string{"# CervoMutants Governance Review", "## Quarantine Templates", "## Suppression Templates", "timeout", "audit-high-equivalent-risk", "runtime-owner", "ownership_route=owner=runtime-owner team=runtime rule=pkg-runtime"} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("governance markdown missing %q:\n%s", want, markdown)
 		}
@@ -579,6 +616,7 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 					Original:       "<",
 					Mutated:        "<=",
 					EquivalentRisk: "high",
+					Ownership:      &engine.OwnershipRoute{Owner: "pkg-owner", Team: "platform", Contact: "@platform", Rule: "pkg-platform"},
 				},
 			},
 			{
@@ -622,6 +660,10 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 		`"uri": "pkg/foo.go"`,
 		`"mutant_id": "m-survived"`,
 		`"recommended_test": "pkg/foo_test.go"`,
+		`"owner": "pkg-owner"`,
+		`"team": "platform"`,
+		`"contact": "@platform"`,
+		`"ownership_rule": "pkg-platform"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("sarif output missing %q:\n%s", want, text)
@@ -634,8 +676,9 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 		"Raw score: **50.00%**",
 		"Actionable score: **66.67%**",
 		"Baseline regression: **true**",
-		"| Rank | Mutant | Actionability | Operator | Location | Next test | Skip guidance |",
+		"| Rank | Mutant | Actionability | Owner route | Operator | Location | Next test | Skip guidance |",
 		"`m-survived`",
+		"`owner=pkg-owner team=platform contact=@platform rule=pkg-platform`",
 		"pkg/foo_test.go: Start with `pkg/foo_test.go`",
 		"| timed out | 1 |",
 	} {
@@ -705,6 +748,7 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 					GroupLabel:     "sort comparator boundary",
 					Diff:           "<unsafe>",
 					Description:    "Changed < to <= in Check.",
+					Ownership:      &engine.OwnershipRoute{Owner: "pkg-owner", Team: "platform", Rule: "pkg-platform"},
 				},
 			},
 			{
@@ -739,6 +783,8 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 		`id="filter-search"`,
 		`id="filter-actionability"`,
 		`id="filter-group"`,
+		`id="filter-owner"`,
+		`id="filter-team"`,
 		`id="filter-history"`,
 		`id="filter-age"`,
 		`id="filter-timing"`,
@@ -748,12 +794,15 @@ func TestJUnitHTMLAndWriteAll(t *testing.T) {
 		`data-survivor="true"`,
 		`data-actionability="high"`,
 		`data-group="sort comparator boundary"`,
+		`data-owner="pkg-owner"`,
+		`data-team="platform"`,
 		"Actionable score",
 		"True actionable survivors",
 		"long-standing (5+ runs)",
 		"slow (&gt;2s)",
 		"next_test=pkg/foo_test.go",
 		"test_strategy=tighten-branch-assertions",
+		"ownership=owner=pkg-owner team=platform rule=pkg-platform",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html workbench missing %q:\n%s", want, html)

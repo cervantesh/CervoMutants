@@ -22,6 +22,9 @@ func TestRecommendations(result engine.RunResult) string {
 		fmt.Fprintf(&b, "- Location: `%s:%d`\n", mutant.Mutant.File, mutant.Mutant.Line)
 		fmt.Fprintf(&b, "- Operator: `%s`\n", mutant.Mutant.Operator)
 		fmt.Fprintf(&b, "- Actionability: `%s`\n", fallbackText(mutant.Actionability, "unknown"))
+		if ownership := ownershipRouteSummary(mutant.Mutant.Ownership); ownership != "" {
+			fmt.Fprintf(&b, "- Ownership: `%s`\n", ownership)
+		}
 		fmt.Fprintf(&b, "- Suggested scope: `%s`\n", fallbackText(mutant.SuggestedTestScope, "."))
 		if recommendation := mutant.TestRecommendation; recommendation != nil {
 			fmt.Fprintf(&b, "- Recommendation priority: `%s`\n", fallbackText(recommendation.Priority, "unknown"))

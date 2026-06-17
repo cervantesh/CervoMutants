@@ -230,7 +230,30 @@ func SurvivorsWithOptions(result engine.RunResult, opts SurvivorsOptions) string
 			fmt.Fprintf(&b, "Group %s (%d mutants): %s\n", label, groupSize, mutant.Mutant.GroupReason)
 			seenGroups[group] = true
 		}
-		fmt.Fprintf(&b, "#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s next_test=%s strategy=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)\n", mutant.SurvivorRank, mutant.RankScore, mutant.MutantID, mutant.Mutant.File, mutant.Mutant.Line, mutant.Mutant.Operator, mutant.Mutant.Original, mutant.Mutant.Mutated, mutant.Actionability, mutant.SuggestedTestScope, recommendationPrimaryTest(mutant.TestRecommendation), recommendationStrategy(mutant.TestRecommendation), mutant.Mutant.GroupLabel, mutant.SemanticGroupSize, mutant.Mutant.PlatformSensitive, mutant.SuggestedSkipReason, mutant.RankReason)
+		line := fmt.Sprintf("#%d %.1f %s %s:%d %s %s -> %s actionability=%s scope=%s next_test=%s strategy=%s group=%s group_size=%d platform_sensitive=%t skip=%s (%s)",
+			mutant.SurvivorRank,
+			mutant.RankScore,
+			mutant.MutantID,
+			mutant.Mutant.File,
+			mutant.Mutant.Line,
+			mutant.Mutant.Operator,
+			mutant.Mutant.Original,
+			mutant.Mutant.Mutated,
+			mutant.Actionability,
+			mutant.SuggestedTestScope,
+			recommendationPrimaryTest(mutant.TestRecommendation),
+			recommendationStrategy(mutant.TestRecommendation),
+			mutant.Mutant.GroupLabel,
+			mutant.SemanticGroupSize,
+			mutant.Mutant.PlatformSensitive,
+			mutant.SuggestedSkipReason,
+			mutant.RankReason,
+		)
+		if ownership := ownershipRouteSummary(mutant.Mutant.Ownership); ownership != "" {
+			line += " ownership=" + ownership
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
@@ -515,6 +538,9 @@ type htmlReportRow struct {
 	Actionable                bool
 	PlatformSensitive         bool
 	NonProgressRisk           string
+	Owner                     string
+	Team                      string
+	OwnershipSummary          string
 	Search                    string
 }
 
@@ -526,6 +552,7 @@ type htmlFilterOption struct {
 
 func HTML(result engine.RunResult) string {
 	rows := htmlRows(result)
+	hasOwnership := hasOwnershipRoutes(result.Mutants)
 	statusOptions := htmlFilterOptions(rows, func(row htmlReportRow) (string, string) {
 		return row.Status, strings.ReplaceAll(row.Status, "_", " ")
 	})
@@ -540,6 +567,12 @@ func HTML(result engine.RunResult) string {
 	})
 	groupOptions := htmlFilterOptions(rows, func(row htmlReportRow) (string, string) {
 		return row.GroupFilter, row.GroupLabel
+	})
+	ownerOptions := htmlFilterOptions(rows, func(row htmlReportRow) (string, string) {
+		return row.Owner, row.Owner
+	})
+	teamOptions := htmlFilterOptions(rows, func(row htmlReportRow) (string, string) {
+		return row.Team, row.Team
 	})
 	historyOptions := htmlFilterOptions(rows, func(row htmlReportRow) (string, string) {
 		return row.HistoryStatus, strings.ReplaceAll(row.HistoryStatus, "_", " ")
@@ -642,6 +675,10 @@ tbody tr:hover{background:#f8fafe}
 	writeHTMLSelect(&b, "filter-operator", "Operator", operatorOptions, "All operators")
 	writeHTMLSelect(&b, "filter-risk", "Equivalent risk", riskOptions, "All risk levels")
 	writeHTMLSelect(&b, "filter-group", "Semantic group", groupOptions, "All groups")
+	if hasOwnership {
+		writeHTMLSelect(&b, "filter-owner", "Owner", ownerOptions, "All owners")
+		writeHTMLSelect(&b, "filter-team", "Team", teamOptions, "All teams")
+	}
 	writeHTMLSelect(&b, "filter-history", "History", historyOptions, "All history")
 	writeHTMLSelect(&b, "filter-age", "Survivor age", ageOptions, "All age bands")
 	writeHTMLSelect(&b, "filter-timing", "Timing signal", timingOptions, "All timing signals")
@@ -654,7 +691,7 @@ tbody tr:hover{background:#f8fafe}
 	b.WriteString("</section>")
 	b.WriteString(`<section class="table-shell"><h2>Review queue</h2><table id="mutant-table"><thead><tr><th>Rank</th><th>Mutant</th><th>Status</th><th>Review signal</th><th>History and timing</th><th>Reason and skip guidance</th><th>Diff</th></tr></thead><tbody>`)
 	for _, row := range rows {
-		fmt.Fprintf(&b, `<tr data-mutant-row data-status="%s" data-survivor="%t" data-actionability="%s" data-operator="%s" data-risk="%s" data-group="%s" data-history="%s" data-age="%s" data-timing="%s" data-search="%s">`,
+		rowAttrs := fmt.Sprintf(`data-mutant-row data-status="%s" data-survivor="%t" data-actionability="%s" data-operator="%s" data-risk="%s" data-group="%s" data-history="%s" data-age="%s" data-timing="%s" data-search="%s"`,
 			html.EscapeString(row.Status),
 			row.Survivor,
 			html.EscapeString(row.Actionability),
@@ -666,6 +703,13 @@ tbody tr:hover{background:#f8fafe}
 			html.EscapeString(row.TimingBand),
 			html.EscapeString(row.Search),
 		)
+		if hasOwnership {
+			rowAttrs += fmt.Sprintf(` data-owner="%s" data-team="%s"`,
+				html.EscapeString(row.Owner),
+				html.EscapeString(row.Team),
+			)
+		}
+		fmt.Fprintf(&b, "<tr %s>", rowAttrs)
 		b.WriteString("<td>")
 		if row.SurvivorRank > 0 {
 			fmt.Fprintf(&b, `<span class="badge">#%d</span>`, row.SurvivorRank)
@@ -697,6 +741,9 @@ tbody tr:hover{background:#f8fafe}
 		}
 		if row.NonProgressRisk != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">non_progress_risk=%s</div>`, html.EscapeString(row.NonProgressRisk))
+		}
+		if row.OwnershipSummary != "" {
+			fmt.Fprintf(&b, `<div class="mutant-meta">ownership=%s</div>`, html.EscapeString(row.OwnershipSummary))
 		}
 		if row.SuggestedScope != "" {
 			fmt.Fprintf(&b, `<div class="mutant-meta">suggested_scope=%s</div>`, html.EscapeString(row.SuggestedScope))
@@ -748,7 +795,12 @@ tbody tr:hover{background:#f8fafe}
   const operator = document.getElementById('filter-operator');
   const risk = document.getElementById('filter-risk');
   const group = document.getElementById('filter-group');
-  const history = document.getElementById('filter-history');
+`)
+	if hasOwnership {
+		b.WriteString("  const owner = document.getElementById('filter-owner');\n")
+		b.WriteString("  const team = document.getElementById('filter-team');\n")
+	}
+	b.WriteString(`  const history = document.getElementById('filter-history');
   const age = document.getElementById('filter-age');
   const timing = document.getElementById('filter-timing');
   const survivorsOnly = document.getElementById('filter-survivors-only');
@@ -762,7 +814,15 @@ tbody tr:hover{background:#f8fafe}
   function matches(control, value) {
     return control.value === 'all' || control.value === value;
   }
-
+`)
+	if hasOwnership {
+		b.WriteString(`
+  function matchesOptional(control, value) {
+    return !control || matches(control, value || '');
+  }
+`)
+	}
+	b.WriteString(`
   function normalize(value) {
     return (value || '').toLowerCase();
   }
@@ -781,7 +841,12 @@ tbody tr:hover{background:#f8fafe}
         matches(operator, data.operator) &&
         matches(risk, data.risk) &&
         matches(group, data.group) &&
-        matches(history, data.history) &&
+`)
+	if hasOwnership {
+		b.WriteString("        matchesOptional(owner, data.owner) &&\n")
+		b.WriteString("        matchesOptional(team, data.team) &&\n")
+	}
+	b.WriteString(`        matches(history, data.history) &&
         matches(age, data.age) &&
         matches(timing, data.timing) &&
         (!survivorsOnly.checked || data.survivor === 'true') &&
@@ -805,16 +870,26 @@ tbody tr:hover{background:#f8fafe}
     visibleGroups.textContent = String(groups.size);
   }
 
-  [search, status, actionability, operator, risk, group, history, age, timing].forEach((control) => {
-    control.addEventListener('input', applyFilters);
+`)
+	if hasOwnership {
+		b.WriteString("  [search, status, actionability, operator, risk, group, owner, team, history, age, timing].filter(Boolean).forEach((control) => {\n")
+	} else {
+		b.WriteString("  [search, status, actionability, operator, risk, group, history, age, timing].forEach((control) => {\n")
+	}
+	b.WriteString(`    control.addEventListener('input', applyFilters);
     control.addEventListener('change', applyFilters);
   });
   survivorsOnly.addEventListener('change', applyFilters);
 
   reset.addEventListener('click', function() {
     search.value = '';
-    [status, actionability, operator, risk, group, history, age, timing].forEach((control) => {
-      control.value = 'all';
+`)
+	if hasOwnership {
+		b.WriteString("    [status, actionability, operator, risk, group, owner, team, history, age, timing].filter(Boolean).forEach((control) => {\n")
+	} else {
+		b.WriteString("    [status, actionability, operator, risk, group, history, age, timing].forEach((control) => {\n")
+	}
+	b.WriteString(`      control.value = 'all';
     });
     survivorsOnly.checked = true;
     applyFilters();
@@ -929,6 +1004,9 @@ func htmlRows(result engine.RunResult) []htmlReportRow {
 			Actionable:                isActionableSurvivor(result.Environment.OS, mutant),
 			PlatformSensitive:         mutant.Mutant.PlatformSensitive,
 			NonProgressRisk:           mutant.Mutant.NonProgressRisk,
+			Owner:                     ownershipRouteOwner(mutant.Mutant.Ownership),
+			Team:                      ownershipRouteTeam(mutant.Mutant.Ownership),
+			OwnershipSummary:          ownershipRouteSummary(mutant.Mutant.Ownership),
 			Search:                    htmlSearchText(mutant, groupLabel, historyStatus, ageLabel, timingLabel),
 		})
 	}
@@ -1030,6 +1108,9 @@ func htmlSearchText(mutant engine.MutantResult, groupLabel, historyStatus, ageLa
 		mutant.SuggestedTestScope,
 		mutant.SuggestedSkipReason,
 		strings.Join(mutant.NearestTests, " "),
+	}
+	if ownership := ownershipRouteSearch(mutant.Mutant.Ownership); ownership != "" {
+		parts = append(parts, ownership)
 	}
 	return strings.Join(parts, " ")
 }

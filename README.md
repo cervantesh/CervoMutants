@@ -92,8 +92,8 @@ Important files:
 | `.cervomut/reports/junit.xml` | CI test report format. |
 | `.cervomut/reports/index.html` | Filterable survivor review workbench with raw-report fallback, diff browsing, and client-side triage filters. |
 | `.cervomut/reports/mutation-report.sarif` | GitHub code-scanning friendly mutation findings. |
-| `.cervomut/reports/github-summary.md` | Compact GitHub step summary markdown for PR/Actions views. |
-| `.cervomut/reports/test-recommendations.md` | Actionable next-test queue derived from nearby tests, coverage source, operator family, and survivor history. |
+| `.cervomut/reports/github-summary.md` | Compact GitHub step summary markdown for PR/Actions views, including owner routing when configured. |
+| `.cervomut/reports/test-recommendations.md` | Actionable next-test queue derived from nearby tests, coverage source, operator family, survivor history, and optional owner routing. |
 | `.cervomut/reports/governance-review.md` | Human-readable suppression/quarantine review pack with generated templates and expiry guidance. |
 | `.cervomut/reports/governance-review.json` | Auditable structured export for suppression/quarantine review workflows. |
 | `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
@@ -288,6 +288,12 @@ quarantine:
 reports:
   formats: [summary, json, junit, html]
   actionable_only: false
+ownership:
+  default:
+    owner: ""
+    team: ""
+    contact: ""
+  rules: []
 ```
 
 Supported selection modes:
@@ -303,6 +309,29 @@ Supported isolation modes:
   copy. On Windows this mode uses a conservative worker cap and prefers a safe
   local temp root when the system `TEMP` is risky.
 - `overlay`: use Go's `-overlay` support to avoid copying the module.
+
+Optional ownership routing lets you map packages or files to the team that
+should review actionable survivors first:
+
+```yaml
+ownership:
+  default:
+    team: platform
+  rules:
+    - name: cli
+      file: cmd/**/*.go
+      owner: cli-owner
+      team: developer-experience
+      contact: "@dx"
+    - name: fs
+      package: ./pkg/fs
+      owner: fs-owner
+      team: storage
+```
+
+When configured, ownership metadata is copied into each mutant and surfaced in
+JSON, `report survivors`, the HTML workbench, test recommendations,
+governance-review templates, SARIF properties, and GitHub step summaries.
 
 ## Large-Repo Slicing
 

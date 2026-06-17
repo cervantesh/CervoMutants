@@ -283,6 +283,12 @@ quarantine:
   require_issue: true
   fail_on_expired: true
   max_renewals: 1
+ownership:
+  default:
+    owner: ""
+    team: ""
+    contact: ""
+  rules: []
 reports:
   output: .cervomut/reports
   formats: [summary, json, junit, html]

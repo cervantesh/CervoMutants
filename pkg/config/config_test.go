@@ -67,6 +67,15 @@ execution:
   checkpoint_includes: ["testdata/**", "golden/**"]
 selection:
   mode: coverage
+ownership:
+  default:
+    owner: qa
+  rules:
+    - name: pkg-review
+      package: ./pkg
+      owner: team-review
+      team: platform
+      contact: "@platform"
 reports:
   actionable_only: true
 ci:
@@ -97,6 +106,9 @@ limits:
 	}
 	if !cfg.Reports.ActionableOnly {
 		t.Fatalf("reports actionable_only not loaded: %+v", cfg.Reports)
+	}
+	if cfg.Ownership.Default.Owner != "qa" || len(cfg.Ownership.Rules) != 1 || cfg.Ownership.Rules[0].Team != "platform" {
+		t.Fatalf("ownership not loaded: %+v", cfg.Ownership)
 	}
 	if cfg.Execution.TempRoot != "C:/cervomut-tmp" {
 		t.Fatalf("temp_root not loaded: %+v", cfg.Execution)
@@ -240,6 +252,30 @@ func TestValidateRejectsUnauditableSuppressionRules(t *testing.T) {
 	cfg.Suppression.Rules = []SuppressionRule{{Name: "confirmed-suppress", Action: "suppress", Reason: "reviewed equivalent", Evidence: "confirmed", Reviewers: 1}}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate rejected audited suppress rule: %v", err)
+	}
+
+	cfg = Defaults()
+	cfg.Ownership.Rules = []OwnershipRule{{Name: "", Package: "./pkg", Owner: "team-a"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted ownership rule without name")
+	}
+
+	cfg = Defaults()
+	cfg.Ownership.Rules = []OwnershipRule{{Name: "no-selector", Owner: "team-a"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted ownership rule without selector")
+	}
+
+	cfg = Defaults()
+	cfg.Ownership.Rules = []OwnershipRule{{Name: "no-target", Package: "./pkg"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted ownership rule without owner/team/contact")
+	}
+
+	cfg = Defaults()
+	cfg.Ownership.Rules = []OwnershipRule{{Name: "ok", Package: "./pkg", Team: "platform"}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected ownership rule: %v", err)
 	}
 }
 

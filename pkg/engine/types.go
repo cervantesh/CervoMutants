@@ -48,8 +48,16 @@ type Mutant struct {
 	GroupReason         string             `json:"group_reason,omitempty"`
 	PlatformSensitive   bool               `json:"platform_sensitive,omitempty"`
 	NonProgressRisk     string             `json:"non_progress_risk,omitempty"`
+	Ownership           *OwnershipRoute    `json:"ownership,omitempty"`
 	SuggestedSkipReason string             `json:"suggested_skip_reason,omitempty"`
 	SuppressionAudit    []SuppressionAudit `json:"suppression_audit,omitempty"`
+}
+
+type OwnershipRoute struct {
+	Owner   string `json:"owner,omitempty"`
+	Team    string `json:"team,omitempty"`
+	Contact string `json:"contact,omitempty"`
+	Rule    string `json:"rule,omitempty"`
 }
 
 type SuppressionAudit struct {
