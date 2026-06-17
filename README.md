@@ -87,6 +87,7 @@ Important files:
 | `.cervomut/reports/summary.txt` | Human-readable run summary. |
 | `.cervomut/reports/junit.xml` | CI test report format. |
 | `.cervomut/reports/index.html` | Human report for browsing survivors and diffs. |
+| `.cervomut/reports/survivors-actionable.txt` | Optional actionable-only survivor review view. |
 | `.cervomut/reports/partial-mutation-report.json` | Checkpoint report for timeout/interrupted runs. |
 | `.cervomut/reports/partial-summary.json` | Small checkpoint summary. |
 | `.cervomut/history.json` | Historical survivor/cache signal. |
@@ -156,6 +157,7 @@ More detail: [docs/policy-presets.md](docs/policy-presets.md).
 | `cervomut baseline compare` | Compare current report to baseline. |
 | `cervomut report summary --out DIR` | Print report summary. |
 | `cervomut report survivors --out DIR` | Print ranked surviving mutants. |
+| `cervomut report survivors --out DIR --actionable-only` | Print only the actionable survivor review set, with equivalent/platform-sensitive duplicates collapsed. |
 | `cervomut report open` | Open the HTML report. |
 | `cervomut show MUTANT_ID --out DIR` | Show a mutant diff/context. |
 | `cervomut explain MUTANT_ID --format text\|json` | Explain what a survivor means. |
@@ -169,6 +171,7 @@ Common run flags:
 cervomut run ./... `
   --policy ci-fast `
   --budget 10m `
+  --actionable-only `
   --max-mutants 100 `
   --slice-by package `
   --shard 1/4 `
@@ -184,6 +187,11 @@ cervomut run ./... `
   --max-process-memory-mb 6144 `
   --out .cervomut/reports
 ```
+
+`--actionable-only` is a review view, not a suppression mode. Raw JSON, HTML,
+and the normal `survivors.txt` remain complete; the actionable projection is
+printed to stdout for `run`, available in `report survivors --actionable-only`,
+and written to `.cervomut/reports/survivors-actionable.txt`.
 
 ## Configuration
 
@@ -229,6 +237,7 @@ quarantine:
   fail_on_expired: true
 reports:
   formats: [summary, json, junit, html]
+  actionable_only: false
 ```
 
 Supported selection modes:
