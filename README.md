@@ -421,3 +421,11 @@ Latest local Sonar pass after issue #31:
 - Normalize external comparisons before drawing conclusions.
 - Make JSON stable enough for CI and AI agents.
 
+## License And Trademarks
+
+The source code in this repository is licensed under Apache License 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+The CervoMutants name, logos, and project branding are reserved and are not
+granted under the code license. See [TRADEMARKS.md](TRADEMARKS.md).
+
