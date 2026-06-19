@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -51,6 +52,7 @@ func cmdVerifyRelease(args []string) error {
 	notesPath := fs.String("notes", filepath.Join("dist", "release-notes.md"), "path to generated release notes")
 	upgradeDir := fs.String("upgrade-dir", filepath.Join("docs", "upgrade-notes"), "directory containing per-version upgrade notes")
 	manifestOut := fs.String("manifest-out", "", "optional JSON manifest output path")
+	repoRoot := fs.String("repo-root", ".", "repository root for release-alignment checks")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -66,6 +68,9 @@ func cmdVerifyRelease(args []string) error {
 		return err
 	}
 	if err := verifyReleaseNotes(*notesPath, *version); err != nil {
+		return err
+	}
+	if err := verifyReleaseAlignment(*repoRoot, *version); err != nil {
 		return err
 	}
 
@@ -198,6 +203,115 @@ func verifyReleaseNotes(path, version string) error {
 		}
 	}
 	return nil
+}
+
+type externalWaveManifest struct {
+	InstallPath string `json:"install_path"`
+	ActionRef   string `json:"action_ref"`
+}
+
+var versionRefPattern = regexp.MustCompile(`\bv\d+\.\d+\.\d+\b`)
+
+func verifyReleaseAlignment(repoRoot, version string) error {
+	root := resolveRepoPath(repoRoot, ".")
+	manifestPath := resolveRepoPath(root, filepath.Join("docs", "evaluations", fmt.Sprintf("external-github-action-wave-%s-candidates.json", version)))
+	if err := verifyExternalWaveManifest(manifestPath, version); err != nil {
+		return err
+	}
+	manifestDefault, err := filepath.Rel(root, manifestPath)
+	if err != nil {
+		return err
+	}
+	if err := verifyExternalWaveWorkflowDefault(resolveRepoPath(root, filepath.Join(".github", "workflows", "external-action-wave.yml")), filepath.ToSlash(manifestDefault)); err != nil {
+		return err
+	}
+	for _, path := range []string{
+		filepath.Join("docs", "install.md"),
+		filepath.Join("docs", "github-action.md"),
+		filepath.Join("docs", "adoption-guide.md"),
+		filepath.Join("docs", "rollout-playbooks.md"),
+		filepath.Join(".github", "ISSUE_TEMPLATE", "adoption-feedback.yml"),
+	} {
+		if err := verifyVersionPinnedDoc(resolveRepoPath(root, path), version); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveRepoPath(root, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(root, path)
+}
+
+func verifyExternalWaveManifest(path, version string) error {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read released hosted-wave manifest %s: %w", filepath.ToSlash(path), err)
+	}
+	var manifest externalWaveManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return fmt.Errorf("parse released hosted-wave manifest %s: %w", filepath.ToSlash(path), err)
+	}
+	wantInstall := "github-action@" + version
+	if manifest.InstallPath != wantInstall {
+		return fmt.Errorf("%s install_path = %q, want %q", filepath.ToSlash(path), manifest.InstallPath, wantInstall)
+	}
+	if manifest.ActionRef != version {
+		return fmt.Errorf("%s action_ref = %q, want %q", filepath.ToSlash(path), manifest.ActionRef, version)
+	}
+	return nil
+}
+
+func verifyExternalWaveWorkflowDefault(path, want string) error {
+	workflow, err := loadWorkflow(path)
+	if err != nil {
+		return err
+	}
+	input, ok := workflow.On.WorkflowDispatch.Inputs["manifest_path"]
+	if !ok {
+		return fmt.Errorf("%s must declare workflow_dispatch input %q", filepath.ToSlash(path), "manifest_path")
+	}
+	if input.Default != want {
+		return fmt.Errorf("%s workflow_dispatch manifest_path default = %q, want %q", filepath.ToSlash(path), input.Default, want)
+	}
+	return nil
+}
+
+func verifyVersionPinnedDoc(path, version string) error {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read version-pinned doc %s: %w", filepath.ToSlash(path), err)
+	}
+	matches := uniqueStrings(versionRefPattern.FindAllString(string(body), -1))
+	if len(matches) == 0 {
+		return fmt.Errorf("%s must reference release %q", filepath.ToSlash(path), version)
+	}
+	for _, match := range matches {
+		if match != version {
+			return fmt.Errorf("%s references release %q, want only %q", filepath.ToSlash(path), match, version)
+		}
+	}
+	return nil
+}
+
+func uniqueStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	var unique []string
+	for _, item := range items {
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		unique = append(unique, item)
+	}
+	sort.Strings(unique)
+	return unique
 }
 
 func loadChecksums(path string) (map[string]string, error) {

@@ -126,7 +126,20 @@ func stripTopHeading(body string) string {
 }
 
 type workflowDoc struct {
+	On   workflowOn             `yaml:"on"`
 	Jobs map[string]workflowJob `yaml:"jobs"`
+}
+
+type workflowOn struct {
+	WorkflowDispatch workflowDispatch `yaml:"workflow_dispatch"`
+}
+
+type workflowDispatch struct {
+	Inputs map[string]workflowInput `yaml:"inputs"`
+}
+
+type workflowInput struct {
+	Default string `yaml:"default"`
 }
 
 type workflowJob struct {
