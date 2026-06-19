@@ -89,3 +89,45 @@ Use this rollback posture:
    operator-facing rollback instruction set.
 
 The goal is to make rollback explicit and auditable, not a tribal-memory step.
+
+## Release-State Drift Check
+
+After a public release is published, do one short release-state drift pass so
+the live guidance stays aligned with the latest tag.
+
+### Live surfaces to check
+
+These should reflect the latest public release when they describe the current
+install, CI, or maturity state:
+
+- [docs/install.md](install.md)
+- [docs/github-action.md](github-action.md)
+- [docs/project-maturity-assessment.md](project-maturity-assessment.md)
+- [README.md](../README.md) when it contains current release guidance
+- [Adoption feedback issue template](../.github/ISSUE_TEMPLATE/adoption-feedback.yml) when it shows example version placeholders
+
+### Historical surfaces to leave dated
+
+These are evidence artifacts or versioned notes. Do not rewrite them just to
+mirror the newest tag unless a brief clarifying note is necessary:
+
+- [docs/evaluations/](evaluations/)
+- [docs/upgrade-notes/](upgrade-notes/)
+- [docs/distribution-audit.md](distribution-audit.md)
+- dated release or validation notes under `docs/`
+
+### Minimum post-release checklist
+
+1. Confirm the latest tag and assets with `gh release view <tag>`.
+2. Check live install examples for the current tag or the intended `@latest`
+   posture.
+3. Check GitHub Action examples and versioning notes for the latest supported
+   tag.
+4. Check any current maturity or release-state guidance for stale references to
+   older "latest release" claims or already-closed active follow-ups.
+5. Leave dated evidence artifacts alone unless readers would otherwise confuse
+   them for current release guidance.
+
+This check is intentionally small. The goal is to catch obvious live-doc drift
+early without rewriting historical evidence or turning release publication into
+an unbounded documentation sweep.
