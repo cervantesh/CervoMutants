@@ -37,6 +37,7 @@ normal shell steps around the CLI.
   if: always()
   uses: actions/upload-artifact@v4
   with:
+    include-hidden-files: true
     name: cervomut-pr
     path: ${{ steps.cervomut.outputs.report-dir }}
 ```
@@ -128,6 +129,11 @@ explicit override.
 The action also exposes `report-dir` as a resolved absolute output path so
 follow-up artifact or SARIF steps can reference the chosen output directory
 consistently even when `working-directory` is a subdirectory.
+
+When that directory lives under `.cervomut/...`, set
+`include-hidden-files: true` on `actions/upload-artifact@v4`; otherwise GitHub
+skips hidden report folders and the upload completes without the expected JSON,
+JUnit, HTML, or SARIF files.
 
 ## Versioning Note
 
