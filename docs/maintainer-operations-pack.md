@@ -110,6 +110,16 @@ If the same adoption finding repeats, maintainers should link it into
 [docs/evaluations/follow-up-ledger.md](evaluations/follow-up-ledger.md) so it
 turns into tracked product signal rather than scattered anecdotes.
 
+When an adoption issue is taken outward into an upstream repository or public
+discussion, maintainers should also record in the issue body:
+
+- the upstream issue/discussion URL
+- the current external response status
+- the last checked date for that response state
+
+That turns response-follow-up into a durable operating loop instead of a later
+forensic audit.
+
 ## Triage Decision Flow
 
 Use this flow for first-pass maintainer triage:
@@ -122,9 +132,12 @@ Use this flow for first-pass maintainer triage:
    unsupported workflow.
 5. Record the repository profile, adoption stage, primary blocker, and outcome
    type from the issue form so the feedback remains aggregatable.
-6. If the same friction already exists in docs, point to the current guidance.
-7. If the docs are insufficient, file or link a documentation follow-up.
-8. If the behavior contradicts supported docs or compatibility claims, file or
+6. If outreach happened outside this repository, update the upstream thread,
+   response status, and last-checked fields before closing or reclassifying the
+   issue.
+7. If the same friction already exists in docs, point to the current guidance.
+8. If the docs are insufficient, file or link a documentation follow-up.
+9. If the behavior contradicts supported docs or compatibility claims, file or
    link a product or code follow-up.
 
 ## Report Artifact Cheat Sheet

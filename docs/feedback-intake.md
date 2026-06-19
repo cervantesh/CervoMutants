@@ -21,7 +21,8 @@ comparable across repositories and releases.
 
 It now also captures structured rollout dimensions such as repository profile,
 adoption stage, install path, closest rollout playbook, primary blocker class,
-and the suggested outcome. Those fields are the basis for release-level
+the suggested outcome, and optional upstream-response state. Those fields are
+the basis for release-level
 adoption analytics rather than a maintainer trying to reconstruct patterns from
 free-text issues later.
 
@@ -36,9 +37,29 @@ A useful adoption-feedback issue should include:
 - concrete notes about survivor usefulness or noise
 - runtime or resource observations
 - rollout friction and artifact links
+- when relevant, whether an upstream issue/discussion exists, the current
+  external response status, and when that status was last checked
 
 Short unsupported opinions like "too noisy" or "too slow" are not enough on
 their own. The goal is a repeatable product signal, not just sentiment.
+
+## Proxy Versus Direct Adoption Evidence
+
+An adoption-feedback issue in this repository is useful even when it is created
+by a maintainer from a released validation wave. That is still better than
+leaving the evidence only in private notes or a one-off study.
+
+But maintainers should not confuse those proxy issues with direct external
+maintainer engagement.
+
+Use the optional upstream-response fields in the issue form to record:
+
+- whether an upstream issue or discussion was opened;
+- whether an external maintainer has replied; and
+- when that response state was last checked.
+
+That keeps the difference between "feedback artifact exists" and "someone
+outside this repository engaged with it" explicit instead of inferred later.
 
 ## Triage Expectations
 
@@ -49,6 +70,15 @@ outcomes:
 - needs a documentation or workflow follow-up
 - needs a product or code follow-up
 - needs a narrower reproduction before acting
+
+When an issue has a linked upstream thread or public adopter discussion,
+maintainers should also keep the external-response fields current enough to
+show whether the finding produced:
+
+- no outward contact yet
+- outward contact with no response
+- follow-up questions or acknowledgement
+- explicit rejection or narrowing
 
 If the same finding repeats, link it from
 [docs/evaluations/follow-up-ledger.md](evaluations/follow-up-ledger.md) so it

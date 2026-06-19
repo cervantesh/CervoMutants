@@ -144,6 +144,36 @@ body:
       placeholder: Needed one extra exclusion rule for generated mocks; otherwise first run was straightforward.
     validations:
       required: true
+  - type: input
+    id: upstream_thread
+    attributes:
+      label: Upstream issue or discussion
+      description: Optional link to an external repository issue, discussion, or thread created from this adoption feedback.
+      placeholder: https://github.com/example/service/issues/123
+    validations:
+      required: false
+  - type: dropdown
+    id: external_response_status
+    attributes:
+      label: External response status
+      description: Optional current state of maintainer engagement outside this repository.
+      options:
+        - No upstream thread opened
+        - Upstream thread opened, no maintainer response yet
+        - Maintainer replied or asked follow-up questions
+        - Maintainer acknowledged and accepted the finding
+        - Maintainer rejected, narrowed, or closed the upstream thread
+        - Response state not checked recently
+    validations:
+      required: false
+  - type: input
+    id: external_response_last_checked
+    attributes:
+      label: External response last checked
+      description: Optional date or timestamp for the most recent upstream-response check.
+      placeholder: 2026-06-19
+    validations:
+      required: false
   - type: dropdown
     id: primary_blocker
     attributes:

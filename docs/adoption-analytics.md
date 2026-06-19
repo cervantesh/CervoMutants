@@ -24,6 +24,8 @@ Each issue should capture enough structure to answer:
 - which install path and environment were used
 - what the primary friction or blocker actually was
 - whether the outcome points to docs, workflow, or product work
+- whether the finding ever reached an upstream maintainer and what the current
+  response state is
 
 That gives maintainers something they can aggregate later without inventing a
 parallel spreadsheet or private tracker.
@@ -45,6 +47,8 @@ Every adoption-feedback issue should preserve these dimensions explicitly:
   CI/install/platform, governance/history, or unsupported workflow
 - observed outcome: docs gap, workflow friction, product defect, or evidence of
   a known limit
+- upstream response linkage: linked upstream issue/discussion, current external
+  response status, and last checked date when that state is being tracked
 
 Those dimensions should come from the issue itself, not from later maintainer
 guesswork.
@@ -69,6 +73,12 @@ The default metrics to derive from accumulated adoption-feedback issues are:
   guidance versus code changes
 - unsupported-workflow rate: how often adopters are trying to use the product
   outside its public support boundary
+- upstream-thread creation rate: how often real rollout findings are carried
+  into an outward maintainer-facing thread
+- direct-response rate: how often those outward threads receive any public
+  maintainer response
+- silence-pattern duration: how often maintainers revisit an outward thread and
+  still find no response
 
 These are release-planning metrics, not marketing metrics.
 
@@ -85,7 +95,10 @@ For every adoption-feedback issue:
    - a documentation follow-up
    - a product or code follow-up
    - an unsupported workflow
-4. link repeated findings into
+4. if the finding is taken upstream or discussed with an external maintainer,
+   record the upstream thread link, current response state, and last checked
+   date in the issue body
+5. link repeated findings into
    [docs/evaluations/follow-up-ledger.md](evaluations/follow-up-ledger.md)
 
 ### Release Loop
@@ -99,6 +112,8 @@ the previous release and summarize:
 - docs clarifications that should ship with the release
 - product issues that should remain explicitly narrowed rather than silently
   implied as fixed
+- how many issues gained an upstream thread
+- how many outward threads received maintainer response versus remaining silent
 
 That review belongs in release preparation, not as an afterthought.
 
