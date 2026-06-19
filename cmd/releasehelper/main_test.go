@@ -88,7 +88,7 @@ func TestCmdVerifyCompatAcceptsAlignedFiles(t *testing.T) {
   core-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.6"
   compatibility-smoke:
@@ -123,7 +123,7 @@ func TestCmdVerifyCompatAcceptsAlignedFiles(t *testing.T) {
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.6"
       - run: go run ./cmd/releasehelper verify-compat
@@ -154,7 +154,7 @@ func TestCmdVerifyCompatRejectsMismatchedWorkflowVersion(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".github", "workflows", "test.yml"), `jobs:
   core-tests:
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.24.9"
   compatibility-smoke:
@@ -187,7 +187,7 @@ func TestCmdVerifyCompatRejectsMismatchedWorkflowVersion(t *testing.T) {
             go-version: "1.25.6"
   publish:
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.6"
       - run: go run ./cmd/releasehelper verify-release
@@ -218,7 +218,7 @@ func TestCmdVerifyCompatRejectsMissingInstallGate(t *testing.T) {
   core-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.6"
   compatibility-smoke:
@@ -253,7 +253,7 @@ func TestCmdVerifyCompatRejectsMissingInstallGate(t *testing.T) {
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.6"
       - run: go run ./cmd/releasehelper verify-compat

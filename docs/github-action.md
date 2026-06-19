@@ -24,7 +24,7 @@ normal shell steps around the CLI.
 ## Basic Pull Request Lane
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 - name: Run CervoMutants
   id: cervomut
   uses: cervantesh/cervo-mutants@main
@@ -45,7 +45,7 @@ normal shell steps around the CLI.
 ## Coverage-Aware Service Lane
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 - name: Run CervoMutants
   uses: cervantesh/cervo-mutants@main
   with:
@@ -59,7 +59,7 @@ normal shell steps around the CLI.
 ## Nightly Lane With HTML And SARIF
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 - name: Run CervoMutants
   uses: cervantesh/cervo-mutants@main
   with:
@@ -87,7 +87,7 @@ strategy:
     shard: ["1/4", "2/4", "3/4", "4/4"]
 
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
   - name: Run shard
     uses: cervantesh/cervo-mutants@main
     with:

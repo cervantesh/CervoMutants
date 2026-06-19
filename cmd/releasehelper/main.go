@@ -150,6 +150,8 @@ type workflowStep struct {
 	With map[string]string `yaml:"with"`
 }
 
+const setupGoAction = "actions/setup-go@v6"
+
 func cmdVerifyCompat(args []string) error {
 	fs := flag.NewFlagSet("verify-compat", flag.ContinueOnError)
 	goModPath := fs.String("go-mod", compatmatrix.GoModPath, "path to go.mod")
@@ -296,17 +298,17 @@ func verifySetupGoVersion(workflow workflowDoc, jobName, want string) error {
 		return fmt.Errorf("workflow is missing job %q", jobName)
 	}
 	for _, step := range job.Steps {
-		if step.Uses == "actions/setup-go@v5" {
+		if step.Uses == setupGoAction {
 			if want == "" {
 				return nil
 			}
 			if step.With["go-version"] != want {
-				return fmt.Errorf("job %q uses actions/setup-go@v5 with go-version %q, want %q", jobName, step.With["go-version"], want)
+				return fmt.Errorf("job %q uses %s with go-version %q, want %q", jobName, setupGoAction, step.With["go-version"], want)
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("job %q is missing actions/setup-go@v5", jobName)
+	return fmt.Errorf("job %q is missing %s", jobName, setupGoAction)
 }
 
 func verifyActionInputVersion(workflow workflowDoc, jobName, stepName, want string) error {
