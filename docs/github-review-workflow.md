@@ -151,13 +151,19 @@ The intended workflow is:
 1. wait for Codex to react or comment on the current head
 2. address the feedback or explicitly document why it is being declined
 3. resolve the Codex review conversation in GitHub
-4. merge only after `codex-review-gate` is green
+4. re-run `codex-review-gate` after resolving the conversation
+5. merge only after `codex-review-gate` is green
 
 If Codex leaves a no-finding thumbs-up reaction, the gate accepts that as the
 review response for the current head commit.
 
 If Codex leaves a review comment, resolving the conversation is required after
 the feedback is handled. Do not merge while the thread is still open.
+
+GitHub Actions does not expose a `pull_request_review_thread` workflow trigger,
+so resolving a review thread does not automatically start a fresh gate run.
+After you resolve the Codex conversation, re-run `codex-review-gate` in the PR
+checks UI if a new review or review-comment event did not already retrigger it.
 
 ## Baseline Rule
 

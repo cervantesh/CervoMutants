@@ -17,10 +17,6 @@ on:
       - created
       - edited
       - deleted
-  pull_request_review_thread:
-    types:
-      - resolved
-      - unresolved
 
 permissions:
   actions: read
