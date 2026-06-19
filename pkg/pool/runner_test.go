@@ -150,16 +150,13 @@ func TestRealCommandRunnerTimeoutAndCancellation(t *testing.T) {
 
 	t.Run("canceled", func(t *testing.T) {
 		fixture := testharness.NewDir(t)
-		path, args := helperProcessCommand("sleep", "500ms")
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		spec := CommandSpec{
-			Path:       path,
-			Args:       args,
+			Path:       filepath.Join(fixture.Root, "missing-binary.exe"),
 			LogPath:    fixture.Path("logs", "cancel.log"),
 			Timeout:    time.Second,
 			MemoryPoll: 10 * time.Millisecond,
-			Env:        helperProcessEnv(),
 		}
 		result, err := RealCommandRunner{}.Run(ctx, spec)
 		if err != nil {
