@@ -153,6 +153,22 @@ runs:
       shell: pwsh
       working-directory: ${{ inputs.working-directory }}
       run: |
+        function Invoke-ActionHelper([string[]]$helperArgs) {
+          if ([string]::IsNullOrWhiteSpace($env:GITHUB_ACTION_PATH)) {
+            throw "GITHUB_ACTION_PATH is not available for the composite action helper."
+          }
+          Push-Location $env:GITHUB_ACTION_PATH
+          try {
+            $output = & go run ./cmd/actionhelper @helperArgs
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            return $output
+          } finally {
+            Pop-Location
+          }
+        }
+
         function Add-ArgPair([ref]$ArgsRef, [string]$Flag, [string]$Value) {
           if (-not [string]::IsNullOrWhiteSpace($Value)) {
             $ArgsRef.Value += @($Flag, $Value)
