@@ -46,24 +46,31 @@ type adoptionFeedbackIssue struct {
 	HasUpstreamThread         bool     `json:"has_upstream_thread"`
 	ExternalResponseStatus    string   `json:"external_response_status"`
 	ExternalResponseLastCheck string   `json:"external_response_last_checked,omitempty"`
+	NeedsResponseFollowUp     bool     `json:"needs_response_follow_up,omitempty"`
+	ResponseMetadataWarnings  []string `json:"response_metadata_warnings,omitempty"`
 	MissingSections           []string `json:"missing_sections,omitempty"`
 }
 
 type adoptionAggregate struct {
-	TotalIssues                  int            `json:"total_issues"`
-	OpenIssues                   int            `json:"open_issues"`
-	ClosedIssues                 int            `json:"closed_issues"`
-	RepositoryProfiles           map[string]int `json:"repository_profiles"`
-	AdoptionStages               map[string]int `json:"adoption_stages"`
-	InstallPaths                 map[string]int `json:"install_paths"`
-	PrimaryBlockerClasses        map[string]int `json:"primary_blocker_classes"`
-	SuggestedOutcomes            map[string]int `json:"suggested_outcomes"`
-	ExternalResponseStatuses     map[string]int `json:"external_response_statuses"`
-	MissingSectionCounts         map[string]int `json:"missing_section_counts"`
-	IssuesWithUpstreamThread     int            `json:"issues_with_upstream_thread"`
-	IssuesWithoutUpstreamThread  int            `json:"issues_without_upstream_thread"`
-	IssuesWithMaintainerReply    int            `json:"issues_with_maintainer_reply"`
-	IssuesWithoutMaintainerReply int            `json:"issues_without_maintainer_reply"`
+	TotalIssues                        int            `json:"total_issues"`
+	OpenIssues                         int            `json:"open_issues"`
+	ClosedIssues                       int            `json:"closed_issues"`
+	RepositoryProfiles                 map[string]int `json:"repository_profiles"`
+	AdoptionStages                     map[string]int `json:"adoption_stages"`
+	InstallPaths                       map[string]int `json:"install_paths"`
+	PrimaryBlockerClasses              map[string]int `json:"primary_blocker_classes"`
+	SuggestedOutcomes                  map[string]int `json:"suggested_outcomes"`
+	ExternalResponseStatuses           map[string]int `json:"external_response_statuses"`
+	MissingSectionCounts               map[string]int `json:"missing_section_counts"`
+	ResponseMetadataWarningCount       map[string]int `json:"response_metadata_warning_counts"`
+	IssuesWithUpstreamThread           int            `json:"issues_with_upstream_thread"`
+	IssuesWithoutUpstreamThread        int            `json:"issues_without_upstream_thread"`
+	IssuesWithMaintainerReply          int            `json:"issues_with_maintainer_reply"`
+	IssuesWithoutMaintainerReply       int            `json:"issues_without_maintainer_reply"`
+	IssuesNeedingResponseFollowUp      int            `json:"issues_needing_response_follow_up"`
+	IssuesWithStaleResponseState       int            `json:"issues_with_stale_response_state"`
+	IssuesMissingResponseLastCheck     int            `json:"issues_missing_response_last_checked"`
+	IssuesWithResponseMetadataWarnings int            `json:"issues_with_response_metadata_warnings"`
 }
 
 var adoptionIssueFields = []struct {
@@ -172,13 +179,14 @@ func buildAdoptionSummary(issuesPath, trackingIssue, generatedAt string) (adopti
 		GeneratedAt:   generatedAt,
 		Issues:        issues,
 		Aggregate: adoptionAggregate{
-			RepositoryProfiles:       map[string]int{},
-			AdoptionStages:           map[string]int{},
-			InstallPaths:             map[string]int{},
-			PrimaryBlockerClasses:    map[string]int{},
-			SuggestedOutcomes:        map[string]int{},
-			ExternalResponseStatuses: map[string]int{},
-			MissingSectionCounts:     map[string]int{},
+			RepositoryProfiles:           map[string]int{},
+			AdoptionStages:               map[string]int{},
+			InstallPaths:                 map[string]int{},
+			PrimaryBlockerClasses:        map[string]int{},
+			SuggestedOutcomes:            map[string]int{},
+			ExternalResponseStatuses:     map[string]int{},
+			MissingSectionCounts:         map[string]int{},
+			ResponseMetadataWarningCount: map[string]int{},
 		},
 	}
 	summary.Aggregate.TotalIssues = len(issues)
@@ -197,6 +205,9 @@ func buildAdoptionSummary(issuesPath, trackingIssue, generatedAt string) (adopti
 		for _, missing := range issue.MissingSections {
 			summary.Aggregate.MissingSectionCounts[missing]++
 		}
+		for _, warning := range issue.ResponseMetadataWarnings {
+			summary.Aggregate.ResponseMetadataWarningCount[warning]++
+		}
 		if issue.HasUpstreamThread {
 			summary.Aggregate.IssuesWithUpstreamThread++
 		} else {
@@ -206,6 +217,18 @@ func buildAdoptionSummary(issuesPath, trackingIssue, generatedAt string) (adopti
 			summary.Aggregate.IssuesWithMaintainerReply++
 		} else {
 			summary.Aggregate.IssuesWithoutMaintainerReply++
+		}
+		if issue.NeedsResponseFollowUp {
+			summary.Aggregate.IssuesNeedingResponseFollowUp++
+		}
+		if externalResponseStateIsStale(issue.ExternalResponseStatus) {
+			summary.Aggregate.IssuesWithStaleResponseState++
+		}
+		if issueMissingResponseLastChecked(issue) {
+			summary.Aggregate.IssuesMissingResponseLastCheck++
+		}
+		if len(issue.ResponseMetadataWarnings) > 0 {
+			summary.Aggregate.IssuesWithResponseMetadataWarnings++
 		}
 	}
 	return summary, nil
@@ -238,6 +261,8 @@ func parseAdoptionFeedbackIssue(raw githubIssueExport) adoptionFeedbackIssue {
 		}
 		field.assignValue(&issue, value)
 	}
+	issue.NeedsResponseFollowUp = issueNeedsResponseFollowUp(issue)
+	issue.ResponseMetadataWarnings = responseMetadataWarnings(issue)
 	return issue
 }
 
@@ -282,8 +307,15 @@ func renderAdoptionSummaryMarkdown(summary adoptionSummary) string {
 	fmt.Fprintf(&b, "- Issues without upstream thread: **%d**\n", summary.Aggregate.IssuesWithoutUpstreamThread)
 	fmt.Fprintf(&b, "- Issues with maintainer reply: **%d**\n", summary.Aggregate.IssuesWithMaintainerReply)
 	fmt.Fprintf(&b, "- Issues without maintainer reply: **%d**\n", summary.Aggregate.IssuesWithoutMaintainerReply)
+	fmt.Fprintf(&b, "- Issues needing response follow-up: **%d**\n", summary.Aggregate.IssuesNeedingResponseFollowUp)
+	fmt.Fprintf(&b, "- Issues with stale response state: **%d**\n", summary.Aggregate.IssuesWithStaleResponseState)
+	fmt.Fprintf(&b, "- Issues missing response last checked: **%d**\n", summary.Aggregate.IssuesMissingResponseLastCheck)
+	fmt.Fprintf(&b, "- Issues with response metadata warnings: **%d**\n", summary.Aggregate.IssuesWithResponseMetadataWarnings)
 	if len(summary.Aggregate.ExternalResponseStatuses) > 0 {
 		fmt.Fprintf(&b, "- External response statuses: `%s`\n", formatStatusCounts(summary.Aggregate.ExternalResponseStatuses))
+	}
+	if len(summary.Aggregate.ResponseMetadataWarningCount) > 0 {
+		fmt.Fprintf(&b, "- Response metadata warnings: `%s`\n", formatStatusCounts(summary.Aggregate.ResponseMetadataWarningCount))
 	}
 	if len(summary.Aggregate.PrimaryBlockerClasses) > 0 {
 		fmt.Fprintf(&b, "- Primary blocker classes: `%s`\n", formatStatusCounts(summary.Aggregate.PrimaryBlockerClasses))
@@ -315,6 +347,12 @@ func renderAdoptionSummaryMarkdown(summary adoptionSummary) string {
 		if issue.ExternalResponseLastCheck != "" {
 			fmt.Fprintf(&b, "- External response last checked: `%s`\n", issue.ExternalResponseLastCheck)
 		}
+		if issue.NeedsResponseFollowUp {
+			b.WriteString("- Needs response follow-up: `yes`\n")
+		}
+		if len(issue.ResponseMetadataWarnings) > 0 {
+			fmt.Fprintf(&b, "- Response metadata warnings: `%s`\n", strings.Join(issue.ResponseMetadataWarnings, ", "))
+		}
 		if len(issue.MissingSections) > 0 {
 			fmt.Fprintf(&b, "- Missing sections: `%s`\n", strings.Join(issue.MissingSections, ", "))
 		}
@@ -338,4 +376,38 @@ func externalResponseCountsAsReply(status string) bool {
 	default:
 		return false
 	}
+}
+
+func externalResponseStateIsStale(status string) bool {
+	return strings.TrimSpace(status) == "Response state not checked recently"
+}
+
+func issueNeedsResponseFollowUp(issue adoptionFeedbackIssue) bool {
+	if issue.HasUpstreamThread && !externalResponseCountsAsReply(issue.ExternalResponseStatus) {
+		return true
+	}
+	return externalResponseStateIsStale(issue.ExternalResponseStatus)
+}
+
+func issueMissingResponseLastChecked(issue adoptionFeedbackIssue) bool {
+	if strings.TrimSpace(issue.ExternalResponseLastCheck) != "" {
+		return false
+	}
+	status := strings.TrimSpace(issue.ExternalResponseStatus)
+	return issue.HasUpstreamThread || (status != "" && status != "Unspecified" && status != "No upstream thread opened")
+}
+
+func responseMetadataWarnings(issue adoptionFeedbackIssue) []string {
+	var warnings []string
+	status := strings.TrimSpace(issue.ExternalResponseStatus)
+	if issue.HasUpstreamThread && (status == "" || status == "Unspecified" || status == "No upstream thread opened") {
+		warnings = append(warnings, "upstream_thread_missing_response_state")
+	}
+	if !issue.HasUpstreamThread && status != "" && status != "Unspecified" && status != "No upstream thread opened" {
+		warnings = append(warnings, "response_state_without_upstream_thread")
+	}
+	if issueMissingResponseLastChecked(issue) {
+		warnings = append(warnings, "missing_external_response_last_checked")
+	}
+	return warnings
 }
