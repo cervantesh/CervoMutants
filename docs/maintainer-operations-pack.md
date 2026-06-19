@@ -37,6 +37,10 @@ Operationally, that means:
 - daemon/worker is still experimental unless public docs say otherwise
 - baseline-first rollout is the supported default posture
 
+When maintainers need to confirm whether a doc should track the newest release
+or remain frozen as historical evidence, use the release-state drift check in
+[docs/releasing.md](releasing.md).
+
 ## Upgrade Checklist For Maintainers
 
 When an adopter is upgrading or validating a release, use this checklist:
