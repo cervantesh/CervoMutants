@@ -1,0 +1,293 @@
+name: external-action-wave
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: matrix
+        shell: bash
+        run: |
+          matrix="$(
+            jq -c '
+              {
+                include: [
+                  .jobs[] |
+                  {
+                    name,
+                    repository: (.url | sub("^https://github.com/"; "") | sub("\\.git$"; "")),
+                    ref,
+                    target,
+                    profile,
+                    policy,
+                    budget,
+                    max_mutants,
+                    workers
+                  }
+                ]
+              }
+            ' docs/evaluations/external-github-action-wave-2-candidates.json
+          )"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  wave:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: cervomut-source
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.ref }}
+          path: target
+          fetch-depth: 1
+
+      - name: Run CervoMutants
+        id: cervomut
+        uses: ./cervomut-source
+        with:
+          go-version: "1.25.6"
+          working-directory: target
+          targets: ${{ matrix.target }}
+          policy: ${{ matrix.policy }}
+          budget: ${{ matrix.budget }}
+          report: summary,json,github-summary
+          out: .cervomut/external-wave/${{ matrix.name }}
+          max-mutants: ${{ matrix.max_mutants }}
+          workers: ${{ matrix.workers }}
+
+      - name: Extract wave result
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          REPO_NAME: ${{ matrix.name }}
+          REPOSITORY: ${{ matrix.repository }}
+          REPO_REF: ${{ matrix.ref }}
+          TARGET: ${{ matrix.target }}
+          PROFILE: ${{ matrix.profile }}
+          POLICY: ${{ matrix.policy }}
+          BUDGET: ${{ matrix.budget }}
+          MAX_MUTANTS: ${{ matrix.max_mutants }}
+          WORKERS: ${{ matrix.workers }}
+        run: |
+          report_dir="target/.cervomut/external-wave/${REPO_NAME}"
+          report_json="$report_dir/mutation-report.json"
+          report_kind="full"
+          if [ ! -f "$report_json" ]; then
+            report_json="$report_dir/partial-mutation-report.json"
+            report_kind="partial"
+          fi
+
+          generated_at="$(date -u +%FT%TZ)"
+          if [ -f "$report_json" ]; then
+            jq -n \
+              --arg generated_at "$generated_at" \
+              --arg name "$REPO_NAME" \
+              --arg repository "$REPOSITORY" \
+              --arg ref "$REPO_REF" \
+              --arg target "$TARGET" \
+              --arg profile "$PROFILE" \
+              --arg policy "$POLICY" \
+              --arg budget "$BUDGET" \
+              --arg report_dir "$report_dir" \
+              --arg report_path "$report_json" \
+              --arg report_kind "$report_kind" \
+              --arg job_status "$JOB_STATUS" \
+              --argjson max_mutants "$MAX_MUTANTS" \
+              --argjson workers "$WORKERS" \
+              --slurpfile report "$report_json" \
+              '
+              ($report[0]) as $r |
+              {
+                generated_at: $generated_at,
+                name: $name,
+                repository: $repository,
+                ref: $ref,
+                target: $target,
+                profile: $profile,
+                policy: $policy,
+                budget: $budget,
+                max_mutants: $max_mutants,
+                workers: $workers,
+                job_status: $job_status,
+                report_kind: $report_kind,
+                report_dir: $report_dir,
+                report_path: $report_path,
+                summary: {
+                  total: $r.summary.total,
+                  killed: $r.summary.killed,
+                  survived: $r.summary.survived,
+                  not_covered: $r.summary.not_covered,
+                  timed_out: $r.summary.timed_out,
+                  compile_error: $r.summary.compile_error,
+                  score: $r.summary.score,
+                  actionable_score: ($r.summary.actionable.actionable_score // null),
+                  mutation_coverage: $r.summary.mutation_coverage,
+                  test_efficacy: $r.summary.test_efficacy
+                },
+                denominator_health: ($r.summary.denominator_health // null),
+                environment: ($r.environment // null)
+              }
+              ' > wave-result.json
+          else
+            jq -n \
+              --arg generated_at "$generated_at" \
+              --arg name "$REPO_NAME" \
+              --arg repository "$REPOSITORY" \
+              --arg ref "$REPO_REF" \
+              --arg target "$TARGET" \
+              --arg profile "$PROFILE" \
+              --arg policy "$POLICY" \
+              --arg budget "$BUDGET" \
+              --arg report_dir "$report_dir" \
+              --arg report_kind "missing" \
+              --arg job_status "$JOB_STATUS" \
+              --argjson max_mutants "$MAX_MUTANTS" \
+              --argjson workers "$WORKERS" \
+              '
+              {
+                generated_at: $generated_at,
+                name: $name,
+                repository: $repository,
+                ref: $ref,
+                target: $target,
+                profile: $profile,
+                policy: $policy,
+                budget: $budget,
+                max_mutants: $max_mutants,
+                workers: $workers,
+                job_status: $job_status,
+                report_kind: $report_kind,
+                report_dir: $report_dir
+              }
+              ' > wave-result.json
+          fi
+
+      - name: Append repo summary
+        if: always()
+        shell: bash
+        run: |
+          jq -r '
+            "## " + .name,
+            "- Repository: `" + .repository + "`",
+            "- Target: `" + .target + "`",
+            "- Profile: `" + .profile + "`",
+            "- Job status: `" + .job_status + "`",
+            (
+              if .report_kind == "missing" then
+                "- Report: missing"
+              else
+                "- Report: " + .report_kind + " (`" + .report_path + "`)"
+              end
+            ),
+            (
+              if .summary then
+                "- Killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**"
+              else
+                "- No report metrics captured"
+              end
+            ),
+            ""
+          ' wave-result.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload wave artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          if-no-files-found: warn
+          name: external-wave-${{ matrix.name }}
+          path: |
+            target/.cervomut/external-wave/${{ matrix.name }}
+            wave-result.json
+
+  summarize:
+    if: always()
+    needs: wave
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download wave artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          pattern: external-wave-*
+
+      - name: Build aggregate summary
+        shell: bash
+        run: |
+          generated_at="$(date -u +%FT%TZ)"
+          jq -s \
+            --arg generated_at "$generated_at" \
+            '
+            {
+              schema_version: "1",
+              tracking_issue: "#210",
+              generated_at: $generated_at,
+              repos: sort_by(.name),
+              aggregate: {
+                selected: length,
+                reports: (map(select(.report_kind != "missing")) | length),
+                missing_reports: (map(select(.report_kind == "missing")) | length),
+                killed: (map(.summary.killed // 0) | add),
+                survived: (map(.summary.survived // 0) | add),
+                not_covered: (map(.summary.not_covered // 0) | add),
+                timed_out: (map(.summary.timed_out // 0) | add),
+                compile_error: (map(.summary.compile_error // 0) | add)
+              }
+            }
+            ' artifacts/*/wave-result.json > wave-summary.json
+
+          {
+            echo "# External GitHub Action Wave Summary"
+            echo
+            jq -r '
+              "- Selected repos: **\(.aggregate.selected)**",
+              "- Reports captured: **\(.aggregate.reports)**",
+              "- Missing reports: **\(.aggregate.missing_reports)**",
+              "- Killed: **\(.aggregate.killed)**",
+              "- Survived: **\(.aggregate.survived)**",
+              "- Not covered: **\(.aggregate.not_covered)**",
+              "- Timed out: **\(.aggregate.timed_out)**",
+              "- Compile errors: **\(.aggregate.compile_error)**",
+              ""
+            ' wave-summary.json
+            jq -r '
+              .repos[] |
+              "## \(.name)\n- Repository: `\(.repository)`\n- Target: `\(.target)`\n- Profile: `\(.profile)`\n- Job status: `\(.job_status)`\n- Report kind: `\(.report_kind)`\n" +
+              (
+                if .summary then
+                  "- Killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n"
+                else
+                  "- No report metrics captured\n"
+                end
+              )
+            ' wave-summary.json
+          } > wave-summary.md
+
+      - name: Publish combined summary
+        shell: bash
+        run: cat wave-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload combined summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-wave-summary
+          path: |
+            wave-summary.json
+            wave-summary.md
