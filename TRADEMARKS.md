@@ -39,3 +39,6 @@ unless you have explicit permission to keep using the CervoMutants marks.
 
 This document is a project branding policy. It does not replace, narrow, or
 expand the Apache License 2.0 terms that apply to the source code itself.
+
+For product and architecture guardrails around hosted or commercial-adjacent
+offerings, see [docs/commercialization-guardrails.md](docs/commercialization-guardrails.md).
