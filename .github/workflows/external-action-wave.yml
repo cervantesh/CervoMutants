@@ -112,6 +112,16 @@ jobs:
 
           generated_at="$(date -u +%FT%TZ)"
           if [ -f "$report_json" ]; then
+            ledger_json="$report_dir/semantic-triage-ledger.json"
+            if [ ! -f "$ledger_json" ]; then
+              printf '{"entries":[]}\n' > ledger-fallback.json
+              ledger_json="ledger-fallback.json"
+            fi
+            governance_json="$report_dir/governance-review.json"
+            if [ ! -f "$governance_json" ]; then
+              printf '{"quarantine_templates":[],"suppression_templates":[]}\n' > governance-fallback.json
+              governance_json="governance-fallback.json"
+            fi
             jq -n \
               --arg generated_at "$generated_at" \
               --arg name "$REPO_NAME" \
@@ -129,8 +139,13 @@ jobs:
               --argjson max_mutants "$MAX_MUTANTS" \
               --argjson workers "$WORKERS" \
               --slurpfile report "$report_json" \
+              --slurpfile ledger "$ledger_json" \
+              --slurpfile governance "$governance_json" \
               '
               ($report[0]) as $r |
+              (($ledger[0].entries // []) | length) as $ledger_entries |
+              (($governance[0].quarantine_templates // []) | length) as $governance_quarantine_templates |
+              (($governance[0].suppression_templates // []) | length) as $governance_suppression_templates |
               {
                 generated_at: $generated_at,
                 name: $name,
@@ -158,6 +173,19 @@ jobs:
                   actionable_score: ($r.summary.actionable.actionable_score // null),
                   mutation_coverage: $r.summary.mutation_coverage,
                   test_efficacy: $r.summary.test_efficacy
+                },
+                triage: {
+                  actionable_review_units: ($r.summary.actionable.true_actionable_survivors // 0),
+                  actionable_survivors: ($r.summary.actionable.actionable_survivors // 0),
+                  equivalent_risk_survivors: ($r.summary.actionable.equivalent_risk_survivors // 0),
+                  semantic_group_review_units: ($r.summary.actionable.semantic_group_review_units // 0),
+                  collapsed_semantic_duplicates: ($r.summary.actionable.collapsed_semantic_duplicates // 0),
+                  semantic_group_count: (($r.summary.semantic_group_statistics // {}) | keys | length),
+                  recommendation_entries: ([$r.mutants[]? | select(.test_recommendation != null)] | length),
+                  ledger_entries: $ledger_entries,
+                  governance_quarantine_templates: $governance_quarantine_templates,
+                  governance_suppression_templates: $governance_suppression_templates,
+                  governance_total_suggestions: ($governance_quarantine_templates + $governance_suppression_templates)
                 },
                 denominator_health: ($r.summary.denominator_health // null),
                 environment: ($r.environment // null)
@@ -194,7 +222,20 @@ jobs:
                 workers: $workers,
                 job_status: $job_status,
                 report_kind: $report_kind,
-                report_dir: $report_dir
+                report_dir: $report_dir,
+                triage: {
+                  actionable_review_units: 0,
+                  actionable_survivors: 0,
+                  equivalent_risk_survivors: 0,
+                  semantic_group_review_units: 0,
+                  collapsed_semantic_duplicates: 0,
+                  semantic_group_count: 0,
+                  recommendation_entries: 0,
+                  ledger_entries: 0,
+                  governance_quarantine_templates: 0,
+                  governance_suppression_templates: 0,
+                  governance_total_suggestions: 0
+                }
               }
               ' > wave-result.json
           fi
@@ -223,6 +264,9 @@ jobs:
               else
                 "- No report metrics captured"
               end
+            ),
+            (
+              "- Triage: actionable_review_units=**\(.triage.actionable_review_units // 0)**, semantic_groups=**\(.triage.semantic_group_count // 0)**, recommendations=**\(.triage.recommendation_entries // 0)**, ledger_entries=**\(.triage.ledger_entries // 0)**, governance_suggestions=**\(.triage.governance_total_suggestions // 0)**"
             ),
             ""
           ' wave-result.json >> "$GITHUB_STEP_SUMMARY"
@@ -283,6 +327,24 @@ jobs:
                 timed_out: (map(.summary.timed_out // 0) | add),
                 compile_error: (map(.summary.compile_error // 0) | add),
                 warning_repos: (map(select((.denominator_health.warnings // []) | length > 0)) | length)
+              },
+              triage: {
+                actionable_review_units: (map(.triage.actionable_review_units // 0) | add),
+                actionable_survivors: (map(.triage.actionable_survivors // 0) | add),
+                equivalent_risk_survivors: (map(.triage.equivalent_risk_survivors // 0) | add),
+                semantic_group_review_units: (map(.triage.semantic_group_review_units // 0) | add),
+                collapsed_semantic_duplicates: (map(.triage.collapsed_semantic_duplicates // 0) | add),
+                semantic_group_count: (map(.triage.semantic_group_count // 0) | add),
+                recommendation_entries: (map(.triage.recommendation_entries // 0) | add),
+                ledger_entries: (map(.triage.ledger_entries // 0) | add),
+                governance_quarantine_templates: (map(.triage.governance_quarantine_templates // 0) | add),
+                governance_suppression_templates: (map(.triage.governance_suppression_templates // 0) | add),
+                governance_total_suggestions: (map(.triage.governance_total_suggestions // 0) | add),
+                repos_with_actionable_review_units: (map(select((.triage.actionable_review_units // 0) > 0)) | length),
+                repos_with_semantic_groups: (map(select((.triage.semantic_group_count // 0) > 0)) | length),
+                repos_with_recommendations: (map(select((.triage.recommendation_entries // 0) > 0)) | length),
+                repos_with_ledger_entries: (map(select((.triage.ledger_entries // 0) > 0)) | length),
+                repos_with_governance_suggestions: (map(select((.triage.governance_total_suggestions // 0) > 0)) | length)
               }
             }
             ' artifacts/*/wave-result.json > wave-summary.json
@@ -306,6 +368,12 @@ jobs:
               "- Timed out: **\(.aggregate.timed_out)**",
               "- Compile errors: **\(.aggregate.compile_error)**",
               "- Repos with denominator warnings: **\(.aggregate.warning_repos)**",
+              "- Triage actionable review units: **\(.triage.actionable_review_units)**",
+              "- Semantic group review units: **\(.triage.semantic_group_review_units)**",
+              "- Semantic groups formed: **\(.triage.semantic_group_count)**",
+              "- Recommendation entries: **\(.triage.recommendation_entries)**",
+              "- Ledger entries: **\(.triage.ledger_entries)**",
+              "- Governance suggestions: **\(.triage.governance_total_suggestions)**",
               ""
             ' wave-summary.json
             jq -r '
@@ -313,7 +381,7 @@ jobs:
               "## \(.name)\n- Repository: `\(.repository)`\n- Target: `\(.target)`\n- Profile: `\(.profile)`\n- Policy: `\(.policy)` sample=`\(.sample // "")` max_mutants=`\(.max_mutants)` workers=`\(.workers)`\n- Job status: `\(.job_status)`\n- Report kind: `\(.report_kind)`\n" +
               (
                 if .summary then
-                  "- Generated: **\(.denominator_health.generated // 0)**, effective: **\(.denominator_health.effective // 0)**, killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, not covered: **\(.summary.not_covered)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n"
+                  "- Generated: **\(.denominator_health.generated // 0)**, effective: **\(.denominator_health.effective // 0)**, killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, not covered: **\(.summary.not_covered)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n- Triage: actionable_review_units=**\(.triage.actionable_review_units // 0)**, semantic_groups=**\(.triage.semantic_group_count // 0)**, recommendations=**\(.triage.recommendation_entries // 0)**, ledger_entries=**\(.triage.ledger_entries // 0)**, governance_suggestions=**\(.triage.governance_total_suggestions // 0)**\n"
                 else
                   "- No report metrics captured\n"
                 end
