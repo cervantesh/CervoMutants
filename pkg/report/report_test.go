@@ -220,6 +220,36 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 	}
 }
 
+func TestSummaryIncludesDenominatorGuidanceForLowSignalRuns(t *testing.T) {
+	run := engine.RunResult{
+		Summary: engine.Summary{
+			DenominatorHealth: engine.DenominatorHealth{
+				Generated:        10,
+				Covered:          2,
+				Executed:         2,
+				Effective:        0,
+				ScoreDenominator: 8,
+				NotCovered:       8,
+				Healthy:          false,
+				Warnings:         []string{"no_effective_mutants", "not_covered_exceeds_effective"},
+			},
+		},
+	}
+
+	text := Summary(run)
+	for _, want := range []string{
+		"Denominator warnings: no_effective_mutants, not_covered_exceeds_effective",
+		"Denominator guidance:",
+		"Preserve this report and treat the run as target-selection feedback before changing score expectations.",
+		"Retarget the next run to a hotter package, subtree, or bounded shard before widening to ./....",
+		"Rerun on the narrower target before judging recommendation quality or broader rollout fit.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestSurvivorsReportIsRanked(t *testing.T) {
 	run := engine.RunResult{
 		Mutants: []engine.MutantResult{
@@ -772,6 +802,30 @@ func TestSARIFAndGitHubSummaryOutputs(t *testing.T) {
 	}
 	if string(stepSummary) != summary {
 		t.Fatalf("step summary mismatch:\nwant:\n%s\n\ngot:\n%s", summary, stepSummary)
+	}
+}
+
+func TestGitHubSummaryIncludesDenominatorGuidanceForLowSignalRuns(t *testing.T) {
+	run := engine.RunResult{
+		Summary: engine.Summary{
+			Actionable: engine.ActionableSummary{},
+			DenominatorHealth: engine.DenominatorHealth{
+				Healthy:  false,
+				Warnings: []string{"no_effective_mutants", "score_denominator_dwarfs_effective"},
+			},
+		},
+	}
+
+	summary := GitHubSummary(run)
+	for _, want := range []string{
+		"- Denominator warnings: `no_effective_mutants`, `score_denominator_dwarfs_effective`",
+		"- Guidance: Preserve this report and treat the run as target-selection feedback before changing score expectations.",
+		"- Guidance: Retarget the next run to a hotter package, subtree, or bounded shard before widening to ./....",
+		"- Guidance: Rerun on the narrower target before judging recommendation quality or broader rollout fit.",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("github summary missing %q:\n%s", want, summary)
+		}
 	}
 }
 
