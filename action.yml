@@ -15,7 +15,7 @@ inputs:
     required: false
     default: "**/go.sum"
   cervomut-version:
-    description: Optional version suffix passed to go install, for example v0.3.0 or latest. Leave blank to install the same ref as the pinned action.
+    description: Optional version suffix passed to go install, for example v0.3.0 or latest. Leave blank to install from the checked-out action source for the pinned ref.
     required: false
     default: ""
   working-directory:
@@ -104,19 +104,9 @@ runs:
           }
         }
 
-        $version = '${{ inputs.cervomut-version }}'.Trim()
-        if ([string]::IsNullOrWhiteSpace($version)) {
-          if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTION_REF)) {
-            $version = $env:GITHUB_ACTION_REF.Trim()
-            Write-Host "Installing CervoMutants from action ref $version"
-            Invoke-GoInstall "github.com/cervantesh/cervo-mutants/cmd/cervomut@$version"
-            return
-          }
-          if ([string]::IsNullOrWhiteSpace($env:GITHUB_ACTION_PATH)) {
-            throw "GITHUB_ACTION_PATH is not available; set cervomut-version explicitly."
-          }
-          Write-Host "Installing CervoMutants from local action source at $env:GITHUB_ACTION_PATH"
-          Push-Location $env:GITHUB_ACTION_PATH
+        function Invoke-InstallFromActionPath([string]$actionPath) {
+          Write-Host "Installing CervoMutants from local action source at $actionPath"
+          Push-Location $actionPath
           try {
             go install ./cmd/cervomut
             if ($LASTEXITCODE -ne 0) {
@@ -125,7 +115,29 @@ runs:
           } finally {
             Pop-Location
           }
-          return
+        }
+
+        $version = '${{ inputs.cervomut-version }}'.Trim()
+        if ([string]::IsNullOrWhiteSpace($version)) {
+          if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTION_PATH)) {
+            Invoke-InstallFromActionPath $env:GITHUB_ACTION_PATH
+            return
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTION_REF)) {
+            $version = $env:GITHUB_ACTION_REF.Trim()
+            if ($version.StartsWith('refs/tags/')) {
+              $version = $version.Substring('refs/tags/'.Length)
+            }
+            if ($version.Contains('/')) {
+              throw "GITHUB_ACTION_PATH is not available and GITHUB_ACTION_REF '$version' cannot be used as a go install version. Set cervomut-version explicitly to a tag, commit SHA, or latest."
+            }
+            Write-Host "Installing CervoMutants from action ref $version"
+            Invoke-GoInstall "github.com/cervantesh/cervo-mutants/cmd/cervomut@$version"
+            return
+          }
+
+          throw "GITHUB_ACTION_PATH is not available; set cervomut-version explicitly."
         }
 
         Write-Host "Installing CervoMutants version $version"
