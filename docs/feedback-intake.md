@@ -61,6 +61,11 @@ Use the optional upstream-response fields in the issue form to record:
 That keeps the difference between "feedback artifact exists" and "someone
 outside this repository engaged with it" explicit instead of inferred later.
 
+For the concrete outward-response cadence after an issue is opened, including
+when to create an upstream thread and how often to recheck it, see the
+`Outward-Response Loop` section in
+[docs/adoption-analytics.md](adoption-analytics.md).
+
 ## Triage Expectations
 
 Maintainers should classify each adoption-feedback issue into one of these
