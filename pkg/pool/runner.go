@@ -22,6 +22,13 @@ func (r RealCommandRunner) Run(ctx context.Context, spec CommandSpec) (CommandRe
 	if err := os.MkdirAll(filepath.Dir(spec.LogPath), 0o755); err != nil {
 		return CommandResult{}, err
 	}
+	if ctx != nil && ctx.Err() != nil {
+		msg := "command canceled"
+		if writeErr := os.WriteFile(spec.LogPath, []byte(msg), 0o644); writeErr != nil {
+			return CommandResult{}, writeErr
+		}
+		return CommandResult{ExitCode: 124}, nil
+	}
 	monitor := r.Monitor
 	if monitor == nil {
 		monitor = systemMemoryMonitor{}
