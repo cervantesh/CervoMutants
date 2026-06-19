@@ -46,7 +46,8 @@ jobs:
                     budget,
                     max_mutants,
                     workers,
-                    sample: (.sample // "")
+                    sample: (.sample // ""),
+                    coverage_prefilter: ((.coverage_prefilter // false) | tostring)
                   }
                 ]
               }
@@ -106,6 +107,7 @@ jobs:
           sample: ${{ matrix.sample }}
           max-mutants: ${{ matrix.max_mutants }}
           workers: ${{ matrix.workers }}
+          coverage-prefilter: ${{ matrix.coverage_prefilter }}
 
       - name: Extract wave result
         if: always()
@@ -120,6 +122,7 @@ jobs:
           POLICY: ${{ matrix.policy }}
           BUDGET: ${{ matrix.budget }}
           SAMPLE: ${{ matrix.sample }}
+          COVERAGE_PREFILTER: ${{ matrix.coverage_prefilter }}
           MAX_MUTANTS: ${{ matrix.max_mutants }}
           WORKERS: ${{ matrix.workers }}
           ACTION_REF: ${{ needs.plan.outputs.action_ref }}
@@ -157,6 +160,7 @@ jobs:
               --arg policy "$POLICY" \
               --arg budget "$BUDGET" \
               --arg sample "$SAMPLE" \
+              --arg coverage_prefilter "$COVERAGE_PREFILTER" \
               --arg report_dir "$report_dir" \
               --arg report_path "$report_json" \
               --arg report_kind "$report_kind" \
@@ -191,6 +195,7 @@ jobs:
                 policy: $policy,
                 budget: $budget,
                 sample: $sample,
+                coverage_prefilter: ($coverage_prefilter == "true"),
                 max_mutants: $max_mutants,
                 workers: $workers,
                 job_status: $job_status,
@@ -242,6 +247,7 @@ jobs:
               --arg policy "$POLICY" \
               --arg budget "$BUDGET" \
               --arg sample "$SAMPLE" \
+              --arg coverage_prefilter "$COVERAGE_PREFILTER" \
               --arg report_dir "$report_dir" \
               --arg report_kind "missing" \
               --arg job_status "$JOB_STATUS" \
@@ -260,6 +266,7 @@ jobs:
                 policy: $policy,
                 budget: $budget,
                 sample: $sample,
+                coverage_prefilter: ($coverage_prefilter == "true"),
                 max_mutants: $max_mutants,
                 workers: $workers,
                 job_status: $job_status,
@@ -295,7 +302,7 @@ jobs:
             "- Install path: `" + .install_path + "` action_ref=`" + .action_ref + "`",
             "- Target: `" + .target + "`",
             "- Profile: `" + .profile + "`",
-            "- Policy: `" + .policy + "` sample=`" + (.sample // "") + "` max_mutants=`" + (.max_mutants|tostring) + "` workers=`" + (.workers|tostring) + "`",
+            "- Policy: `" + .policy + "` sample=`" + (.sample // "") + "` coverage_prefilter=`" + ((.coverage_prefilter // false)|tostring) + "` max_mutants=`" + (.max_mutants|tostring) + "` workers=`" + (.workers|tostring) + "`",
             "- Job status: `" + .job_status + "`",
             (
               if .report_kind == "missing" then
@@ -450,7 +457,7 @@ jobs:
               def format_status_counts:
                 ((. // {}) | to_entries | sort_by(.key) | map("\(.key)=\(.value)") | join(", "));
               .repos[] |
-              "## \(.name)\n- Repository: `\(.repository)`\n- Install path: `\(.install_path)` action_ref=`\(.action_ref)`\n- Target: `\(.target)`\n- Profile: `\(.profile)`\n- Policy: `\(.policy)` sample=`\(.sample // "")` max_mutants=`\(.max_mutants)` workers=`\(.workers)`\n- Job status: `\(.job_status)`\n- Report kind: `\(.report_kind)`\n" +
+              "## \(.name)\n- Repository: `\(.repository)`\n- Install path: `\(.install_path)` action_ref=`\(.action_ref)`\n- Target: `\(.target)`\n- Profile: `\(.profile)`\n- Policy: `\(.policy)` sample=`\(.sample // "")` coverage_prefilter=`\((.coverage_prefilter // false)|tostring)` max_mutants=`\(.max_mutants)` workers=`\(.workers)`\n- Job status: `\(.job_status)`\n- Report kind: `\(.report_kind)`\n" +
               (
                 if .summary then
                   "- Generated: **\(.denominator_health.generated // 0)**, effective: **\(.denominator_health.effective // 0)**, killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, not covered: **\(.summary.not_covered)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n- Triage: actionable_review_units=**\(.triage.actionable_review_units // 0)**, semantic_groups=**\(.triage.semantic_group_count // 0)**, recommendations=**\(.triage.recommendation_entries // 0)**, recommendation_review_units=**\(.triage.recommendation_review_units // 0)**, collapsed_recommendation_duplicates=**\(.triage.collapsed_recommendation_duplicates // 0)**, ledger_entries=**\(.triage.ledger_entries // 0)**, governance_suggestions=**\(.triage.governance_total_suggestions // 0)**" +
