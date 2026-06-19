@@ -86,6 +86,12 @@ func verifyUpgrade(opts upgradeVerificationOptions, runner upgradeCommandRunner)
 	if err != nil {
 		return err
 	}
+	if err := ensureExecutable(previousBinary); err != nil {
+		return err
+	}
+	if err := ensureExecutable(currentBinary); err != nil {
+		return err
+	}
 
 	fixtureDir := filepath.Join(workDir, "fixture")
 	if err := writeUpgradeFixture(fixtureDir); err != nil {
@@ -244,6 +250,18 @@ func findCervomutBinary(root string) (string, error) {
 		return "", fmt.Errorf("could not locate cervomut binary under %s", filepath.ToSlash(root))
 	}
 	return found, nil
+}
+
+func ensureExecutable(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	mode := info.Mode()
+	if mode&0o111 != 0 {
+		return nil
+	}
+	return os.Chmod(path, mode|0o755)
 }
 
 func writeUpgradeFixture(dir string) error {

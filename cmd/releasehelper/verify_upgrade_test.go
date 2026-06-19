@@ -68,6 +68,26 @@ func TestVerifyUpgradeRejectsMissingPreviousReport(t *testing.T) {
 	}
 }
 
+func TestEnsureExecutableAddsExecBits(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Windows does not expose POSIX execute bits through os.Stat")
+	}
+	path := filepath.Join(t.TempDir(), "cervomut")
+	if err := os.WriteFile(path, []byte("placeholder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureExecutable(path); err != nil {
+		t.Fatalf("ensureExecutable returned error: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("ensureExecutable did not set execute bits: mode=%#o", info.Mode().Perm())
+	}
+}
+
 type fakeUpgradeRunner struct {
 	currentBinary      string
 	skipPreviousReport bool
