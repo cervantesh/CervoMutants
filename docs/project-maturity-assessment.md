@@ -1,14 +1,19 @@
 # Project Maturity Assessment
 
-Tracking issue: https://github.com/cervantesh/cervo-mutants/issues/57
+Tracking issue: https://github.com/cervantesh/cervo-mutants/issues/208
 
-Assessment date: 2026-06-17
+Assessment date: 2026-06-19
 
 Follow-on roadmap: [docs/maturity-roadmap.md](maturity-roadmap.md)
 
-This document records a dated maturity snapshot for CervoMutants across product,
-code, and operations. It is intentionally time-bound: maturity can move quickly
-as CI, releases, public adoption, and major features change.
+This document records a dated maturity snapshot for CervoMutants across
+product, code, and operations. It is intentionally time-bound: maturity can
+move quickly as CI, releases, public adoption, and major features change.
+
+This snapshot evaluates the current `main` branch state on 2026-06-19. The
+latest public release is still `v0.3.0` from 2026-06-17, so some of the
+strongest operational evidence below is proven on `main` but is not yet
+packaged in the latest public tag.
 
 ## Scale
 
@@ -24,206 +29,264 @@ as CI, releases, public adoption, and major features change.
 
 | Dimension | Score | Assessment |
 | --- | ---: | --- |
-| Functional / product maturity | `3.7 / 5` | strong beta |
-| Code / engineering maturity | `3.3 / 5` | good internal structure with concentrated complexity |
-| Operational maturity | `2.2 / 5` | weak for public confidence today |
-| Overall maturity | `3.3 / 5` | usable beta, not yet broadly production-ready |
+| Functional / product maturity | `4.0 / 5` | strong public beta |
+| Code / engineering maturity | `3.8 / 5` | well-structured with a few remaining hotspots |
+| Operational maturity | `3.5 / 5` | credible public automation, still young release practice |
+| Overall maturity | `3.8 / 5` | credible public beta approaching broader external use |
 
 ## Executive Summary
 
-CervoMutants is no longer a prototype. It already has a meaningful product
-surface:
+CervoMutants is no longer just a usable beta with promising local validation.
+On `main`, it now has:
 
-- mutation generation and execution
-- baseline and quarantine workflows
-- JSON, JUnit, summary, and HTML reports
-- survivor ranking and denominator-health reporting
-- large-repo slicing and resume support
-- external comparison normalization
+- green public CI
+- a first-party GitHub Action
+- semantic triage and actionable-only review flows
+- additive compatibility policy and report-schema discipline
+- release automation with install, archive, and upgrade verification
+- bounded external validation with committed artifacts and rollout guidance
 
-The project is therefore functionally credible. The main weakness is not core
-capability but operational confidence. As of 2026-06-17, local validation is
-strong, but the public GitHub Actions `test` workflow is failing repeatedly
-while `pages` is green. That gap is large enough to keep the project in beta.
+The biggest remaining gap is no longer broken public automation. The bigger
+gap is that the latest public release still predates much of the recent
+operational hardening, and direct external maintainer adoption evidence is
+still early.
+
+That keeps the project just short of a clean `4 / 5` overall maturity
+classification. The current state is best described as a credible public beta
+whose repository head is stronger than its latest release.
 
 ## Evidence Snapshot
 
 ### Repository and release state
 
 - Public GitHub repository created on 2026-06-17.
-- Public releases present on 2026-06-17: `v0.1.0`, `v0.2.0`, `v0.3.0`.
+- Public releases present on 2026-06-19: `v0.1.0`, `v0.2.0`, `v0.3.0`.
+- Latest public release remains `v0.3.0` from 2026-06-17 with multi-OS assets
+  and `SHA256SUMS`.
 - GitHub Pages is live at `https://cervantesh.github.io/cervo-mutants/`.
-- Repository topics are present and the public project identity is coherent.
+- The seeded Phase 5 and Phase 6 roadmap backlog is closed.
+- New follow-up work is now tracked in `#206`, `#207`, and `#208`.
 
 ### Codebase shape
 
-- `16` packages under `pkg/`
-- `50` source files under `pkg/` and `cmd/`
-- `22` test files under `pkg/` and `cmd/`
-- about `12,449` lines of product code
-- about `4,566` lines of test code
-- about `4,121` lines of repo documentation in `docs/`, `README`, `site`, and workflows
+- `17` packages under `pkg/`
+- `59` product source files under `pkg/` and `cmd/`
+- `39` test files under `pkg/` and `cmd/`
+- about `14,891` lines of product code
+- about `9,604` lines of test code
+- about `8,186` lines of repo documentation in `README`, `docs/`, `site/`, and
+  workflow files
 
-### Local validation on 2026-06-17
+### Local validation on 2026-06-19
 
 - `go vet ./...` passed
 - `go test ./...` passed
 - fresh package coverage sample:
-- `pkg/engine`: `88.7%`
-  - `pkg/report`: `92.6%`
-  - `pkg/runner`: `96.8%`
-  - `pkg/mutator`: `90.5%`
-  - `pkg/config`: `93.9%`
-  - `pkg/pool`: `42.3%`
+  - `pkg/engine`: `89.9%`
+  - `pkg/report`: `93.8%`
+  - `pkg/runner`: `97.3%`
+  - `pkg/mutator`: `92.9%`
+  - `pkg/config`: `94.3%`
+  - `pkg/pool`: `80.2%`
 
-### Public CI state on 2026-06-17
+### Public automation state on 2026-06-19
 
-- `.github/workflows/pages.yml`: green after merge
-- `.github/workflows/test.yml`: repeated failures in GitHub Actions on `main`
+- latest `test` workflow on `main`: green
+- latest `workflow-lint` workflow on `main`: green
+- latest `pages` workflow on `main`: green
+- support matrix is documented for Linux, Windows, and macOS on Go `1.25.x`
+- current release automation verifies install, archive, upgrade, and report
+  compatibility before publication
+
+### Repo-head versus release-head
+
+The latest release is not yet a full proxy for repository-head maturity.
+
+`v0.3.0` already proves:
+
+- Windows-native execution hardening
+- deterministic large-repo slicing
+- survivor-ranking calibration improvements
+
+`main` now additionally proves:
+
+- first-party GitHub Action hardening
+- CI-enforced compatibility matrix behavior
+- previous-release upgrade smoke
+- install and archive verification gates
+- expanded adoption guidance, operations guidance, and external-validation
+  framing
+
+That gap matters. Operational confidence is materially better than the
+2026-06-17 assessment implied, but some of that confidence still needs a new
+public release before it becomes the default experience for external users.
 
 ## Functional Maturity
 
-### Score: `3.7 / 5`
+### Score: `4.0 / 5`
 
-The product already solves a real problem, and the scope is clearer than most
-young testing tools.
+The product now looks like a strong public beta with a coherent workflow, not
+just a capable engine surrounded by rough edges.
 
 #### What is mature enough already
 
-- The core value proposition is explicit in the public docs: mutation testing
-  for CI, large Go modules, and AI-assisted test improvement.
-- The CLI surface is broad enough to support real usage, not just demos:
-  `run`, `fast`, `doctor`, `affected`, `eval`, `compare`, `baseline`, `report`,
-  `show`, `explain`, `list-mutators`, and experimental daemon/worker commands.
-- Reporting is meaningfully structured. The tool distinguishes `survived`,
-  `killed`, `timed_out`, `memory_killed`, `compile_error`, `not_covered`,
-  `pending_budget`, `skipped_resource`, `quarantined`, and `cached`.
-- The project has clear product doctrines instead of ad hoc features:
-  baseline-first adoption, denominator health, history-aware signal, and
-  apples-to-apples comparison rules.
+- The CLI surface is broad and purposeful: `run`, `fast`, `doctor`,
+  `affected`, `eval`, `compare`, `pool`, `baseline`, `report`, `show`,
+  `explain`, `list-mutators`, plus explicitly experimental daemon/worker
+  commands.
+- Semantic triage is now a first-class public surface. The repository exposes
+  `pkg/triage`, `actionable_score`, semantic grouping, actionable-only survivor
+  views, and triage-aware report fields.
+- Reporting is clearly multi-surface and CI-aware:
+  JSON, summary, HTML, JUnit, SARIF, GitHub summary, survivor review views, and
+  history dashboards are all documented and exercised.
+- The project has a coherent product doctrine:
+  baseline-first rollout, denominator health, actionability over raw survivor
+  volume, and apples-to-apples comparison semantics.
+- The repository now includes a first-party GitHub Action and maintained
+  rollout guidance for small libraries, medium services, and large repos.
+- External validation is no longer only internal theory. A committed bounded
+  validation wave succeeded across five public Go repositories.
 
 #### Functional gaps keeping it in beta
 
-- The daemon/worker surface now has an explicit experimental status, which is
-  the right current claim. Graduating it still requires protocol versioning,
-  durable coordination, and retry semantics before it can count as mature
+- Daemon/worker remains correctly experimental. It still lacks a versioned
+  protocol, durable coordination, and retry semantics required for supported
   distributed execution.
-- The higher-order semantic triage layer is not yet a first-class shipped
-  feature. Survivor ranking exists, but semantic equivalence-risk grouping,
-  actionable-only filtering, and richer triage heuristics are still gaps.
-- Public adoption evidence is still early, but it is no longer purely internal.
-  A 2026-06-17 external validation wave succeeded across five public Go
-  repositories using committed `pool campaign` artifacts. The remaining gap is
-  direct maintainer adoption or production rollout feedback, not simple
-  first-run viability.
+- Public adoption evidence is real but still bounded. The repo proves first-run
+  viability and rollout guidance, but it does not yet prove broad maintainer
+  adoption or long-running production usage across multiple external teams.
+- Recommendation and triage quality still need more field calibration from real
+  adoption feedback, not only fixtures and internal review samples.
+- The newest operationally strong workflows are proven on `main`, but not yet
+  shipped in a newer public release than `v0.3.0`.
 
 ## Code And Engineering Maturity
 
-### Score: `3.3 / 5`
+### Score: `3.8 / 5`
 
-The codebase is stronger than its public age suggests. It has credible domain
-modeling, real tests, bounded dependencies, and a reasonable package split. The
-main weakness is concentration of complexity in a few files.
+The engineering story is materially stronger than the previous assessment. The
+repository now shows better separation of concerns, stronger coverage in weak
+areas, and much less concentrated orchestration risk.
 
 ### What is strong
 
-- Domain modeling is explicit and useful. The result schema in
-  `pkg/engine/types.go` captures statuses, scoring, denominator health,
-  quarantine, history, slice metadata, and failure artifacts.
-- The report layer is intentionally multi-surface rather than accidental:
-  `Summary`, `Survivors`, `HTML`, and `JUnit` all exist in `pkg/report/report.go`.
-- The engine is test-heavy. `pkg/engine/engine_test.go` is large and covers dry
-  runs, reporting, checkpoint behavior, resume, parallelism, and structured
-  failure scenarios.
-- Dependencies are intentionally light. The module file depends almost entirely
-  on the standard library plus `gopkg.in/yaml.v3`.
-- Fresh local validation shows that most core packages have high statement
-  coverage.
+- Complexity concentration has dropped sharply:
+  - `pkg/engine/engine.go`: about `894` lines
+  - `cmd/cervomut/main.go`: about `89` lines
+- Semantic actionability logic is extracted into `pkg/triage` instead of being
+  buried inside orchestration code.
+- Coverage in previously weak areas is materially better, especially
+  `pkg/pool` at `80.2%`.
+- The engine, report, runner, mutator, and config packages all sit at high
+  statement coverage for a tool of this size.
+- The report model remains one of the strongest parts of the system:
+  raw score, actionable score, governance, history, recommendations, and
+  semantic metadata are all represented explicitly in typed surfaces.
+- Dependencies remain intentionally light and mostly standard-library based.
+- The repo-hygiene drift called out in the previous assessment is no longer
+  present in tracked files: `cervomut.exe` and `coverage.out` are not tracked.
 
-### What is weak
+### What is still weak
 
-- Complexity is concentrated in a few files:
-  - `pkg/engine/engine.go`: about `2,282` lines
-  - `cmd/cervomut/main.go`: about `1,131` lines
-- `pkg/pool` coverage is materially lower than the rest of the system at
-  `42.3%`, even though it orchestrates comparison-study automation.
-- There is evidence of repo-hygiene drift:
-  - `cervomut.exe` is committed at repo root
-  - the tracked `coverage.out` still reflects an old pre-rename module path
-- The repository was rewritten into a single public snapshot earlier on
-  2026-06-17, so the current public history is intentionally shallow. That is
-  acceptable for publishing, but it lowers maintainability evidence for outside
-  contributors reviewing project evolution.
+- `pkg/engine` is much smaller than before, but it is still one of the more
+  complex parts of the system and remains a likely hotspot for future changes.
+- Some maintainability evidence is still young in public:
+  the repo history was squashed into a public snapshot, so outside contributors
+  still have limited long-form history to study.
+- The daemon/worker path is intentionally experimental, which is the correct
+  product claim, but it also means one code surface stays outside the normal
+  supported-contract expectations.
+- The project still needs more evidence of outside contribution and maintenance
+  over time, not just strong local development discipline.
 
 ## Operational Maturity
 
-### Score: `2.2 / 5`
+### Score: `3.5 / 5`
 
-This is currently the weakest part of the project.
+Operational maturity is no longer the obvious weak point. The project now has
+credible public automation and compatibility discipline, but it is still early
+in release repetition and external adoption proof.
 
 ### What is working
 
-- GitHub Pages is live and deploys successfully.
-- The repository has a public license, trademark notice, releases, homepage,
-  and topics.
-- The repository follows issue-gated work and keeps change scope auditable.
+- Public GitHub Actions are green on `main` for `test`, `workflow-lint`, and
+  `pages`.
+- The compatibility matrix is not just documented; it is tied to automated
+  validation and release expectations.
+- The release workflow now verifies assets, checksums, install paths, upgrade
+  handoff, and report compatibility before publication.
+- GitHub Pages, release docs, upgrade notes, compatibility policy, and
+  maintainer operations guidance now form a coherent public support story.
+- The repository follows issue-gated work and keeps scope, decisions, and
+  validation auditable through GitHub issues and pull requests.
 
-### What is not mature enough
+### What is not mature enough yet
 
-- The main public CI test workflow is not currently reliable in GitHub Actions.
-  That makes the public repository look less trustworthy than the local state.
-- Validation confidence is therefore asymmetric:
-  - strong locally
-  - weak in public automation
-- Release cadence exists, but it is extremely compressed in time. Multiple
-  public releases on the same day are useful for bootstrapping, but they are not
-  yet evidence of stable release operations.
+- The strongest operational hardening is on `main`, but the latest public tag
+  is still `v0.3.0`. That means the default install experience for external
+  users has not yet caught up to the current repository state.
+- Public release history is still extremely young and compressed. Three releases
+  on the same day are enough to bootstrap a project, not enough to prove a
+  stable long-term release cadence.
+- External adoption evidence is better than before, but still too early to
+  claim broad field validation across multiple independent teams.
 
 ## Strengths
 
-- Strong product thesis and differentiation
-- Clear mutation-testing semantics instead of simple score chasing
-- Good report model for CI and machine consumers
-- High local test coverage across critical packages
-- Real docs and evaluation artifacts, not just code
-- Lightweight dependency surface
+- Strong mutation-testing product thesis and clear differentiation
+- Rich report model that keeps raw and actionable interpretations visible
+- High test coverage across core packages
+- Substantially improved package boundaries and reduced orchestration sprawl
+- Public CI, compatibility, upgrade, and install gating are now real
+- Real documentation and evaluation artifacts rather than only implementation
 
 ## Main Risks
 
-- Public CI failure undermines confidence faster than documentation can repair it
-- Central orchestration files are large enough to slow safe iteration
-- Low coverage in comparison-pool code leaves one operational slice under-tested
-- Repo artifacts such as committed binaries and stale coverage files weaken
-  hygiene expectations
-- Public adoption is still too early to validate external usability assumptions
+- Repository-head quality is now ahead of the latest release, which can confuse
+  external users unless the next release lands soon
+- Broad external adoption is still a hypothesis supported by bounded evidence,
+  not yet a fully repeated field result
+- Daemon/worker can still create expectation drift if users read it as a mature
+  distribution surface
+- Some of the next signal-calibration work now depends on field findings rather
+  than only internal engineering effort
 
 ## Priority Actions
 
 ### Immediate
 
-1. Fix GitHub Actions `test.yml` until `main` is consistently green.
-2. Remove committed generated artifacts from the repo and harden `.gitignore`.
-3. Regenerate or stop tracking stale coverage artifacts after module-path changes.
+1. Publish the next release so the public install path catches up with the
+   current compatibility and automation hardening.
+2. Refresh the public maturity narrative and keep release-head versus repo-head
+   claims explicit.
+3. Start the next external adoption and signal-calibration workstream from real
+   repository usage, not only internal fixtures.
 
 ### Near term
 
-1. Split `pkg/engine/engine.go` into smaller orchestration units.
-2. Split `cmd/cervomut/main.go` by command family.
-3. Raise `pkg/pool` coverage materially.
+1. Measure recommendation yield and triage quality from the next adoption wave.
+2. Tighten rollout defaults and docs where repeated field friction appears.
+3. Keep building evidence of stable release operations across more than one
+   post-hardening release cycle.
 
 ### Product maturity next
 
-1. Implement semantic triage features that reduce equivalent-mutant noise.
-2. Add stronger actionable grouping and weighting to survivor review.
-3. Keep daemon/worker explicitly experimental until protocol versioning,
-   durable coordination, and retries exist.
+1. Calibrate semantic triage and recommendations from field evidence.
+2. Keep daemon/worker experimental unless real adopter demand justifies
+   versioned protocol work.
+3. Continue refining historical review and governance surfaces using actual CI
+   and campaign usage.
 
 ## Current Maturity Classification
 
-As of 2026-06-17, CervoMutants should be described as:
+As of 2026-06-19, CervoMutants should be described as:
 
-> a usable beta mutation-testing toolkit with strong functional depth, good
-> local code quality, and weak public operational maturity.
+> a credible public beta mutation-testing toolkit with strong functional depth,
+> materially improved engineering maturity, and operational confidence on
+> `main` that is now ahead of the latest public release.
 
-That is a respectable stage. The next transition is not "invent more features"
-but "make the existing system externally trustworthy."
+That is a materially stronger position than the 2026-06-17 snapshot. The next
+transition is not "make the repo stop looking broken." The next transition is
+"ship the hardened state, gather deeper external evidence, and calibrate the
+remaining judgment-heavy features from real usage."
