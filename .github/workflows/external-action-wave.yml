@@ -1,6 +1,9 @@
 name: external-action-wave
 
 on:
+  push:
+    branches:
+      - codex/210-gh-hosted-wave-run
   workflow_dispatch:
 
 permissions:
