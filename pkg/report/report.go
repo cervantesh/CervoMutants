@@ -96,6 +96,13 @@ func Summary(result engine.RunResult) string {
 		result.Summary.SuppressionSuppressed,
 		result.Summary.SuppressionQuarantineRequired,
 	)
+	if lane, ok := reportLaneInterpretation(result); ok {
+		fmt.Fprintf(&b, "Lane shape: %s\nLane note: %s\nLane guidance: %s\n",
+			lane.label,
+			lane.detail,
+			lane.guidance,
+		)
+	}
 	if result.Summary.DenominatorHealth.Generated > 0 || len(result.Summary.DenominatorHealth.Warnings) > 0 {
 		health := result.Summary.DenominatorHealth
 		fmt.Fprintf(&b, "Denominator health: healthy=%t generated=%d covered=%d executed=%d effective=%d score_denominator=%d killed=%d survived=%d not_covered=%d pending_budget=%d skipped_resource=%d timed_out=%d memory_killed=%d compile_error=%d\n",

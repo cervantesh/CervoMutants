@@ -195,6 +195,9 @@ func TestSummaryIncludesGremlinsStyleCoverageMetricsAndMutatorStats(t *testing.T
 		"Equivalent-risk survivors: 1",
 		"Semantic review units: 1",
 		"Collapsed semantic duplicates: 1",
+		"Lane shape: grouped review lane",
+		"Lane note: 1 raw survivors collapsed into 1 immediate review units across 1 semantic group",
+		"Lane guidance: review the grouped equivalent-risk family once before splitting it into multiple separate test tasks",
 		"Denominator health: healthy=true generated=3 covered=2 executed=2 effective=2 score_denominator=2 killed=1 survived=1 not_covered=1 pending_budget=0 skipped_resource=0 timed_out=0 memory_killed=0 compile_error=0",
 		"High-risk survivors: 1",
 		"New survivors: 1",
@@ -238,11 +241,39 @@ func TestSummaryIncludesDenominatorGuidanceForLowSignalRuns(t *testing.T) {
 
 	text := Summary(run)
 	for _, want := range []string{
+		"Lane shape: retargeting signal",
+		"Lane note: the run completed, but denominator pressure dominates and this bounded slice did not produce immediate review work",
+		"Lane guidance: keep the artifact and retarget the next run to a hotter package, subtree, or shard before judging broader rollout fit",
 		"Denominator warnings: no_effective_mutants, not_covered_exceeds_effective",
 		"Denominator guidance:",
 		"Preserve this report and treat the run as target-selection feedback before changing score expectations.",
 		"Retarget the next run to a hotter package, subtree, or bounded shard before widening to ./....",
 		"Rerun on the narrower target before judging recommendation quality or broader rollout fit.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestSummaryClassifiesHealthyNoActionLane(t *testing.T) {
+	run := engine.RunResult{
+		Summary: engine.Summary{
+			Actionable: engine.ActionableSummary{
+				ActionableScore:         100,
+				TrueActionableSurvivors: 0,
+			},
+			DenominatorHealth: engine.DenominatorHealth{
+				Healthy: true,
+			},
+		},
+	}
+
+	text := Summary(run)
+	for _, want := range []string{
+		"Lane shape: healthy no-action lane",
+		"Lane note: this bounded slice produced understandable denominator health and no immediate survivor work",
+		"Lane guidance: keep the artifact; widen or retarget only if you need more review pressure from a different slice",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)
