@@ -9,6 +9,10 @@
 - Issues without upstream thread: **4**
 - Issues with maintainer reply: **0**
 - Issues without maintainer reply: **4**
+- Issues needing response follow-up: **0**
+- Issues with stale response state: **0**
+- Issues missing response last checked: **0**
+- Issues with response metadata warnings: **0**
 - External response statuses: `No upstream thread opened=4`
 - Primary blocker classes: `Review UX or report usability=1, Signal noise or equivalent-risk survivors=3`
 - Repository profiles: `Compact library=2, Large repository or monorepo=1, Medium service=1`

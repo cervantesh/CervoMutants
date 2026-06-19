@@ -132,6 +132,17 @@ go run ./cmd/actionhelper render-adoption-summary-markdown --path adoption-summa
 That keeps the rollup process reproducible instead of depending on manual
 counting across issue threads.
 
+In current helper output, do not read `External response statuses` alone.
+Also check:
+
+- `Issues needing response follow-up`
+- `Issues with stale response state`
+- `Issues missing response last checked`
+- `Response metadata warnings` when present
+
+Those fields tell you whether the response loop still needs maintainer action
+even when the raw status buckets look simple.
+
 ## Triage Decision Flow
 
 Use this flow for first-pass maintainer triage:
