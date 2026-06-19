@@ -19,6 +19,7 @@ jobs:
       manifest_path: ${{ steps.matrix.outputs.manifest_path }}
       tracking_issue: ${{ steps.matrix.outputs.tracking_issue }}
       action_ref: ${{ steps.matrix.outputs.action_ref }}
+      checkout_ref: ${{ steps.matrix.outputs.checkout_ref }}
       install_path: ${{ steps.matrix.outputs.install_path }}
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +28,7 @@ jobs:
         env:
           MANIFEST_PATH: ${{ inputs.manifest_path }}
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           test -f "$MANIFEST_PATH"
           matrix="$(
@@ -52,11 +54,22 @@ jobs:
           )"
           tracking_issue="$(jq -r '.tracking_issue // ""' "$MANIFEST_PATH")"
           action_ref="$(jq -r '.action_ref // env.GITHUB_SHA' "$MANIFEST_PATH")"
+          checkout_ref="$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${action_ref}" \
+            | jq -r '.sha'
+          )"
+          if [ -z "$checkout_ref" ] || [ "$checkout_ref" = "null" ]; then
+            echo "failed to resolve action_ref '$action_ref' to a commit SHA" >&2
+            exit 1
+          fi
           install_path="$(jq -r '.install_path // ("github-action@" + (.action_ref // env.GITHUB_SHA))' "$MANIFEST_PATH")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "manifest_path=$MANIFEST_PATH" >> "$GITHUB_OUTPUT"
           echo "tracking_issue=$tracking_issue" >> "$GITHUB_OUTPUT"
           echo "action_ref=$action_ref" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
           echo "install_path=$install_path" >> "$GITHUB_OUTPUT"
 
   wave:
@@ -70,7 +83,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: cervomut-source
-          ref: ${{ needs.plan.outputs.action_ref }}
+          ref: ${{ needs.plan.outputs.checkout_ref }}
 
       - uses: actions/checkout@v7
         with:
