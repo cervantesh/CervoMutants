@@ -59,7 +59,7 @@ func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, qua
 
 func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
 	results := make([]MutantResult, 0, len(mutants))
-	start := time.Now()
+	start := e.clockNow()
 	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
 			result := MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
@@ -111,7 +111,7 @@ func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quara
 	defer cancel()
 
 	startParallelWorkers(ctx, workers, jobs, done, e.runMutant)
-	start := time.Now()
+	start := e.clockNow()
 	dispatchParallelJobs(e, mutants, quarantined, results, jobs, start)
 	return e.collectParallelResults(done, results, len(mutants), start, cancel)
 }
@@ -177,7 +177,7 @@ func (e *Engine) collectParallelResults(done <-chan indexedResult, results []Mut
 }
 
 func (e *Engine) budgetExhausted(start time.Time) bool {
-	return e.cfg.Execution.Budget > 0 && time.Since(start) >= e.cfg.Execution.Budget
+	return e.cfg.Execution.Budget > 0 && e.elapsedSince(start) >= e.cfg.Execution.Budget
 }
 
 func refreshCachedMutantResult(result MutantResult, mutant Mutant) MutantResult {

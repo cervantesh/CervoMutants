@@ -759,8 +759,14 @@ func TestSerialRunnerHandlesQuarantineAndBudgetBranches(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Execution.Budget = time.Nanosecond
 	e := New(cfg)
-	start := time.Now()
-	for time.Since(start) < time.Nanosecond {
+	base := time.Unix(0, 0)
+	nowCalls := 0
+	e.now = func() time.Time {
+		nowCalls++
+		if nowCalls == 1 {
+			return base
+		}
+		return base.Add(time.Nanosecond)
 	}
 	mutants := []Mutant{
 		{ID: "q", Operator: "conditionals-negation"},

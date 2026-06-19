@@ -30,6 +30,7 @@ type Engine struct {
 	mutantGenerator      mutator.Generator
 	suppressionEvaluator SuppressionEvaluator
 	survivorRanker       SurvivorRanker
+	now                  func() time.Time
 	timingMu             sync.Mutex
 	checkpointMu         sync.Mutex
 	checkpointScope      []Mutant
@@ -61,6 +62,7 @@ func NewWithOptions(cfg config.Config, opts ...EngineOption) *Engine {
 		mutantGenerator:      mutator.DefaultGenerator(),
 		suppressionEvaluator: DefaultSuppressionEvaluator(cfg),
 		survivorRanker:       DefaultSurvivorRanker(),
+		now:                  time.Now,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -68,6 +70,17 @@ func NewWithOptions(cfg config.Config, opts ...EngineOption) *Engine {
 		}
 	}
 	return e
+}
+
+func (e *Engine) clockNow() time.Time {
+	if e != nil && e.now != nil {
+		return e.now()
+	}
+	return time.Now()
+}
+
+func (e *Engine) elapsedSince(start time.Time) time.Duration {
+	return e.clockNow().Sub(start)
 }
 
 func (e *Engine) Run(ctx context.Context, req RunRequest) (result RunResult, err error) {
