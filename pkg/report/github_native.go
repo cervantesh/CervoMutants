@@ -175,6 +175,9 @@ func GitHubSummary(result engine.RunResult) string {
 	}
 	if len(result.Summary.DenominatorHealth.Warnings) > 0 {
 		fmt.Fprintf(&b, "- Denominator warnings: `%s`\n", strings.Join(result.Summary.DenominatorHealth.Warnings, "`, `"))
+		for _, line := range denominatorGuidanceLines(result.Summary.DenominatorHealth) {
+			fmt.Fprintf(&b, "- Guidance: %s\n", line)
+		}
 	}
 	topSurvivors := githubTopSurvivors(result.Mutants, 5)
 	if len(topSurvivors) > 0 {

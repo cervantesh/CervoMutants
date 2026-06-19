@@ -116,6 +116,12 @@ func Summary(result engine.RunResult) string {
 		)
 		if len(health.Warnings) > 0 {
 			fmt.Fprintf(&b, "Denominator warnings: %s\n", strings.Join(health.Warnings, ", "))
+			if guidance := denominatorGuidanceLines(health); len(guidance) > 0 {
+				b.WriteString("Denominator guidance:\n")
+				for _, line := range guidance {
+					fmt.Fprintf(&b, "- %s\n", line)
+				}
+			}
 		}
 	}
 	if len(result.Summary.EquivalentRiskStats) > 0 {
