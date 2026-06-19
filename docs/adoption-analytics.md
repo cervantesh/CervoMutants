@@ -42,6 +42,17 @@ go run ./cmd/actionhelper render-adoption-summary-markdown --path adoption-summa
 That path is intentionally JSON-in and markdown-out so release reviews can keep
 their issue-query step explicit while still reusing one tested summarizer.
 
+The generated summary now also separates raw external-response status buckets
+from follow-up hygiene fields such as:
+
+- issues that still need outward response follow-up
+- issues whose response state is stale
+- issues missing `External response last checked`
+- per-issue metadata warnings when upstream-thread and response-state fields do
+  not agree
+
+That keeps the helper useful as an operations surface, not only a count report.
+
 ## Structured Dimensions To Capture
 
 Every adoption-feedback issue should preserve these dimensions explicitly:

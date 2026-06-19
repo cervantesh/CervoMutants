@@ -32,6 +32,8 @@ All `4` issues currently show:
 - suggested outcome: `Documentation clarification`
 - upstream thread status: none
 - external response status: `No upstream thread opened`
+- issues needing response follow-up: `0`
+- response metadata warnings: `0`
 
 Primary blocker distribution:
 
@@ -58,6 +60,11 @@ The current issue set still shows:
 - `0 / 4` issues with an upstream thread;
 - `0 / 4` issues with external maintainer reply; and
 - no public adopter-owned follow-up trail outside this repository.
+
+The refreshed helper output adds one useful clarification: the current issue
+set is structurally clean as internal proxy evidence. There are no current
+response-follow-up flags or metadata warnings because none of the issues have
+entered an outward thread yet.
 
 That keeps the repo aligned with the narrower response-audit conclusion in
 [2026-06-19-released-adoption-feedback-response-audit.md](2026-06-19-released-adoption-feedback-response-audit.md):
