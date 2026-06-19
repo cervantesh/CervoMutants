@@ -1,6 +1,6 @@
 # Rollout Playbooks By Repository Profile
 
-Tracking issue: #191
+Tracking issues: #191, #212
 
 This document turns the existing examples, adoption guidance, and supported CLI
 workflows into repeatable rollout paths for three common repository shapes:
@@ -25,6 +25,8 @@ These rules apply before choosing a repository profile:
    summaries.
 5. Move to the next rollout stage only after the current one is understandable
    and trusted.
+6. If the first bounded run produces weak denominator health, retarget before
+   you widen scope, shard count, or mutant density.
 
 ## Playbook 1: Compact Library
 
@@ -56,7 +58,10 @@ Start from:
 
 3. Add the first PR mutation lane using the example workflow shape.
 4. Review survivors through summary, JSON, JUnit, and GitHub summary outputs.
-5. Stay on `ci-fast` until the team can explain which survivors are useful and
+5. If the first bounded run lands with near-zero `effective mutants` or mostly
+   `not covered` rows, rerun on the hottest package path before you treat `./...`
+   as the permanent compact-library target.
+6. Stay on `ci-fast` until the team can explain which survivors are useful and
    which are noise.
 
 ### Exit criteria before growing the lane
@@ -87,17 +92,19 @@ Start from:
    ```
 
 3. Accept the baseline before introducing stronger policy expectations.
-4. Add a nightly lane only after the PR lane is already trusted:
+4. If the first PR lane has poor denominator health, narrow the target to one
+   service boundary or package cluster before you add nightly depth.
+5. Add a nightly lane only after the PR lane is already trusted:
 
    ```powershell
    cervomut run ./... --policy nightly --budget 20m --report summary,json,junit,html,sarif,github-summary --out .cervomut/nightly
    ```
 
-5. Use the richer outputs to review:
+6. Use the richer outputs to review:
    - HTML survivor workbench
    - SARIF or GitHub-native findings
    - actionable score and survivor recommendations
-6. Introduce quarantine or ownership routing only after the basic PR and nightly
+7. Introduce quarantine or ownership routing only after the basic PR and nightly
    flows already make sense.
 
 ### Exit criteria before moving to larger-scale workflows
@@ -128,21 +135,23 @@ Start from:
    ```
 
 3. Accept the baseline for the bounded PR shape first.
-4. Add a wider nightly shard set only after the PR shard is stable:
+4. If the first shard still produces weak denominator health, retarget to a
+   smaller package set before you increase shard count or nightly breadth.
+5. Add a wider nightly shard set only after the PR shard is stable:
 
    ```powershell
    cervomut run ./... --policy nightly --slice-by file --shard 3/12 --max-mutants-per-package 25 --sample deterministic --report summary,json,junit,html,sarif,github-summary --out .cervomut/nightly
    ```
 
-5. Add campaign-style targeted runs only for bounded domains with clear value:
+6. Add campaign-style targeted runs only for bounded domains with clear value:
 
    ```powershell
    cervomut run ./pkg/catalog ./pkg/pricing --policy campaign --workers 2 --out .cervomut/campaign
    ```
 
-6. Preserve every lane's outputs separately instead of trying to merge unrelated
+7. Preserve every lane's outputs separately instead of trying to merge unrelated
    history automatically.
-7. Treat daemon/worker as experimental unless and until its support status
+8. Treat daemon/worker as experimental unless and until its support status
    changes publicly.
 
 ### Exit criteria before claiming broader rollout maturity
@@ -158,6 +167,8 @@ When a rollout feels stuck, use this rule:
 
 - If the problem is noise, narrow policy, target, or scope before adding more
   automation.
+- If the problem is poor denominator health, retarget before you add more
+  mutants, broader shards, or stricter score expectations.
 - If the problem is missing historical context, preserve artifacts and add
   history review before broadening mutation breadth.
 - If the problem is raw runtime, shard or slice before adding more mutants.

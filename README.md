@@ -86,6 +86,17 @@ cervomut fast ./... --budget 10m --sample deterministic
 
 The default output directory is `.cervomut/reports`.
 
+Do not judge the first run by the score alone. Check whether it produced
+reviewable denominator health first:
+
+- `effective mutants`
+- `not covered`
+- denominator warnings in `summary.txt`
+
+If the first bounded run finishes but yields near-zero effective mutants or
+mostly not-covered rows, narrow the target before you widen policy depth or set
+CI expectations.
+
 On Windows, `temp-workdir` runs now harden themselves automatically:
 
 - they cap effective workers to `2`;
