@@ -156,7 +156,10 @@ func extractZipArchive(path, dest string) error {
 	}
 	defer reader.Close()
 	for _, file := range reader.File {
-		target := filepath.Join(dest, filepath.FromSlash(file.Name))
+		target, err := archiveExtractionTarget(dest, file.Name)
+		if err != nil {
+			return err
+		}
 		if file.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return err
@@ -201,7 +204,10 @@ func extractTarGzArchive(path, dest string) error {
 		if err != nil {
 			return fmt.Errorf("read tarball %s: %w", filepath.ToSlash(path), err)
 		}
-		target := filepath.Join(dest, filepath.FromSlash(hdr.Name))
+		target, err := archiveExtractionTarget(dest, hdr.Name)
+		if err != nil {
+			return err
+		}
 		if hdr.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return err
@@ -262,6 +268,22 @@ func ensureExecutable(path string) error {
 		return nil
 	}
 	return os.Chmod(path, mode|0o755)
+}
+
+func archiveExtractionTarget(dest, name string) (string, error) {
+	clean := filepath.Clean(filepath.FromSlash(name))
+	if clean == "." {
+		return "", fmt.Errorf("archive entry %q has no file path", name)
+	}
+	target := filepath.Join(dest, clean)
+	rel, err := filepath.Rel(dest, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("archive entry %q escapes extraction root %s", name, filepath.ToSlash(dest))
+	}
+	return target, nil
 }
 
 func writeUpgradeFixture(dir string) error {

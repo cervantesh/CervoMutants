@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +88,65 @@ func TestEnsureExecutableAddsExecBits(t *testing.T) {
 	}
 	if info.Mode()&0o111 == 0 {
 		t.Fatalf("ensureExecutable did not set execute bits: mode=%#o", info.Mode().Perm())
+	}
+}
+
+func TestExtractReleaseArchiveRejectsEscapingZipEntry(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "escape.zip")
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, err := zw.Create("../escape.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("bad")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = extractReleaseArchive(archivePath, filepath.Join(dir, "out"))
+	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
+		t.Fatalf("expected archive escape error, got %v", err)
+	}
+}
+
+func TestExtractReleaseArchiveRejectsEscapingTarEntry(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "escape.tar.gz")
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gzw)
+	body := []byte("bad")
+	hdr := &tar.Header{Name: "../escape.txt", Mode: 0o644, Size: int64(len(body))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = extractReleaseArchive(archivePath, filepath.Join(dir, "out"))
+	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
+		t.Fatalf("expected archive escape error, got %v", err)
 	}
 }
 
