@@ -154,7 +154,7 @@ func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
 			t.Fatalf("WriteFile(%s) error = %v", rel, err)
 		}
 	}
-	mustWriteFile("configs/env/app.yaml", "enabled: true\n")
+	mustWriteFile("config.yaml", "enabled: true\n")
 	mustWriteFile("docs/guide/note.txt", "hello\n")
 	mustWriteFile("vendor/ignored.go", "package ignored\n")
 	mustWriteFile("assets/release.json", "{}\n")
@@ -168,7 +168,7 @@ func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
 	}
 	fingerprints := e.checkpointFileFingerprints(mutants)
 	joined := strings.Join(fingerprints, "\n")
-	for _, want := range []string{"calc.go:", "calc_test.go:", "go.mod:", "configs/env/app.yaml:", "docs/guide/note.txt:", "assets/release.json:"} {
+	for _, want := range []string{"calc.go:", "calc_test.go:", "go.mod:", "config.yaml:", "docs/guide/note.txt:", "assets/release.json:"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("checkpointFileFingerprints missing %q in:\n%s", want, joined)
 		}
@@ -196,7 +196,7 @@ func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
 	if checkpointDirAction(dirEntry) != filepath.SkipDir || checkpointDirAction(fileEntry) != nil {
 		t.Fatal("checkpointDirAction classification changed")
 	}
-	if !globMatch("*.go", "calc.go") || !globMatch("**/*.yaml", "configs/env/app.yaml") || !globMatch("docs/**/note.txt", "docs/guide/note.txt") || !globMatch("assets/**", "assets/release.json") {
+	if !globMatch("*.go", "calc.go") || !globMatch("**/*.yaml", "config.yaml") || !globMatch("docs/**/note.txt", "docs/guide/note.txt") || !globMatch("assets/**", "assets/release.json") {
 		t.Fatal("globMatch did not cover expected include patterns")
 	}
 	if globMatch("docs/**/note.txt", "docs/guide/other.txt") {
@@ -205,7 +205,7 @@ func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
 	if !shouldSkipCheckpointDir("vendor") || shouldSkipCheckpointDir("pkg") {
 		t.Fatal("shouldSkipCheckpointDir branches changed")
 	}
-	if fingerprint, ok := e.checkpointFileFingerprint(moduleDir, filepath.Join(moduleDir, "configs", "env", "app.yaml"), "app.yaml"); !ok || !strings.Contains(fingerprint, "configs/env/app.yaml:") {
+	if fingerprint, ok := e.checkpointFileFingerprint(moduleDir, filepath.Join(moduleDir, "config.yaml"), "config.yaml"); !ok || !strings.Contains(fingerprint, "config.yaml:") {
 		t.Fatalf("checkpointFileFingerprint include = %q %v", fingerprint, ok)
 	}
 	if fingerprint, ok := e.checkpointFileFingerprint(moduleDir, filepath.Join(moduleDir, "missing.go"), "missing.go"); ok || fingerprint != "" {
