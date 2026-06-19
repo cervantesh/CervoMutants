@@ -9,8 +9,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cervantesh/cervo-mutants/pkg/config"
+	"github.com/cervantesh/cervo-mutants/pkg/mutator"
 )
 
 func TestFailureHelpersAndFailureResult(t *testing.T) {
@@ -99,6 +101,142 @@ func TestHelperCoverageBranches(t *testing.T) {
 				t.Fatalf("sliceGroupKey(%q) = %q, want %q", tc.sliceBy, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
+	cfg := config.Defaults()
+	generatorCalled := false
+	customGenerator := mutator.GeneratorFunc(func(pkg, filename string, src []byte, profile string) ([]mutator.Mutant, error) {
+		generatorCalled = true
+		return []mutator.Mutant{{ID: "generated"}}, nil
+	})
+	customSuppression := SuppressionEvaluatorFunc(func(mutator.Mutant) []SuppressionAudit {
+		return []SuppressionAudit{{Name: "manual", Action: "report-only"}}
+	})
+	customRanker := SurvivorRankerFunc(func(goos string, results []MutantResult) []SurvivorRanking {
+		return []SurvivorRanking{{MutantID: "m1", SurvivorRank: 1, RankReason: goos}}
+	})
+	e := NewWithOptions(cfg,
+		WithMutantGenerator(customGenerator),
+		WithSuppressionEvaluator(customSuppression),
+		WithSurvivorRanker(customRanker),
+	)
+	if e == nil {
+		t.Fatal("NewWithOptions returned nil")
+	}
+	if _, err := e.mutantGenerator.Generate("fixture", "fixture.go", []byte("package fixture"), ""); err != nil || !generatorCalled {
+		t.Fatalf("custom generator did not run: called=%v err=%v", generatorCalled, err)
+	}
+	if audits := e.suppressionEvaluator.Evaluate(mutator.Mutant{}); len(audits) != 1 || audits[0].Action != "report-only" {
+		t.Fatalf("custom suppression evaluator = %+v", audits)
+	}
+	if rankings := e.survivorRanker.Rank(runtime.GOOS, []MutantResult{{MutantID: "m1"}}); len(rankings) != 1 || rankings[0].SurvivorRank != 1 {
+		t.Fatalf("custom survivor ranker = %+v", rankings)
+	}
+
+	start := time.Now().Add(-3 * time.Second)
+	if got := e.elapsedSince(start); got <= 0 {
+		t.Fatalf("elapsedSince() = %v, want positive duration", got)
+	}
+	if now := (&Engine{}).clockNow(); now.IsZero() {
+		t.Fatal("clockNow should fall back to time.Now when no custom clock is set")
+	}
+
+	moduleDir := writeFixture(t)
+	mustWriteFile := func(rel, data string) {
+		t.Helper()
+		path := filepath.Join(moduleDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", rel, err)
+		}
+	}
+	mustWriteFile("config.yaml", "enabled: true\n")
+	mustWriteFile("docs/guide/note.txt", "hello\n")
+	mustWriteFile("vendor/ignored.go", "package ignored\n")
+	mustWriteFile("assets/release.json", "{}\n")
+
+	cfg.Execution.CheckpointIncludes = []string{"**/*.yaml", "docs/**/note.txt", "assets/**"}
+	e = New(cfg)
+	mutants := []Mutant{{ID: "m2", Module: moduleDir}, {ID: "m1", Module: moduleDir}}
+	cp := e.checkpoint(mutants, "partial")
+	if cp.Fingerprint == "" || cp.Mutants != 2 || !cp.IncludesFileDigests || cp.Reason != "partial" {
+		t.Fatalf("checkpoint() = %+v", cp)
+	}
+	fingerprints := e.checkpointFileFingerprints(mutants)
+	joined := strings.Join(fingerprints, "\n")
+	for _, want := range []string{"calc.go:", "calc_test.go:", "go.mod:", "config.yaml:", "docs/guide/note.txt:", "assets/release.json:"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("checkpointFileFingerprints missing %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "vendor/ignored.go:") {
+		t.Fatalf("checkpointFileFingerprints should skip vendor paths:\n%s", joined)
+	}
+
+	entries, err := os.ReadDir(moduleDir)
+	if err != nil {
+		t.Fatalf("ReadDir(moduleDir) error = %v", err)
+	}
+	var dirEntry, fileEntry os.DirEntry
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "vendor":
+			dirEntry = entry
+		case "go.mod":
+			fileEntry = entry
+		}
+	}
+	if !skipCheckpointWalkEntry(nil, nil) || !skipCheckpointWalkEntry(fileEntry, errors.New("boom")) || skipCheckpointWalkEntry(fileEntry, nil) {
+		t.Fatal("skipCheckpointWalkEntry branches changed")
+	}
+	if checkpointDirAction(dirEntry) != filepath.SkipDir || checkpointDirAction(fileEntry) != nil {
+		t.Fatal("checkpointDirAction classification changed")
+	}
+	if !globMatch("*.go", "calc.go") || !globMatch("**/*.yaml", "config.yaml") || !globMatch("docs/**/note.txt", "docs/guide/note.txt") || !globMatch("assets/**", "assets/release.json") {
+		t.Fatal("globMatch did not cover expected include patterns")
+	}
+	if globMatch("docs/**/note.txt", "docs/guide/other.txt") {
+		t.Fatal("globMatch should not match unrelated files")
+	}
+	if !shouldSkipCheckpointDir("vendor") || shouldSkipCheckpointDir("pkg") {
+		t.Fatal("shouldSkipCheckpointDir branches changed")
+	}
+	if fingerprint, ok := e.checkpointFileFingerprint(moduleDir, filepath.Join(moduleDir, "config.yaml"), "config.yaml"); !ok || !strings.Contains(fingerprint, "config.yaml:") {
+		t.Fatalf("checkpointFileFingerprint include = %q %v", fingerprint, ok)
+	}
+	if fingerprint, ok := e.checkpointFileFingerprint(moduleDir, filepath.Join(moduleDir, "missing.go"), "missing.go"); ok || fingerprint != "" {
+		t.Fatalf("checkpointFileFingerprint missing file = %q %v", fingerprint, ok)
+	}
+
+	e.setCheckpointScope(mutants)
+	scope := e.currentCheckpointScope()
+	scope[0].ID = "mutated-copy"
+	if e.currentCheckpointScope()[0].ID != "m2" {
+		t.Fatal("currentCheckpointScope should return a copy")
+	}
+	if scoped := e.checkpointFromResults([]MutantResult{{MutantID: "ignored", Mutant: Mutant{ID: "ignored", Module: moduleDir}}}, "resume"); scoped.Mutants != len(mutants) {
+		t.Fatalf("checkpointFromResults with scope = %+v", scoped)
+	}
+	e.setCheckpointScope(nil)
+	fallback := e.checkpointFromResults([]MutantResult{
+		{MutantID: "result-one", Mutant: Mutant{ID: "result-one", Module: moduleDir}},
+		{MutantID: "", Mutant: Mutant{ID: "", Module: moduleDir}},
+	}, "resume")
+	if fallback.Mutants != 1 || fallback.Fingerprint == "" {
+		t.Fatalf("checkpointFromResults fallback = %+v", fallback)
+	}
+
+	compacted := compactedResults([]MutantResult{{MutantID: "a"}, {MutantID: ""}, {MutantID: "b"}})
+	if len(compacted) != 2 || compacted[0].MutantID != "a" || compacted[1].MutantID != "b" {
+		t.Fatalf("compactedResults = %+v", compacted)
+	}
+	ordered := orderResults([]Mutant{{ID: "b"}, {ID: "a"}}, []MutantResult{{MutantID: "a"}, {MutantID: "b"}, {MutantID: "extra"}})
+	if len(ordered) != 2 || ordered[0].MutantID != "b" || ordered[1].MutantID != "a" {
+		t.Fatalf("orderResults = %+v", ordered)
 	}
 }
 

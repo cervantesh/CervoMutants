@@ -630,6 +630,124 @@ func TestGeneratorMutantKeyFallsBackToID(t *testing.T) {
 	}
 }
 
+func TestDefaultGeneratorAndHelperBranches(t *testing.T) {
+	src := []byte(`package sample
+
+func Review(flag bool, xs []int) bool {
+	count := 1
+	for i := 0; i < len(xs); i++ {
+		count += xs[i]
+	}
+	if len(xs) > 0 && flag {
+		return true
+	}
+	return false
+}
+`)
+
+	mutants, err := DefaultGenerator().Generate("sample", "sample.go", src, ProfileAggressive)
+	if err != nil {
+		t.Fatalf("DefaultGenerator returned error: %v", err)
+	}
+	ops := operatorSet(mutants)
+	for _, want := range []string{
+		"numeric-literals",
+		"literals",
+		"assignment-arithmetic",
+		"inc-dec",
+		"conditionals-boundary",
+		"logical",
+		"return-bool-literals",
+		"returns",
+		"loop-control",
+		"slice-map-len-boundary",
+	} {
+		if !ops[want] {
+			t.Fatalf("DefaultGenerator output missing %s: %+v", want, mutants)
+		}
+	}
+
+	if hasCanonicalMutantKey(Mutant{}) {
+		t.Fatal("hasCanonicalMutantKey should reject an empty mutant")
+	}
+	if !hasCanonicalMutantKey(Mutant{File: "sample.go"}) {
+		t.Fatal("hasCanonicalMutantKey should accept a file-backed mutant")
+	}
+	key := generatorMutantKey(Mutant{
+		File:        "sample.go",
+		Line:        7,
+		Operator:    "logical",
+		Original:    "&&",
+		Mutated:     "||",
+		StartOffset: 10,
+		EndOffset:   12,
+	})
+	if !strings.Contains(key, "sample.go") || !strings.Contains(key, "logical") {
+		t.Fatalf("generatorMutantKey canonical key = %q", key)
+	}
+
+	if got := normalizeExpr("  len(xs)\n >   0 "); got != "len(xs) > 0" {
+		t.Fatalf("normalizeExpr = %q", got)
+	}
+	if got := normalizeTag(" Sort Comparator Boundary "); got != "sort-comparator-boundary" {
+		t.Fatalf("normalizeTag = %q", got)
+	}
+	if !isSortCall(&ast.CallExpr{Fun: &ast.SelectorExpr{X: &ast.Ident{Name: "sort"}, Sel: &ast.Ident{Name: "SliceStable"}}}) {
+		t.Fatal("isSortCall should accept sort.SliceStable")
+	}
+	if isSortCall(&ast.CallExpr{Fun: &ast.Ident{Name: "Slice"}}) {
+		t.Fatal("isSortCall should reject non-qualified calls")
+	}
+	if !ignored(4, opLogical, []inlineIgnore{{line: 4, operator: "*"}}) || ignored(5, opLogical, []inlineIgnore{{line: 4, operator: "*"}}) {
+		t.Fatal("ignored helper branches changed")
+	}
+	diff := unifiedDiff("sample.go", "return true\n", "return false\n")
+	if !strings.Contains(diff, "--- sample.go") || !strings.Contains(diff, "+return false") {
+		t.Fatalf("unifiedDiff = %q", diff)
+	}
+	if fingerprint("same") == fingerprint("different") {
+		t.Fatal("fingerprint should distinguish different inputs")
+	}
+	if hint(opLoopControl) == "" || description("Review", opLogical, "&&", "||") == "" {
+		t.Fatal("hint/description should stay populated")
+	}
+}
+
+func TestInlineIgnoreParsingBranches(t *testing.T) {
+	ignore, ok, err := parseInlineIgnore("sample.go", 0, `// cervomut:ignore logical reason="covered"`, true)
+	if err != nil || !ok {
+		t.Fatalf("parseInlineIgnore returned ok=%v err=%v", ok, err)
+	}
+	if ignore.line != 2 || ignore.operator != "logical" || ignore.reason != "covered" {
+		t.Fatalf("parseInlineIgnore returned %+v", ignore)
+	}
+
+	if _, ok, err := parseInlineIgnore("sample.go", 0, `fmt.Println("cervomut:ignore logical")`, true); err != nil || ok {
+		t.Fatalf("parseInlineIgnore should ignore non-comment directives: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := parseInlineIgnore("sample.go", 0, `// regular comment`, true); err != nil || ok {
+		t.Fatalf("parseInlineIgnore should ignore plain comments: ok=%v err=%v", ok, err)
+	}
+	if _, _, err := parseInlineIgnore("sample.go", 3, `// cervomut:ignore logical`, true); err == nil {
+		t.Fatal("parseInlineIgnore accepted missing required reason")
+	}
+
+	src := []byte(`package sample
+
+// cervomut:ignore logical reason="documented"
+func Review(flag bool) bool {
+	return flag
+}
+`)
+	ignores, err := ValidateInlineIgnores("sample.go", src, true)
+	if err != nil {
+		t.Fatalf("ValidateInlineIgnores returned error: %v", err)
+	}
+	if len(ignores) != 1 || ignores[0].operator != "logical" {
+		t.Fatalf("ValidateInlineIgnores = %+v", ignores)
+	}
+}
+
 func operatorSet(mutants []Mutant) map[string]bool {
 	operators := map[string]bool{}
 	for _, mutant := range mutants {
