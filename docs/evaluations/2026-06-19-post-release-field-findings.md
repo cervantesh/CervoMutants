@@ -58,7 +58,7 @@ The post-release field picture is sharper now:
 | Hosted candidate mix too weak | Tuned wave `27833007931` still had `covered=4`, `effective=4`, `not_covered=26`, `warning_repos=3`. | Functional product-default gap | Fixed materially in [#227](https://github.com/cervantesh/cervo-mutants/issues/227). |
 | Adoption-wave summaries too thin for calibration | Early summaries did not preserve recommendation, ledger, or governance-yield counts directly. | Code/report-contract gap | Fixed in [#223](https://github.com/cervantesh/cervo-mutants/issues/223). |
 | Hosted triage/recommendation usefulness underpowered | Early hosted waves yielded `actionable_score=0` and no review units. | Evidence gap, not immediate heuristic bug | Reframed and partially resolved by better inputs in [#211](https://github.com/cervantesh/cervo-mutants/issues/211) and [#227](https://github.com/cervantesh/cervo-mutants/issues/227). |
-| Public expectations still too easy to overstate | Hosted path now works, but signal quality is still target-sensitive and bounded by candidate choice. | Documentation and expectation gap | Remaining follow-up under [#212](https://github.com/cervantesh/cervo-mutants/issues/212). |
+| Public expectations still too easy to overstate | Hosted path now works, but signal quality is still target-sensitive and bounded by candidate choice. | Documentation and expectation gap | Implemented in [#256](https://github.com/cervantesh/cervo-mutants/issues/256) with refreshed hosted-action, adoption, and rollout guidance. |
 
 ## Repeated Friction Themes
 
@@ -168,12 +168,14 @@ Those claims would overstate what the field data proves today.
 
 ### Remaining
 
-- Public docs should better frame hosted-wave expectations, especially around
-  bounded defaults, target sensitivity, and what a first useful signal really
-  looks like on external repositories
+- broader external adoption depth is still limited
+- hosted validation remains bounded rather than exhaustive
+- recommendation and semantic-triage calibration still need evidence from more
+  repository shapes than the current released-surface sample
 
-That remaining work is narrower than the earlier product gaps and belongs under
-[#212](https://github.com/cervantesh/cervo-mutants/issues/212).
+The earlier hosted expectation-management gap from this evidence cycle is no
+longer open. That narrower docs follow-up was implemented in
+[#256](https://github.com/cervantesh/cervo-mutants/issues/256).
 
 ## Practical Interpretation
 
@@ -197,9 +199,9 @@ already corrected inside the same release-era evidence cycle.
 
 ## Follow-Up
 
-- Remaining open follow-up:
-  - [#212](https://github.com/cervantesh/cervo-mutants/issues/212) Tighten
-    rollout defaults and docs from repeated field friction
-- Parent tracking:
+- Implemented follow-up from this evidence cycle:
+  - [#256](https://github.com/cervantesh/cervo-mutants/issues/256) Tighten
+    hosted rollout guidance from released-surface field findings
+- Historical parent tracking:
   - [#206](https://github.com/cervantesh/cervo-mutants/issues/206) Epic:
     Post-roadmap external adoption and signal calibration
