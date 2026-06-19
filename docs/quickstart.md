@@ -1,6 +1,6 @@
 # Quickstart
 
-Tracking issue: #161
+Tracking issues: #161, #212
 
 This is the shortest supported path from first install to a useful mutation
 report.
@@ -93,6 +93,12 @@ Read these first:
 3. `github-summary.md` or the GitHub step summary in CI
 4. survivor details only after the run itself looks healthy
 
+Check denominator health before you worry about the score:
+
+- did the run produce any `effective mutants`?
+- is `not covered` dominating the report?
+- are there denominator warnings in `summary.txt`?
+
 The first useful question is:
 
 > Did the run produce a bounded, reviewable signal?
@@ -111,8 +117,9 @@ If the first run is not useful, check these in order:
    If `go test ./...` is already flaky, mutation output will not become clearer
    than the baseline.
 3. Target size
-   If `./...` is too broad, switch to a package target or one of the example
-   shard patterns.
+   If `./...` is too broad, or the first run yields near-zero `effective
+   mutants` with mostly `not covered` rows, switch to a hotter package target
+   or one of the example shard patterns before widening again.
 4. Budget
    Keep the first run bounded. A fast useful run is better than a huge noisy
    run.

@@ -1,6 +1,6 @@
 # GitHub Action
 
-Tracking issues: #159, #182
+Tracking issues: #159, #182, #212
 
 CervoMutants now ships a first-party GitHub Action for the common CI path:
 install the tool, set up Go, and run a bounded `cervomut run` mutation lane.
@@ -142,6 +142,49 @@ When that directory lives under `.cervomut/...`, set
 `include-hidden-files: true` on `actions/upload-artifact@v4`; otherwise GitHub
 skips hidden report folders and the upload completes without the expected JSON,
 JUnit, HTML, or SARIF files.
+
+## First Useful Signal Checklist
+
+The first successful Action run should be judged on more than "the job passed."
+
+Review these first from the uploaded artifacts or step summary:
+
+- `effective mutants`
+- `not covered`
+- denominator-health warnings
+- whether the run produced any actionable review units or survivor output at all
+
+If the first hosted run finishes but yields near-zero `effective mutants`, or
+mostly `not covered` rows, treat that as **target-selection feedback** before
+you treat it as a product failure.
+
+Recommended response order:
+
+1. keep the artifacts from the weak run
+2. retarget the workflow with `targets` to a hotter package root or bounded
+   subtree
+3. rerun on that narrower target before broadening to `./...`, adding more
+   mutants, or judging recommendation quality
+
+That sequence matches the post-release field evidence: the largest early
+hosted-wave gains came from healthier targets and candidate choice, not from
+panic-tuning semantic heuristics first.
+
+For example, a first retargeted pass can be as small as:
+
+```yaml
+- name: Run CervoMutants
+  uses: cervantesh/cervo-mutants@main
+  with:
+    targets: ./pkg/your-hot-path
+    policy: ci-fast
+    budget: 5m
+    report: summary,json,junit,github-summary
+    out: .cervomut/pr
+```
+
+Once that lane produces healthy denominator behavior and reviewable survivors,
+then widen the target or add nightly depth.
 
 ## Validation Coverage
 

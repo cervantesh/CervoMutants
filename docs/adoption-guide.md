@@ -1,6 +1,6 @@
 # Adoption Guide: Fit, Limits, And Rollout
 
-Tracking issues: #137, #165
+Tracking issues: #137, #165, #212
 
 This guide turns the current public evidence into a practical answer to three
 questions:
@@ -113,12 +113,49 @@ When a real rollout surfaces those limits, capture it through the
 template so the evidence becomes tracked product feedback instead of a private
 note.
 
+## First Useful Signal Before Broader Rollout
+
+A first run that completes is not automatically a first run that teaches you
+anything useful.
+
+The recent hosted adoption waves showed the difference clearly:
+
+- the workflow can be operationally healthy while still producing weak
+  denominator health
+- low-signal first runs were usually a target-selection problem before they
+  were a triage or engine problem
+- retargeting to healthier package roots produced materially better review
+  signal without changing the core product
+
+For the first bounded run, read these fields before you judge the score:
+
+- `effective mutants`
+- `not covered`
+- denominator-health warnings in `summary.txt` or `github-summary.md`
+- whether there are any actionable review units at all
+
+If the first run lands near `effective=0`, or if `not covered` dominates the
+report, do **not** immediately conclude that the repository is a bad fit or
+that semantic triage needs tuning first.
+
+Treat that as rollout feedback:
+
+1. preserve the artifacts
+2. narrow the target to a hotter package, submodule, or bounded shard
+3. rerun before widening the lane or setting policy expectations
+
+That is the safer interpretation supported by the current field evidence in:
+
+- [docs/evaluations/2026-06-19-post-release-field-findings.md](evaluations/2026-06-19-post-release-field-findings.md)
+- [docs/evaluations/2026-06-19-external-github-action-wave-candidate-retargeting.md](evaluations/2026-06-19-external-github-action-wave-candidate-retargeting.md)
+
 ## Recommended Rollout Path
 
 Use this rollout order unless the repository already has a mature mutation lane:
 
 1. Start with `cervomut doctor`, `cervomut init`, and a dry run.
-2. Run a bounded local or PR-style pass with `ci-fast` or `ci-balanced`.
+2. Run the first bounded local pass on the same report directory you will use
+   for the first baseline, usually `.cervomut/reports`.
 3. Save a baseline before introducing harder policy expectations.
 4. Add nightly or campaign-style runs only after the PR lane is understandable.
 5. Introduce slicing, ownership routing, quarantine, and historical review when
@@ -130,9 +167,12 @@ Practical starting commands:
 cervomut init
 cervomut doctor
 cervomut run ./... --dry-run
-cervomut fast ./... --budget 10m --sample deterministic
+cervomut fast ./... --budget 10m --sample deterministic --out .cervomut/reports
 cervomut baseline update
 ```
+
+If that run produces poor denominator health, rerun on a narrower package or
+subtree before you add CI or nightly depth.
 
 For repository-specific starting points, use the maintained examples first
 instead of inventing custom config on day one.
