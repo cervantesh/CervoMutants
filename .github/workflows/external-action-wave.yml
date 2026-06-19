@@ -171,6 +171,12 @@ jobs:
               (($ledger[0].entries // []) | length) as $ledger_entries |
               (($governance[0].quarantine_templates // []) | length) as $governance_quarantine_templates |
               (($governance[0].suppression_templates // []) | length) as $governance_suppression_templates |
+              ([$r.mutants[]? | select(.test_recommendation != null)]) as $recommended |
+              ($recommended | length) as $recommendation_entries |
+              (
+                ($recommended | map(select((.mutant.semantic_group // "") == "")) | length) +
+                ($recommended | map(.mutant.semantic_group // empty) | unique | length)
+              ) as $recommendation_review_units |
               {
                 generated_at: $generated_at,
                 name: $name,
@@ -208,7 +214,9 @@ jobs:
                   semantic_group_review_units: ($r.summary.actionable.semantic_group_review_units // 0),
                   collapsed_semantic_duplicates: ($r.summary.actionable.collapsed_semantic_duplicates // 0),
                   semantic_group_count: (($r.summary.semantic_group_statistics // {}) | keys | length),
-                  recommendation_entries: ([$r.mutants[]? | select(.test_recommendation != null)] | length),
+                  recommendation_entries: $recommendation_entries,
+                  recommendation_review_units: $recommendation_review_units,
+                  collapsed_recommendation_duplicates: ($recommendation_entries - $recommendation_review_units),
                   ledger_entries: $ledger_entries,
                   governance_quarantine_templates: $governance_quarantine_templates,
                   governance_suppression_templates: $governance_suppression_templates,
@@ -262,6 +270,8 @@ jobs:
                   collapsed_semantic_duplicates: 0,
                   semantic_group_count: 0,
                   recommendation_entries: 0,
+                  recommendation_review_units: 0,
+                  collapsed_recommendation_duplicates: 0,
                   ledger_entries: 0,
                   governance_quarantine_templates: 0,
                   governance_suppression_templates: 0,
@@ -374,6 +384,8 @@ jobs:
                 collapsed_semantic_duplicates: (map(.triage.collapsed_semantic_duplicates // 0) | add),
                 semantic_group_count: (map(.triage.semantic_group_count // 0) | add),
                 recommendation_entries: (map(.triage.recommendation_entries // 0) | add),
+                recommendation_review_units: (map(.triage.recommendation_review_units // 0) | add),
+                collapsed_recommendation_duplicates: (map(.triage.collapsed_recommendation_duplicates // 0) | add),
                 ledger_entries: (map(.triage.ledger_entries // 0) | add),
                 governance_quarantine_templates: (map(.triage.governance_quarantine_templates // 0) | add),
                 governance_suppression_templates: (map(.triage.governance_suppression_templates // 0) | add),
@@ -381,6 +393,7 @@ jobs:
                 repos_with_actionable_review_units: (map(select((.triage.actionable_review_units // 0) > 0)) | length),
                 repos_with_semantic_groups: (map(select((.triage.semantic_group_count // 0) > 0)) | length),
                 repos_with_recommendations: (map(select((.triage.recommendation_entries // 0) > 0)) | length),
+                repos_with_recommendation_review_units: (map(select((.triage.recommendation_review_units // 0) > 0)) | length),
                 repos_with_ledger_entries: (map(select((.triage.ledger_entries // 0) > 0)) | length),
                 repos_with_governance_suggestions: (map(select((.triage.governance_total_suggestions // 0) > 0)) | length)
               }
@@ -411,6 +424,8 @@ jobs:
               "- Semantic group review units: **\(.triage.semantic_group_review_units)**",
               "- Semantic groups formed: **\(.triage.semantic_group_count)**",
               "- Recommendation entries: **\(.triage.recommendation_entries)**",
+              "- Recommendation review units: **\(.triage.recommendation_review_units)**",
+              "- Collapsed recommendation duplicates: **\(.triage.collapsed_recommendation_duplicates)**",
               "- Ledger entries: **\(.triage.ledger_entries)**",
               "- Governance suggestions: **\(.triage.governance_total_suggestions)**",
               ""
@@ -420,7 +435,7 @@ jobs:
               "## \(.name)\n- Repository: `\(.repository)`\n- Install path: `\(.install_path)` action_ref=`\(.action_ref)`\n- Target: `\(.target)`\n- Profile: `\(.profile)`\n- Policy: `\(.policy)` sample=`\(.sample // "")` max_mutants=`\(.max_mutants)` workers=`\(.workers)`\n- Job status: `\(.job_status)`\n- Report kind: `\(.report_kind)`\n" +
               (
                 if .summary then
-                  "- Generated: **\(.denominator_health.generated // 0)**, effective: **\(.denominator_health.effective // 0)**, killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, not covered: **\(.summary.not_covered)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n- Triage: actionable_review_units=**\(.triage.actionable_review_units // 0)**, semantic_groups=**\(.triage.semantic_group_count // 0)**, recommendations=**\(.triage.recommendation_entries // 0)**, ledger_entries=**\(.triage.ledger_entries // 0)**, governance_suggestions=**\(.triage.governance_total_suggestions // 0)**\n"
+                  "- Generated: **\(.denominator_health.generated // 0)**, effective: **\(.denominator_health.effective // 0)**, killed: **\(.summary.killed)**, survived: **\(.summary.survived)**, not covered: **\(.summary.not_covered)**, score: **\(.summary.score)%**, actionable: **\(.summary.actionable_score)%**\n- Triage: actionable_review_units=**\(.triage.actionable_review_units // 0)**, semantic_groups=**\(.triage.semantic_group_count // 0)**, recommendations=**\(.triage.recommendation_entries // 0)**, recommendation_review_units=**\(.triage.recommendation_review_units // 0)**, collapsed_recommendation_duplicates=**\(.triage.collapsed_recommendation_duplicates // 0)**, ledger_entries=**\(.triage.ledger_entries // 0)**, governance_suggestions=**\(.triage.governance_total_suggestions // 0)**\n"
                 else
                   "- No report metrics captured\n"
                 end
