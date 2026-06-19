@@ -178,6 +178,23 @@ That is not evidence that the hosted path is broken. It is evidence that the
 first bounded target can be too cold, and that retargeting should come before
 broader policy judgments.
 
+Healthy first useful reports can still have one more shape that needs explicit
+review semantics:
+
+- repeated equivalent-risk boundary survivors inside an otherwise healthy run
+
+The released hosted adoption-feedback issues for `pflag`, `gjson`, and
+`apimachinery` make that concrete:
+
+- raw survivors can be higher than the real review workload
+- `semantic_group_review_units`, `test-recommendations.md`, and
+  `governance-review.md` together often tell you that the right action is
+  "review once" or `report-only`, not "treat every raw survivor as a separate
+  test task"
+
+When a bounded run is otherwise healthy, read those artifacts before you decide
+that the lane is noisy.
+
 ## Recommended Rollout Path
 
 Use this rollout order unless the repository already has a mature mutation lane:
