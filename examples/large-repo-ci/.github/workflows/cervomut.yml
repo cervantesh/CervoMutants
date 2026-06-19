@@ -15,7 +15,14 @@ jobs:
         shard: ["1/4", "2/4", "3/4", "4/4"]
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize PR shard metadata
+        id: shard-meta
+        shell: bash
+        run: |
+          safe_shard="${{ matrix.shard }}"
+          echo "safe_shard=${safe_shard//\//-}" >> "$GITHUB_OUTPUT"
       - name: Run PR shard
+        id: cervomut
         uses: cervantesh/cervo-mutants@main
         with:
           policy: ci-fast
@@ -24,7 +31,14 @@ jobs:
           max-files-per-run: "20"
           sample: deterministic
           report: summary,json,github-summary
-          out: .cervomut/pr-${{ matrix.shard }}
+          out: .cervomut/pr-${{ steps.shard-meta.outputs.safe_shard }}
+      - name: Upload PR shard artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          name: cervomut-pr-${{ steps.shard-meta.outputs.safe_shard }}
+          path: ${{ steps.cervomut.outputs.report-dir }}
 
   nightly-shards:
     if: github.event_name == 'schedule'
@@ -34,7 +48,14 @@ jobs:
         shard: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize nightly shard metadata
+        id: shard-meta
+        shell: bash
+        run: |
+          safe_shard="${{ matrix.shard }}"
+          echo "safe_shard=${safe_shard//\//-}" >> "$GITHUB_OUTPUT"
       - name: Run nightly shard
+        id: cervomut
         uses: cervantesh/cervo-mutants@main
         with:
           policy: nightly
@@ -43,4 +64,11 @@ jobs:
           max-mutants-per-package: "25"
           sample: deterministic
           report: summary,json,junit,html,sarif,github-summary
-          out: .cervomut/nightly-${{ matrix.shard }}
+          out: .cervomut/nightly-${{ steps.shard-meta.outputs.safe_shard }}
+      - name: Upload nightly shard artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          name: cervomut-nightly-${{ steps.shard-meta.outputs.safe_shard }}
+          path: ${{ steps.cervomut.outputs.report-dir }}

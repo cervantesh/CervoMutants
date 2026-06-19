@@ -40,7 +40,7 @@ Recommended defaults:
 - bounded runtime budget
 - `github-summary` enabled
 - baseline-first governance
-- JSON and JUnit retained for automation
+- JSON and JUnit uploaded as retained artifacts for automation
 
 Example command shape:
 
@@ -55,6 +55,27 @@ cervomut run ./... `
 On GitHub Actions, `github-summary` writes the same markdown to
 `$GITHUB_STEP_SUMMARY`, so the PR lane can expose a compact review summary
 without forcing humans into the raw JSON first.
+
+The maintained example workflows also upload the report directory with
+`actions/upload-artifact@v4`. Without that step, JSON, JUnit, HTML, and SARIF
+only exist in the runner workspace for the duration of the job.
+
+Baseline note:
+
+`cervomut run` records baseline comparison data in `mutation-report.json`, but
+it does not fail the job on baseline regressions or new survivors by itself.
+The maintained examples keep baseline deltas as review signal first. If a team
+wants a hard PR gate, add an explicit follow-up check after the run.
+
+Example gate on Ubuntu runners:
+
+```yaml
+- name: Fail on baseline regression
+  shell: bash
+  run: |
+    jq -e '.baseline.regression == false and (((.baseline.new_survivors // []) | length) == 0)' \
+      .cervomut/pr/mutation-report.json > /dev/null
+```
 
 ## Nightly Or Scheduled Lane
 
@@ -130,13 +151,20 @@ The intended workflow is:
 1. wait for Codex to react or comment on the current head
 2. address the feedback or explicitly document why it is being declined
 3. resolve the Codex review conversation in GitHub
-4. merge only after `codex-review-gate` is green
+4. re-run `codex-review-gate` after resolving the conversation
+5. merge only after `codex-review-gate` is green
 
-If Codex leaves a no-finding thumbs-up reaction, the gate accepts that as the
-review response for the current head commit.
+If Codex leaves a no-finding acknowledgement reaction such as `+1` or `eyes`
+on the PR itself or on the `@codex review` issue comment, the gate accepts
+that as the review response for the current head commit.
 
 If Codex leaves a review comment, resolving the conversation is required after
 the feedback is handled. Do not merge while the thread is still open.
+
+GitHub Actions does not expose a `pull_request_review_thread` workflow trigger,
+so resolving a review thread does not automatically start a fresh gate run.
+After you resolve the Codex conversation, re-run `codex-review-gate` in the PR
+checks UI if a new review or review-comment event did not already retrigger it.
 
 ## Baseline Rule
 

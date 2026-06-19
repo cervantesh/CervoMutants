@@ -7,10 +7,16 @@ on:
       - reopened
       - synchronize
       - ready_for_review
-  pull_request_review_thread:
+  pull_request_review:
     types:
-      - resolved
-      - unresolved
+      - submitted
+      - edited
+      - dismissed
+  pull_request_review_comment:
+    types:
+      - created
+      - edited
+      - deleted
 
 permissions:
   actions: read
@@ -31,6 +37,7 @@ jobs:
               "chatgpt-codex-connector[bot]",
               "chatgpt-codex-connector",
             ]);
+            const acceptedReactionContent = new Set(["+1", "eyes"]);
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const number = context.issue.number;
@@ -89,51 +96,74 @@ jobs:
             }
 
             async function fetchGateState() {
-              const query = `
-                query($owner:String!, $repo:String!, $number:Int!) {
-                  repository(owner:$owner, name:$repo) {
-                    pullRequest(number:$number) {
-                      number
-                      isDraft
-                      headRefOid
-                      reviews(last:50) {
-                        nodes {
-                          author { login }
-                          state
-                          submittedAt
-                          url
-                          commit { oid }
+              let after = null;
+              let pr = null;
+              const reviewThreads = [];
+
+              while (true) {
+                const query = `
+                  query($owner:String!, $repo:String!, $number:Int!, $after:String) {
+                    repository(owner:$owner, name:$repo) {
+                      pullRequest(number:$number) {
+                        number
+                        isDraft
+                        headRefOid
+                        reviews(last:50) {
+                          nodes {
+                            author { login }
+                            state
+                            submittedAt
+                            url
+                            commit { oid }
+                          }
                         }
-                      }
-                      reviewThreads(first:100) {
-                        nodes {
-                          isResolved
-                          isOutdated
-                          comments(first:20) {
-                            nodes {
-                              author { login }
-                              body
-                              path
-                              line
-                              url
-                              pullRequestReview {
-                                state
-                                submittedAt
-                                url
+                        reviewThreads(first:100, after:$after) {
+                          nodes {
+                            isResolved
+                            isOutdated
+                            comments(first:20) {
+                              nodes {
                                 author { login }
-                                commit { oid }
+                                body
+                                path
+                                line
+                                url
+                                pullRequestReview {
+                                  state
+                                  submittedAt
+                                  url
+                                  author { login }
+                                  commit { oid }
+                                }
                               }
                             }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
                           }
                         }
                       }
                     }
                   }
-                }
-              `;
+                `;
 
-              const result = await github.graphql(query, { owner, repo, number });
-              const pr = result.repository.pullRequest;
+                const result = await github.graphql(query, { owner, repo, number, after });
+                const currentPr = result.repository.pullRequest;
+                if (!currentPr) {
+                  throw new Error(`pull request #${number} not found`);
+                }
+
+                if (!pr) {
+                  pr = currentPr;
+                }
+                reviewThreads.push(...currentPr.reviewThreads.nodes);
+                if (!currentPr.reviewThreads.pageInfo.hasNextPage) {
+                  break;
+                }
+                after = currentPr.reviewThreads.pageInfo.endCursor;
+              }
+
               if (!pr) {
                 throw new Error(`pull request #${number} not found`);
               }
@@ -151,7 +181,7 @@ jobs:
               let codexThreadCount = 0;
               const reviewFloor = await getReviewFloor(pr.headRefOid);
 
-              for (const thread of pr.reviewThreads.nodes) {
+              for (const thread of reviewThreads) {
                 if (thread.isOutdated) {
                   continue;
                 }
@@ -182,19 +212,51 @@ jobs:
                 return isCodex(review.author?.login) && review.commit?.oid === pr.headRefOid;
               });
 
-              const reactions = await github.paginate(github.rest.reactions.listForIssue, {
+              const issueReactions = await github.paginate(github.rest.reactions.listForIssue, {
                 owner,
                 repo,
                 issue_number: number,
                 per_page: 100,
               });
-              const freshCodexReaction = reactions.find((reaction) => {
+              const freshCodexIssueReaction = issueReactions.find((reaction) => {
                 return (
                   isCodex(reaction.user?.login) &&
-                  reaction.content === "+1" &&
+                  acceptedReactionContent.has(reaction.content) &&
                   Date.parse(reaction.created_at) >= reviewFloor
                 );
               });
+              const issueComments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: number,
+                per_page: 100,
+              });
+              let freshCodexCommentReaction = null;
+              for (const issueComment of [...issueComments].reverse()) {
+                const commentReactions = await github.paginate(
+                  github.rest.reactions.listForIssueComment,
+                  {
+                    owner,
+                    repo,
+                    comment_id: issueComment.id,
+                    per_page: 100,
+                  },
+                );
+                const matchingCommentReaction = commentReactions.find((reaction) => {
+                  return (
+                    isCodex(reaction.user?.login) &&
+                    acceptedReactionContent.has(reaction.content) &&
+                    Date.parse(reaction.created_at) >= reviewFloor
+                  );
+                });
+                if (matchingCommentReaction) {
+                  freshCodexCommentReaction = {
+                    ...matchingCommentReaction,
+                    commentUrl: issueComment.html_url,
+                  };
+                  break;
+                }
+              }
 
               return {
                 draft: false,
@@ -203,10 +265,12 @@ jobs:
                   unresolvedThreads.length > 0 ||
                   codexThreadCount > 0 ||
                   codexReviews.length > 0 ||
-                  Boolean(freshCodexReaction),
+                  Boolean(freshCodexIssueReaction) ||
+                  Boolean(freshCodexCommentReaction),
                 unresolvedThreads,
                 codexReviews,
-                freshCodexReaction,
+                freshCodexIssueReaction,
+                freshCodexCommentReaction,
               };
             }
 
@@ -243,8 +307,13 @@ jobs:
                 if (state.codexReviews?.length) {
                   evidence.push(`reviews=${state.codexReviews.length}`);
                 }
-                if (state.freshCodexReaction) {
-                  evidence.push(`reaction=${state.freshCodexReaction.content}`);
+                if (state.freshCodexIssueReaction) {
+                  evidence.push(`reaction=issue:${state.freshCodexIssueReaction.content}`);
+                }
+                if (state.freshCodexCommentReaction) {
+                  evidence.push(
+                    `reaction=comment:${state.freshCodexCommentReaction.content} (${state.freshCodexCommentReaction.commentUrl})`,
+                  );
                 }
                 await core.summary
                   .addHeading("Codex review gate")
