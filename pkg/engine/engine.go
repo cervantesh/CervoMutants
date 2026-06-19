@@ -35,6 +35,7 @@ type Engine struct {
 	checkpointMu         sync.Mutex
 	checkpointScope      []Mutant
 	sliceMeta            SliceMetadata
+	coverageBaseDir      string
 }
 
 var (
@@ -225,6 +226,7 @@ func (e *Engine) runBaseline(ctx context.Context, targets []string) (MutantResul
 	if err != nil {
 		return MutantResult{}, err
 	}
+	e.coverageBaseDir = moduleDir
 	command := append([]string{}, e.cfg.Tests.Command...)
 	if e.cfg.Selection.Mode == "coverage" || e.cfg.Selection.Prefilter {
 		profile := e.cfg.Selection.CoverageProfile
@@ -822,10 +824,7 @@ func (e *Engine) coverageMentions(mutant Mutant) bool {
 }
 
 func (e *Engine) coverageSignal(mutant Mutant) (lineCovered bool, fileCovered bool) {
-	profile := e.cfg.Selection.CoverageProfile
-	if !filepath.IsAbs(profile) {
-		profile = filepath.Join(mutant.Module, profile)
-	}
+	profile := e.coverageProfilePath(mutant.Module)
 	data, err := os.ReadFile(profile)
 	if err != nil {
 		return false, false
@@ -857,6 +856,18 @@ func coverageDataSignal(data, rel, base string, mutantLine int) (lineCovered boo
 		lineCovered = fileCovered
 	}
 	return lineCovered, fileCovered
+}
+
+func (e *Engine) coverageProfilePath(moduleDir string) string {
+	profile := e.cfg.Selection.CoverageProfile
+	if filepath.IsAbs(profile) {
+		return profile
+	}
+	baseDir := moduleDir
+	if e != nil && e.coverageBaseDir != "" {
+		baseDir = e.coverageBaseDir
+	}
+	return filepath.Join(baseDir, profile)
 }
 
 func fallbackCoverageMentions(data, rel, base string) bool {
