@@ -720,6 +720,60 @@ func TestPackageSelectionCanPrefilterUncoveredMutants(t *testing.T) {
 	}
 }
 
+func TestRunNestedPackageTargetUsesRelativeCoverageProfileFromTargetDir(t *testing.T) {
+	dir := testharness.WriteGoModuleTempDir(t, "nestedfixture", map[string]string{
+		"nested/calc.go": `package nested
+
+func IsPositiveOrZero(n int) bool {
+	return n >= 0
+}
+`,
+		"nested/calc_test.go": `package nested
+
+import "testing"
+
+func TestIsPositiveOrZero(t *testing.T) {
+	if !IsPositiveOrZero(1) {
+		t.Fatal("want positive")
+	}
+}
+`,
+	})
+	t.Chdir(dir)
+
+	cfg := config.Defaults()
+	cfg.Tests.Command = []string{"go", "test", "./..."}
+	cfg.Tests.Timeout = 10 * time.Second
+	cfg.Execution.Workers = 1
+	cfg.Execution.TempRoot = filepath.Join(dir, ".cervomut", "tmp")
+	cfg.Reports.Output = filepath.Join(dir, ".cervomut", "reports")
+	cfg.Cache.Path = filepath.Join(dir, ".cervomut", "cache")
+	cfg.Baseline.Path = filepath.Join(dir, ".cervomut", "baseline.json")
+	cfg.Quarantine.Path = filepath.Join(dir, ".cervomut", "quarantine.json")
+	cfg.History.Path = filepath.Join(dir, ".cervomut", "history.json")
+	cfg.Limits.MaxMutants = 1
+	cfg.Mutators.Enabled = []string{"conditionals-boundary"}
+	cfg.Mutators.Disabled = nil
+	cfg.Selection.Prefilter = true
+
+	result, err := New(cfg).Run(context.Background(), RunRequest{Targets: []string{"./nested"}})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Summary.Total == 0 {
+		t.Fatal("run discovered no mutants")
+	}
+	if result.Summary.NotCovered != 0 {
+		t.Fatalf("nested target should not be misclassified as not_covered when the relative coverage profile is written under the target dir: %+v", result.Summary)
+	}
+	if result.Summary.Survived == 0 {
+		t.Fatalf("expected covered nested-package mutant to execute and survive weak tests: %+v", result.Summary)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "nested", ".cervomut", "coverage.out")); err != nil {
+		t.Fatalf("nested target coverage profile was not written under the target directory: %v", err)
+	}
+}
+
 func TestSuppressionRuleCanIgnoreMutantBeforeExecution(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Suppression.Rules = []config.SuppressionRule{{
