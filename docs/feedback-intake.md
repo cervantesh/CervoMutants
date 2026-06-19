@@ -49,6 +49,10 @@ If the same finding repeats, link it from
 becomes part of the explicit backlog instead of remaining buried in individual
 issue threads.
 
+For the maintainer-side support bundle, triage flow, and upgrade checklist used
+when processing external adoption feedback, see
+[docs/maintainer-operations-pack.md](maintainer-operations-pack.md).
+
 ## Scope Boundary
 
 This intake path is for real adoption feedback, not generic feature requests.

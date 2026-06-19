@@ -42,6 +42,9 @@ The repository test suite validates that:
 4. Keep the example workflow shape until your own repo proves it needs a
    different policy, target, or sharding strategy.
 
+For a decision-complete rollout path after picking the closest example, use
+[docs/rollout-playbooks.md](rollout-playbooks.md).
+
 ## Why These Are In-Repo First
 
 Three separate external example repositories would create more operational
