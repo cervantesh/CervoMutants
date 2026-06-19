@@ -85,6 +85,7 @@ See:
 
 - [docs/evaluations/2026-06-17-external-validation-wave.md](evaluations/2026-06-17-external-validation-wave.md)
 - [docs/example-repos.md](example-repos.md)
+- [docs/rollout-playbooks.md](rollout-playbooks.md)
 - [docs/feedback-intake.md](feedback-intake.md)
 - [docs/go-toolchain-compatibility.md](go-toolchain-compatibility.md)
 - [docs/daemon-worker.md](daemon-worker.md)
@@ -135,6 +136,9 @@ cervomut baseline update
 
 For repository-specific starting points, use the maintained examples first
 instead of inventing custom config on day one.
+
+For decision-complete rollout paths by repository profile, continue with
+[docs/rollout-playbooks.md](rollout-playbooks.md).
 
 ## Key Tradeoffs
 

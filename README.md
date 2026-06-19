@@ -675,6 +675,11 @@ Latest local Sonar pass after issue #31:
   for small, medium, and large-repo adoption patterns.
 - [docs/adoption-guide.md](docs/adoption-guide.md): public fit, rollout,
   limitation, and tradeoff guidance grounded in current validation evidence.
+- [docs/rollout-playbooks.md](docs/rollout-playbooks.md): repeatable rollout
+  paths for small libraries, medium services, and large CI-heavy repositories.
+- [docs/maintainer-operations-pack.md](docs/maintainer-operations-pack.md):
+  maintainer-facing support baseline, upgrade checklist, limits, and evidence
+  bundle for external adopters.
 - [docs/feedback-intake.md](docs/feedback-intake.md): durable external-adoption
   feedback path and triage expectations.
 - [docs/commercialization-guardrails.md](docs/commercialization-guardrails.md):
