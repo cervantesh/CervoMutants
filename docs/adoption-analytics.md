@@ -142,6 +142,46 @@ historical adoption-feedback issues:
 If the answer is yes, link the evidence into the follow-up ledger and open or
 refresh the corresponding tracked work.
 
+### Outward-Response Loop
+
+When a structured adoption-feedback issue captures a real external rollout
+finding, maintainers should decide deliberately whether that evidence needs an
+outward maintainer-facing thread instead of leaving the issue as internal proxy
+evidence only.
+
+Use this loop:
+
+1. confirm the issue has enough evidence to survive outside this repository:
+   clear target repository, artifact links, blocker class, and the specific
+   docs or product question being raised
+2. choose the outward channel on purpose:
+   upstream issue for actionable bug, docs, or workflow friction;
+   public discussion when the question is interpretation, rollout posture, or
+   support-boundary clarity
+3. open at most one outward thread for one finding family, then record that URL
+   in the adoption-feedback issue immediately
+4. update the issue body to `Upstream thread opened, no maintainer response
+   yet` and set `External response last checked` on the same day the outward
+   thread is created
+5. recheck on a bounded cadence instead of informal memory:
+   first check within 3 business days, second check before the next release
+   review, and any later check when a maintainer responds or the thread is
+   closed
+6. classify the response using the existing structured states:
+   no upstream thread, thread opened/no response, maintainer replied or asked
+   follow-up, maintainer accepted, maintainer rejected or narrowed, or response
+   state not checked recently
+7. if multiple adoption-feedback issues map to the same outward thread, link
+   them all to the same URL and promote the shared pattern into
+   [docs/evaluations/follow-up-ledger.md](evaluations/follow-up-ledger.md)
+8. stop treating silence as "unknown" after repeated checks:
+   preserve it as explicit evidence of non-engagement rather than repeatedly
+   resetting the same issue without new outward movement
+
+The goal of the outward loop is not to maximize issue volume. It is to make
+direct engagement, explicit rejection, and durable silence all auditable from
+the same structured issue trail.
+
 ## Promotion Rules For Repeated Findings
 
 Move a finding from a single issue into the explicit ledger when any of these
