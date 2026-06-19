@@ -102,6 +102,9 @@ Long-standing survivors: 1
 Platform-sensitive survivors: 1
 Non-progress timeouts: 1
 Suppression audits: report_only=1 lower_priority=1 suppress=0 quarantine_required=1
+Lane shape: grouped review lane
+Lane note: 2 raw survivors collapsed into 1 immediate review units across 1 semantic group
+Lane guidance: review the grouped equivalent-risk family once before splitting it into multiple separate test tasks
 Denominator health: healthy=false generated=5 covered=4 executed=4 effective=3 score_denominator=4 killed=1 survived=2 not_covered=1 pending_budget=0 skipped_resource=0 timed_out=1 memory_killed=0 compile_error=0
 Denominator warnings: timed_out_exceeds_effective
 Equivalent-risk statistics:
