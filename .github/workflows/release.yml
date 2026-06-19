@@ -90,6 +90,12 @@ jobs:
             cd dist
             sha256sum cervomut_${version}_* > SHA256SUMS
           )
+      - run: >-
+          go run ./cmd/releasehelper verify-release
+          --version "${GITHUB_REF_NAME}"
+          --dist dist
+          --notes dist/release-notes.md
+          --manifest-out dist/release-manifest.json
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -98,5 +104,6 @@ jobs:
             dist/cervomut_${{ github.ref_name }}_*.tar.gz
             dist/cervomut_${{ github.ref_name }}_*.zip
             dist/SHA256SUMS
+            dist/release-manifest.json
           overwrite_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
