@@ -50,9 +50,11 @@ On `main`, it now has:
 
 The biggest remaining gap is no longer broken public automation, and it is no
 longer a major lag between repository head and latest public release. The
-bigger remaining gaps are still direct external maintainer adoption evidence,
-release repetition over time, and deeper proof that the newer review surfaces
-stay useful outside bounded validation waves.
+bigger remaining gaps are still direct external maintainer adoption evidence
+and release repetition over time. The repo now also has a stronger broader-
+profile released hosted sample on `v0.4.2`, so the open maturity question is
+less about whether the newer review surfaces can produce bounded mixed-profile
+signal and more about repeated external use over time.
 
 That keeps the project just short of a clean `4 / 5` overall maturity
 classification. The current state is best described as a credible public beta
@@ -68,6 +70,9 @@ surface.
   `v0.4.0`, `v0.4.1`, `v0.4.2`.
 - Latest public release is `v0.4.2` from 2026-06-19 with multi-OS assets,
   `release-manifest.json`, and `SHA256SUMS`.
+- Released broader-profile hosted validation on `v0.4.2` now shows `37`
+  effective mutants, `9` survivors, `8` actionable review units, and `0`
+  denominator-warning repos across four mixed repository profiles.
 - GitHub Pages is live at `https://cervantesh.github.io/cervo-mutants/`.
 - The seeded Phase 5 and Phase 6 roadmap backlog is closed.
 - The immediate post-roadmap follow-up trio `#206`, `#207`, and `#208` is
