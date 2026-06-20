@@ -85,7 +85,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          path: cervomut-source
+          path: workflow-source
+          ref: ${{ github.sha }}
+
+      - uses: actions/checkout@v7
+        with:
+          path: action-source
           ref: ${{ needs.plan.outputs.checkout_ref }}
 
       - uses: actions/checkout@v7
@@ -98,13 +103,13 @@ jobs:
       - name: Setup Go for version resolution
         uses: actions/setup-go@v6
         with:
-          go-version-file: cervomut-source/go.mod
+          go-version-file: action-source/go.mod
           cache: false
 
       - name: Resolve Go version
         id: resolve-go-version
         shell: bash
-        working-directory: cervomut-source
+        working-directory: action-source
         env:
           REQUESTED_GO_VERSION: ${{ matrix.go_version }}
         run: |
@@ -130,7 +135,7 @@ jobs:
 
       - name: Run CervoMutants
         id: cervomut
-        uses: ./cervomut-source
+        uses: ./action-source
         with:
           go-version: ${{ steps.resolve-go-version.outputs.go_version }}
           working-directory: target
@@ -147,7 +152,7 @@ jobs:
       - name: Extract wave result
         if: always()
         shell: bash
-        working-directory: cervomut-source
+        working-directory: workflow-source
         env:
           JOB_STATUS: ${{ job.status }}
           REPO_NAME: ${{ matrix.name }}
@@ -198,7 +203,7 @@ jobs:
       - name: Append repo summary
         if: always()
         shell: bash
-        working-directory: cervomut-source
+        working-directory: workflow-source
         run: |
           go run ./cmd/actionhelper render-wave-result-markdown --path ../wave-result.json >> "$GITHUB_STEP_SUMMARY"
 
@@ -222,13 +227,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          path: cervomut-source
-          ref: ${{ needs.plan.outputs.checkout_ref }}
+          path: workflow-source
+          ref: ${{ github.sha }}
 
       - name: Setup Go for summary helpers
         uses: actions/setup-go@v6
         with:
-          go-version-file: cervomut-source/go.mod
+          go-version-file: workflow-source/go.mod
           cache: false
 
       - name: Download wave artifacts
@@ -239,7 +244,7 @@ jobs:
 
       - name: Build aggregate summary
         shell: bash
-        working-directory: cervomut-source
+        working-directory: workflow-source
         env:
           TRACKING_ISSUE: ${{ needs.plan.outputs.tracking_issue }}
           MANIFEST_PATH: ${{ needs.plan.outputs.manifest_path }}
