@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "tracking_issue": "#329",
+  "description": "Hosted comparison wave for the Prometheus medium-service control lane. Compares the current labels target against two hotter bounded alternatives chosen from local scout evidence.",
+  "install_path": "github-action@v0.4.2",
+  "action_ref": "v0.4.2",
+  "jobs": [
+    {
+      "name": "prometheus-labels",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./model/labels",
+      "profile": "medium-service-control-current",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true
+    },
+    {
+      "name": "prometheus-rules",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./rules",
+      "profile": "medium-service-control-candidate-rules",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true
+    },
+    {
+      "name": "prometheus-storage-remote",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./storage/remote",
+      "profile": "medium-service-control-candidate-storage-remote",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true
+    }
+  ]
+}
