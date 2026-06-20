@@ -32,6 +32,7 @@ type waveMetadata struct {
 	Budget             string
 	Sample             string
 	CoveragePrefilter  bool
+	PrewarmModules     bool
 	ReportDir          string
 	JobStatus          string
 	MaxMutants         int
@@ -55,6 +56,7 @@ type waveResult struct {
 	Budget             string                    `json:"budget"`
 	Sample             string                    `json:"sample"`
 	CoveragePrefilter  bool                      `json:"coverage_prefilter"`
+	PrewarmModules     bool                      `json:"prewarm_modules"`
 	MaxMutants         int                       `json:"max_mutants"`
 	Workers            int                       `json:"workers"`
 	JobStatus          string                    `json:"job_status"`
@@ -155,6 +157,7 @@ func cmdBuildWaveResult(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("build-wave-result", flag.ContinueOnError)
 	var meta waveMetadata
 	coveragePrefilter := fs.String("coverage-prefilter", "false", "whether coverage prefilter is enabled")
+	prewarmModules := fs.String("prewarm-modules", "false", "whether module prewarm is enabled")
 	fs.StringVar(&meta.GeneratedAt, "generated-at", "", "wave result generation timestamp")
 	fs.StringVar(&meta.Name, "name", "", "matrix repo name")
 	fs.StringVar(&meta.Repository, "repository", "", "repository full name")
@@ -181,6 +184,7 @@ func cmdBuildWaveResult(args []string, stdout io.Writer) error {
 		return err
 	}
 	meta.CoveragePrefilter = strings.EqualFold(strings.TrimSpace(*coveragePrefilter), "true")
+	meta.PrewarmModules = strings.EqualFold(strings.TrimSpace(*prewarmModules), "true")
 	result, err := buildWaveResult(meta)
 	if err != nil {
 		return err
@@ -270,6 +274,7 @@ func buildWaveResult(meta waveMetadata) (waveResult, error) {
 		Budget:             meta.Budget,
 		Sample:             meta.Sample,
 		CoveragePrefilter:  meta.CoveragePrefilter,
+		PrewarmModules:     meta.PrewarmModules,
 		MaxMutants:         meta.MaxMutants,
 		Workers:            meta.Workers,
 		JobStatus:          meta.JobStatus,
@@ -484,7 +489,7 @@ func renderWaveResultMarkdown(result waveResult) string {
 			formatOptionalInline(" target=", result.GoVersionTarget),
 			formatOptionalInline(" requested=", result.GoVersionRequested),
 		),
-		fmt.Sprintf("- Policy: `%s` sample=`%s` coverage_prefilter=`%t` max_mutants=`%d` workers=`%d`", result.Policy, result.Sample, result.CoveragePrefilter, result.MaxMutants, result.Workers),
+		fmt.Sprintf("- Policy: `%s` sample=`%s` coverage_prefilter=`%t` prewarm_modules=`%t` max_mutants=`%d` workers=`%d`", result.Policy, result.Sample, result.CoveragePrefilter, result.PrewarmModules, result.MaxMutants, result.Workers),
 		fmt.Sprintf("- Job status: `%s`", result.JobStatus),
 	)
 	if result.ReportKind == "missing" {

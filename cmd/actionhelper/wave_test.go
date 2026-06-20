@@ -100,6 +100,7 @@ func TestBuildWaveResultFromReportArtifacts(t *testing.T) {
 		GoVersionActionMin: "1.25.6",
 		Policy:             "ci-balanced",
 		CoveragePrefilter:  true,
+		PrewarmModules:     true,
 		ReportDir:          reportDir,
 		JobStatus:          "success",
 		MaxMutants:         10,
@@ -110,6 +111,9 @@ func TestBuildWaveResultFromReportArtifacts(t *testing.T) {
 	}
 	if result.ReportKind != "full" {
 		t.Fatalf("report kind = %q, want full", result.ReportKind)
+	}
+	if !result.PrewarmModules {
+		t.Fatalf("prewarm modules = false, want true")
 	}
 	if result.Summary == nil || result.Summary.Killed != 2 || result.Summary.ActionableScore == nil || *result.Summary.ActionableScore != 80 {
 		t.Fatalf("unexpected summary: %+v", result.Summary)
@@ -198,6 +202,7 @@ func TestBuildWaveSummaryAndMarkdown(t *testing.T) {
 		GoVersion:          "1.25.6",
 		GoVersionActionMin: "1.25.6",
 		Policy:             "ci-fast",
+		PrewarmModules:     true,
 		ReportKind:         "full",
 		Summary: &waveResultSummary{
 			Killed:          3,
@@ -271,6 +276,9 @@ func TestBuildWaveSummaryAndMarkdown(t *testing.T) {
 			t.Fatalf("summary markdown missing %q:\n%s", want, markdown)
 		}
 	}
+	if !strings.Contains(markdown, "prewarm_modules=`true`") {
+		t.Fatalf("summary markdown missing prewarm marker:\n%s", markdown)
+	}
 }
 
 func TestWaveHelperCommandsWriteJSONAndMarkdown(t *testing.T) {
@@ -298,6 +306,7 @@ func TestWaveHelperCommandsWriteJSONAndMarkdown(t *testing.T) {
 		"--go-version", "1.25.6",
 		"--go-version-action-min", "1.25.6",
 		"--policy", "ci-fast",
+		"--prewarm-modules", "true",
 		"--report-dir", reportDir,
 		"--job-status", "failure",
 	}, &resultOut); err != nil {
@@ -310,6 +319,9 @@ func TestWaveHelperCommandsWriteJSONAndMarkdown(t *testing.T) {
 	if result.ReportKind != "missing" || result.Failure == nil {
 		t.Fatalf("unexpected wave result command output: %+v", result)
 	}
+	if !result.PrewarmModules {
+		t.Fatalf("prewarm modules = false, want true")
+	}
 
 	writeJSONForTest(t, filepath.Join(reportDir, "wave-result.json"), result)
 	var markdownOut bytes.Buffer
@@ -318,5 +330,8 @@ func TestWaveHelperCommandsWriteJSONAndMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(markdownOut.String(), "## repo-a") {
 		t.Fatalf("wave result markdown missing repo heading:\n%s", markdownOut.String())
+	}
+	if !strings.Contains(markdownOut.String(), "prewarm_modules=`true`") {
+		t.Fatalf("wave result markdown missing prewarm marker:\n%s", markdownOut.String())
 	}
 }
