@@ -18,6 +18,11 @@ describe a repo state where `main` and the then-current public tag were
 effectively aligned for the supported install, CI, and reporting surfaces
 covered by this assessment.
 
+Release drift note: the latest public release is now `v0.4.3` from
+2026-06-20. That tag preserves the supported-surface alignment described in
+this snapshot and adds the releasehelper and hosted-wave gating fixes that were
+validated during the real `v0.4.3` publication attempts.
+
 ## Scale
 
 | Score | Meaning |
