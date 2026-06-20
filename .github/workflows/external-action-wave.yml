@@ -48,7 +48,8 @@ jobs:
                     max_mutants,
                     workers,
                     sample: (.sample // ""),
-                    coverage_prefilter: ((.coverage_prefilter // false) | tostring)
+                    coverage_prefilter: ((.coverage_prefilter // false) | tostring),
+                    prewarm_modules: ((.prewarm_modules // false) | tostring)
                   }
                 ]
               }
@@ -113,6 +114,20 @@ jobs:
           echo "go_version_target=$(jq -r '.go_version_target // \"\"' <<<"$resolution_json")" >> "$GITHUB_OUTPUT"
           echo "go_version_action_min=$(jq -r '.go_version_action_min' <<<"$resolution_json")" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Go for target prewarm
+        if: ${{ matrix.prewarm_modules == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.resolve-go-version.outputs.go_version }}
+          cache: true
+          cache-dependency-path: target/go.sum
+
+      - name: Prewarm target modules
+        if: ${{ matrix.prewarm_modules == 'true' }}
+        shell: bash
+        working-directory: target
+        run: go mod download
+
       - name: Run CervoMutants
         id: cervomut
         uses: ./cervomut-source
@@ -148,6 +163,7 @@ jobs:
           GO_VERSION_TARGET: ${{ steps.resolve-go-version.outputs.go_version_target }}
           GO_VERSION_ACTION_MIN: ${{ steps.resolve-go-version.outputs.go_version_action_min }}
           COVERAGE_PREFILTER: ${{ matrix.coverage_prefilter }}
+          PREWARM_MODULES: ${{ matrix.prewarm_modules }}
           MAX_MUTANTS: ${{ matrix.max_mutants }}
           WORKERS: ${{ matrix.workers }}
           ACTION_REF: ${{ needs.plan.outputs.action_ref }}
@@ -172,6 +188,7 @@ jobs:
             --budget "$BUDGET" \
             --sample "$SAMPLE" \
             --coverage-prefilter "$COVERAGE_PREFILTER" \
+            --prewarm-modules "$PREWARM_MODULES" \
             --report-dir "$report_dir" \
             --job-status "$JOB_STATUS" \
             --max-mutants "$MAX_MUTANTS" \

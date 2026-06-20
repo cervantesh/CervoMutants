@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "tracking_issue": "#331",
+  "description": "Hosted follow-up for the Prometheus medium-service comparison that enables optional module prewarm on dependency-heavy candidate targets before mutation execution. This manifest intentionally uses the workflow's current branch action source so the new prewarm metadata stays aligned with the helper code under validation.",
+  "jobs": [
+    {
+      "name": "prometheus-labels-cold",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./model/labels",
+      "profile": "medium-service-control-current-cold",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true
+    },
+    {
+      "name": "prometheus-rules-prewarmed",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./rules",
+      "profile": "medium-service-control-candidate-rules-prewarmed",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true,
+      "prewarm_modules": true
+    },
+    {
+      "name": "prometheus-storage-remote-prewarmed",
+      "url": "https://github.com/prometheus/prometheus.git",
+      "ref": "505095b64b43dd76baf08839e1800a8d473c97e0",
+      "target": "./storage/remote",
+      "profile": "medium-service-control-candidate-storage-remote-prewarmed",
+      "policy": "ci-balanced",
+      "budget": "5m",
+      "sample": "deterministic",
+      "max_mutants": 8,
+      "workers": 2,
+      "coverage_prefilter": true,
+      "prewarm_modules": true
+    }
+  ]
+}
