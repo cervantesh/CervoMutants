@@ -225,17 +225,18 @@ func TestNewWithOptionsAndCheckpointHelpers(t *testing.T) {
 		t.Fatalf("checkpointFileFingerprint missing file = %q %v", fingerprint, ok)
 	}
 
-	e.setCheckpointScope(mutants)
-	scope := e.currentCheckpointScope()
+	session := e.newRunSession()
+	session.setCheckpointScope(mutants)
+	scope := session.currentCheckpointScope()
 	scope[0].ID = "mutated-copy"
-	if e.currentCheckpointScope()[0].ID != "m2" {
+	if session.currentCheckpointScope()[0].ID != "m2" {
 		t.Fatal("currentCheckpointScope should return a copy")
 	}
-	if scoped := e.checkpointFromResults([]MutantResult{{MutantID: "ignored", Mutant: Mutant{ID: "ignored", Module: moduleDir}}}, "resume"); scoped.Mutants != len(mutants) {
+	if scoped := session.checkpointFromResults([]MutantResult{{MutantID: "ignored", Mutant: Mutant{ID: "ignored", Module: moduleDir}}}, "resume"); scoped.Mutants != len(mutants) {
 		t.Fatalf("checkpointFromResults with scope = %+v", scoped)
 	}
-	e.setCheckpointScope(nil)
-	fallback := e.checkpointFromResults([]MutantResult{
+	session.setCheckpointScope(nil)
+	fallback := session.checkpointFromResults([]MutantResult{
 		{MutantID: "result-one", Mutant: Mutant{ID: "result-one", Module: moduleDir}},
 		{MutantID: "", Mutant: Mutant{ID: "", Module: moduleDir}},
 	}, "resume")

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cervantesh/cervo-mutants/pkg/engine"
+	internalgotestenv "github.com/cervantesh/cervo-mutants/pkg/internal/gotestenv"
 )
 
 type Selector struct {
@@ -22,8 +23,8 @@ func (s Selector) Select(ctx context.Context, mutant engine.Mutant) (engine.Test
 	case "coverage":
 		return engine.TestPlan{Command: command, Reason: "coverage timing data unavailable; package fallback selected", CoversMutant: true, CoverageSource: "coverage-mode"}, nil
 	default:
-		if len(command) >= 3 && command[0] == "go" && command[1] == "test" && mutant.Package != "" {
-			command[2] = mutant.Package
+		if internalgotestenv.IsGoTestCommand(command) && mutant.Package != "" {
+			command = internalgotestenv.PackageScopedCommand(command, mutant.Package)
 		}
 		return engine.TestPlan{Command: command, Reason: "package selected from mutant file", CoversMutant: true, CoverageSource: "unknown"}, nil
 	}
