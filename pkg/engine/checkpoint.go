@@ -174,22 +174,22 @@ func shouldSkipCheckpointDir(name string) bool {
 	}
 }
 
-func (e *Engine) setCheckpointScope(mutants []Mutant) {
-	e.checkpointMu.Lock()
-	defer e.checkpointMu.Unlock()
-	e.checkpointScope = append([]Mutant{}, mutants...)
+func (s *runSession) setCheckpointScope(mutants []Mutant) {
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+	s.checkpointScope = append([]Mutant{}, mutants...)
 }
 
-func (e *Engine) currentCheckpointScope() []Mutant {
-	e.checkpointMu.Lock()
-	defer e.checkpointMu.Unlock()
-	return append([]Mutant{}, e.checkpointScope...)
+func (s *runSession) currentCheckpointScope() []Mutant {
+	s.checkpointMu.Lock()
+	defer s.checkpointMu.Unlock()
+	return append([]Mutant{}, s.checkpointScope...)
 }
 
-func (e *Engine) checkpointFromResults(results []MutantResult, reason string) Checkpoint {
-	mutants := e.currentCheckpointScope()
+func (s *runSession) checkpointFromResults(results []MutantResult, reason string) Checkpoint {
+	mutants := s.currentCheckpointScope()
 	if len(mutants) > 0 {
-		return e.checkpoint(mutants, reason)
+		return s.engine.checkpoint(mutants, reason)
 	}
 	mutants = make([]Mutant, 0, len(results))
 	for _, result := range results {
@@ -198,11 +198,11 @@ func (e *Engine) checkpointFromResults(results []MutantResult, reason string) Ch
 		}
 		mutants = append(mutants, result.Mutant)
 	}
-	return e.checkpoint(mutants, reason)
+	return s.engine.checkpoint(mutants, reason)
 }
 
-func (e *Engine) recordProgress(start time.Time, completed, total int, result MutantResult) {
-	if total <= 0 || e.cfg.Reports.Output == "" {
+func (s *runSession) recordProgress(start time.Time, completed, total int, result MutantResult) {
+	if total <= 0 || s.engine.cfg.Reports.Output == "" {
 		return
 	}
 	event := ProgressEvent{
@@ -221,8 +221,8 @@ func (e *Engine) recordProgress(start time.Time, completed, total int, result Mu
 	}
 	event.ActiveMutant = result.MutantID
 	event.Message = fmt.Sprintf("mutant %d/%d %s %s eta=%s", completed, total, result.MutantID, result.Status, event.ETA)
-	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
-	_ = appendProgressEvent(filepath.Join(e.cfg.Reports.Output, "progress.jsonl"), event)
+	_ = os.MkdirAll(s.engine.cfg.Reports.Output, 0o755)
+	_ = appendProgressEvent(filepath.Join(s.engine.cfg.Reports.Output, "progress.jsonl"), event)
 	fmt.Fprintf(os.Stderr, "progress %d/%d %s %s eta=%s\n", completed, total, result.MutantID, result.Status, event.ETA)
 }
 
@@ -242,27 +242,27 @@ func appendProgressEvent(path string, event ProgressEvent) error {
 	return nil
 }
 
-func (e *Engine) writePartialResults(results []MutantResult) {
-	if e.cfg.Reports.Output == "" {
+func (s *runSession) writePartialResults(results []MutantResult) {
+	if s.engine.cfg.Reports.Output == "" {
 		return
 	}
 	run := RunResult{
 		SchemaVersion: "1",
-		Environment:   e.environment(len(results)),
-		Slice:         e.sliceMeta,
-		Checkpoint:    e.checkpointFromResults(results, "partial"),
-		Thresholds:    map[string]any{"fail_under": e.cfg.CI.FailUnder, "partial": true},
+		Environment:   s.environment(len(results)),
+		Slice:         s.sliceMeta,
+		Checkpoint:    s.checkpointFromResults(results, "partial"),
+		Thresholds:    map[string]any{"fail_under": s.engine.cfg.CI.FailUnder, "partial": true},
 		Mutants:       append([]MutantResult{}, results...),
 	}
 	run.StoppedReason, run.LastCompletedMutant = runStopMetadata(run.Mutants)
-	e.applySurvivorRanking(run.Mutants)
+	s.applySurvivorRanking(run.Mutants)
 	run.Summary = summarize(run.Mutants)
 	data, err := json.MarshalIndent(run, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(e.cfg.Reports.Output, 0o755)
-	_ = writeFileAtomic(filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json"), data, 0o644)
+	_ = os.MkdirAll(s.engine.cfg.Reports.Output, 0o755)
+	_ = writeFileAtomic(filepath.Join(s.engine.cfg.Reports.Output, "partial-mutation-report.json"), data, 0o644)
 	summary, err := json.MarshalIndent(struct {
 		SchemaVersion string         `json:"schema_version"`
 		Checkpoint    Checkpoint     `json:"checkpoint"`
@@ -275,7 +275,7 @@ func (e *Engine) writePartialResults(results []MutantResult) {
 		Thresholds:    run.Thresholds,
 	}, "", "  ")
 	if err == nil {
-		_ = writeFileAtomic(filepath.Join(e.cfg.Reports.Output, "partial-summary.json"), summary, 0o644)
+		_ = writeFileAtomic(filepath.Join(s.engine.cfg.Reports.Output, "partial-summary.json"), summary, 0o644)
 	}
 }
 
@@ -324,12 +324,12 @@ func compactedResults(results []MutantResult) []MutantResult {
 	return compacted
 }
 
-func (e *Engine) loadPartialResults(mutants []Mutant) (map[string]MutantResult, error) {
+func (s *runSession) loadPartialResults(mutants []Mutant) (map[string]MutantResult, error) {
 	results := map[string]MutantResult{}
-	if e.cfg.Reports.Output == "" {
+	if s.engine.cfg.Reports.Output == "" {
 		return results, nil
 	}
-	path := filepath.Join(e.cfg.Reports.Output, "partial-mutation-report.json")
+	path := filepath.Join(s.engine.cfg.Reports.Output, "partial-mutation-report.json")
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return results, nil
@@ -341,7 +341,7 @@ func (e *Engine) loadPartialResults(mutants []Mutant) (map[string]MutantResult, 
 	if err := json.Unmarshal(data, &run); err != nil {
 		return nil, fmt.Errorf("load partial checkpoint: %w", err)
 	}
-	want := e.checkpoint(mutants, "partial")
+	want := s.engine.checkpoint(mutants, "partial")
 	if run.Checkpoint.Fingerprint == "" {
 		return nil, errors.New("partial checkpoint is missing compatibility fingerprint; rerun without --resume")
 	}

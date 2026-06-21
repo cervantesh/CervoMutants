@@ -13,28 +13,28 @@ import (
 	"github.com/cervantesh/cervo-mutants/pkg/isolate"
 )
 
-func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
-	if e.cfg.Execution.Resume {
-		return e.runMutantsWithResume(ctx, mutants, quarantined)
+func (s *runSession) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	if s.engine.cfg.Execution.Resume {
+		return s.runMutantsWithResume(ctx, mutants, quarantined)
 	}
-	workers := e.workerCount(len(mutants))
+	workers := s.workerCount(len(mutants))
 	if workers <= 1 {
-		return e.runMutantsSerial(ctx, mutants, quarantined)
+		return s.runMutantsSerial(ctx, mutants, quarantined)
 	}
-	return e.runMutantsParallel(ctx, mutants, quarantined, workers)
+	return s.runMutantsParallel(ctx, mutants, quarantined, workers)
 }
 
-func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
-	completed, err := e.loadPartialResults(mutants)
+func (s *runSession) runMutantsWithResume(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+	completed, err := s.loadPartialResults(mutants)
 	if err != nil {
 		return nil, err
 	}
 	if len(completed) == 0 {
-		workers := e.workerCount(len(mutants))
+		workers := s.workerCount(len(mutants))
 		if workers <= 1 {
-			return e.runMutantsSerial(ctx, mutants, quarantined)
+			return s.runMutantsSerial(ctx, mutants, quarantined)
 		}
-		return e.runMutantsParallel(ctx, mutants, quarantined, workers)
+		return s.runMutantsParallel(ctx, mutants, quarantined, workers)
 	}
 	results := make([]MutantResult, 0, len(mutants))
 	remaining := make([]Mutant, 0, len(mutants))
@@ -49,7 +49,7 @@ func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, qua
 		}
 		remaining = append(remaining, mutant)
 	}
-	next, err := e.runMutantsSerial(ctx, remaining, quarantined)
+	next, err := s.runMutantsSerial(ctx, remaining, quarantined)
 	if err != nil {
 		return nil, err
 	}
@@ -57,37 +57,37 @@ func (e *Engine) runMutantsWithResume(ctx context.Context, mutants []Mutant, qua
 	return orderResults(mutants, results), nil
 }
 
-func (e *Engine) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
+func (s *runSession) runMutantsSerial(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
 	results := make([]MutantResult, 0, len(mutants))
-	start := e.clockNow()
+	start := s.clockNow()
 	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
 			result := MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
 			results = append(results, result)
-			e.recordProgress(start, i+1, len(mutants), result)
-			e.writePartialResults(results)
+			s.recordProgress(start, i+1, len(mutants), result)
+			s.writePartialResults(results)
 			continue
 		}
-		if result, ok := e.suppressedResult(mutant); ok {
+		if result, ok := s.suppressedResult(mutant); ok {
 			results = append(results, result)
-			e.recordProgress(start, i+1, len(mutants), result)
-			e.writePartialResults(results)
+			s.recordProgress(start, i+1, len(mutants), result)
+			s.writePartialResults(results)
 			continue
 		}
-		if e.budgetExhausted(start) {
+		if s.budgetExhausted(start) {
 			result := MutantResult{MutantID: mutant.ID, Status: StatusPendingBudget, FailureKind: "budget_exhausted", StatusReason: "budget exhausted before mutant execution", Mutant: mutant}
 			results = append(results, result)
-			e.recordProgress(start, i+1, len(mutants), result)
-			e.writePartialResults(results)
+			s.recordProgress(start, i+1, len(mutants), result)
+			s.writePartialResults(results)
 			continue
 		}
-		mutantResult, err := e.runMutant(ctx, mutant)
+		mutantResult, err := s.runMutant(ctx, mutant)
 		if err != nil {
 			return nil, err
 		}
 		results = append(results, mutantResult)
-		e.recordProgress(start, i+1, len(mutants), mutantResult)
-		e.writePartialResults(results)
+		s.recordProgress(start, i+1, len(mutants), mutantResult)
+		s.writePartialResults(results)
 	}
 	return results, nil
 }
@@ -103,17 +103,17 @@ type indexedResult struct {
 	err    error
 }
 
-func (e *Engine) runMutantsParallel(ctx context.Context, mutants []Mutant, quarantined map[string]bool, workers int) ([]MutantResult, error) {
+func (s *runSession) runMutantsParallel(ctx context.Context, mutants []Mutant, quarantined map[string]bool, workers int) ([]MutantResult, error) {
 	results := make([]MutantResult, len(mutants))
 	jobs := make(chan indexedMutant, len(mutants))
 	done := make(chan indexedResult, len(mutants))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	startParallelWorkers(ctx, workers, jobs, done, e.runMutant)
-	start := e.clockNow()
-	dispatchParallelJobs(e, mutants, quarantined, results, jobs, start)
-	return e.collectParallelResults(done, results, len(mutants), start, cancel)
+	startParallelWorkers(ctx, workers, jobs, done, s.runMutant)
+	start := s.clockNow()
+	dispatchParallelJobs(s, mutants, quarantined, results, jobs, start)
+	return s.collectParallelResults(done, results, len(mutants), start, cancel)
 }
 
 func startParallelWorkers(ctx context.Context, workers int, jobs <-chan indexedMutant, done chan<- indexedResult, run func(context.Context, Mutant) (MutantResult, error)) {
@@ -138,17 +138,17 @@ func startParallelWorkers(ctx context.Context, workers int, jobs <-chan indexedM
 	}()
 }
 
-func dispatchParallelJobs(e *Engine, mutants []Mutant, quarantined map[string]bool, results []MutantResult, jobs chan<- indexedMutant, start time.Time) {
+func dispatchParallelJobs(s *runSession, mutants []Mutant, quarantined map[string]bool, results []MutantResult, jobs chan<- indexedMutant, start time.Time) {
 	for i, mutant := range mutants {
 		if quarantined[mutant.ID] {
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusQuarantined, StatusReason: "mutant is in active quarantine", Mutant: mutant}
 			continue
 		}
-		if result, ok := e.suppressedResult(mutant); ok {
+		if result, ok := s.suppressedResult(mutant); ok {
 			results[i] = result
 			continue
 		}
-		if e.budgetExhausted(start) {
+		if s.budgetExhausted(start) {
 			results[i] = MutantResult{MutantID: mutant.ID, Status: StatusPendingBudget, FailureKind: "budget_exhausted", StatusReason: "budget exhausted before mutant execution", Mutant: mutant}
 			continue
 		}
@@ -157,7 +157,7 @@ func dispatchParallelJobs(e *Engine, mutants []Mutant, quarantined map[string]bo
 	close(jobs)
 }
 
-func (e *Engine) collectParallelResults(done <-chan indexedResult, results []MutantResult, total int, start time.Time, cancel context.CancelFunc) ([]MutantResult, error) {
+func (s *runSession) collectParallelResults(done <-chan indexedResult, results []MutantResult, total int, start time.Time, cancel context.CancelFunc) ([]MutantResult, error) {
 	var firstErr error
 	completed := 0
 	for item := range done {
@@ -167,8 +167,8 @@ func (e *Engine) collectParallelResults(done <-chan indexedResult, results []Mut
 		}
 		results[item.index] = item.result
 		completed++
-		e.recordProgress(start, completed, total, item.result)
-		e.writePartialResults(compactedResults(results))
+		s.recordProgress(start, completed, total, item.result)
+		s.writePartialResults(compactedResults(results))
 	}
 	if firstErr != nil {
 		return nil, firstErr
@@ -176,8 +176,8 @@ func (e *Engine) collectParallelResults(done <-chan indexedResult, results []Mut
 	return results, nil
 }
 
-func (e *Engine) budgetExhausted(start time.Time) bool {
-	return e.cfg.Execution.Budget > 0 && e.elapsedSince(start) >= e.cfg.Execution.Budget
+func (s *runSession) budgetExhausted(start time.Time) bool {
+	return s.engine.cfg.Execution.Budget > 0 && s.elapsedSince(start) >= s.engine.cfg.Execution.Budget
 }
 
 func refreshCachedMutantResult(result MutantResult, mutant Mutant) MutantResult {
@@ -189,7 +189,7 @@ func refreshCachedMutantResult(result MutantResult, mutant Mutant) MutantResult 
 	return result
 }
 
-func (e *Engine) suppressedResult(mutant Mutant) (MutantResult, bool) {
+func (s *runSession) suppressedResult(mutant Mutant) (MutantResult, bool) {
 	rule, ok := strongestSuppression(mutant.SuppressionAudit)
 	if !ok || rule.Action != "suppress" {
 		return MutantResult{}, false
