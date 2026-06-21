@@ -13,13 +13,6 @@ import (
 	"github.com/cervantesh/cervo-mutants/pkg/isolate"
 )
 
-func (e *Engine) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
-	if e.cfg.Execution.Resume {
-		return e.newRunSession().runMutantsWithResume(ctx, mutants, quarantined)
-	}
-	return e.newRunSession().runMutants(ctx, mutants, quarantined)
-}
-
 func (s *runSession) runMutants(ctx context.Context, mutants []Mutant, quarantined map[string]bool) ([]MutantResult, error) {
 	if s.engine.cfg.Execution.Resume {
 		return s.runMutantsWithResume(ctx, mutants, quarantined)
