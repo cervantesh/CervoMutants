@@ -1,5 +1,10 @@
 name: CervoMutants
 description: Run bounded CervoMutants mutation testing in GitHub Actions.
+author: cervantesh
+
+branding:
+  icon: activity
+  color: orange
 
 inputs:
   go-version:
