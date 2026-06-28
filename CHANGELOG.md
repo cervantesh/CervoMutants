@@ -12,6 +12,26 @@ The format is intentionally simple:
 
 - No unreleased entries yet.
 
+## [v0.4.4] - 2026-06-27
+
+### Changed
+
+- The root GitHub Action now declares Marketplace-ready metadata through
+  `author`, `branding.icon`, and `branding.color` in `action.yml`, which keeps
+  the action contract unchanged while allowing GitHub Marketplace publication.
+
+### Documentation
+
+- Updated the live install and GitHub Action docs to pin `v0.4.4` as the
+  latest public release and aligned the released external-wave manifest default
+  used by the hosted validation workflow.
+
+### Verification
+
+- `go test ./...`
+- `go run ./cmd/releasehelper verify-compat`
+- `go run ./cmd/releasehelper notes --version v0.4.4 --out .tmp/release-notes-v0.4.4.md`
+
 ## [v0.4.3] - 2026-06-20
 
 ### Changed
